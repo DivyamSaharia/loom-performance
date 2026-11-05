@@ -1094,7 +1094,7 @@ TAB = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'actions';
 // ---------------------------------------------------------------- Web app loader
 // Data: data/data.enc.json in this repo, encrypted with the app passcode (the repo is public).
 // Targets and head-group answers: the Apps Script web app in the Config Sheet (API below).
-const API = '';   // Apps Script /exec URL; empty = read-only
+const API = 'https://script.google.com/macros/s/AKfycbwD3PuZjPLN9BDkCo0UwuG1m2OrIvWw1PV-UXwebdLQlZMIh-x3e9ocw2KLVIWCwQAVQA/exec';
 const KEY_STORE = 'w2-passcode';
 let lastLoad = 0, loading = false;
 
