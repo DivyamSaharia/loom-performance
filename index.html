@@ -295,6 +295,9 @@ const ok = (x) => x != null && isFinite(x);
 const f0 = (x) => !ok(x) ? '—' : Math.round(x).toLocaleString('en-IN');
 const f1 = (x) => !ok(x) ? '—' : x.toFixed(1);
 const f2 = (x) => !ok(x) ? '—' : x.toFixed(2);
+const f3 = (x) => !ok(x) ? '—' : x.toFixed(3);
+// Pick counts are shown in lakh picks after dividing the machine count by 39.37 (rates such as RPM stay on raw picks)
+const PICK_LAKH = 39.37 * 1e5;
 const dfmt = (d) => d ? new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', {day: 'numeric', month: 'short', timeZone: 'UTC'}) : '—';
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const inW = (w) => W === 'all' || String(w) === W;
@@ -476,7 +479,7 @@ function kpiSet(dates) {
   const A = agg(L); if (!A) return null;
   const n = dates.length;
   const off = (D.util || []).filter((u) => dates.includes(u.date) && inW(u.width)).reduce((s, u) => s + u.off, 0);
-  return {picks_m: A.picks / 1e6 / n, eff: A.eff, rpm: A.rpm, apk: A.apk, cfm: A.cfm, floor_cfm: A.air / 1440 / n, air: A.air / n, off_h: off / 60 / n};
+  return {picks_l: A.picks / PICK_LAKH / n, eff: A.eff, rpm: A.rpm, apk: A.apk, cfm: A.cfm, floor_cfm: A.air / 1440 / n, air: A.air / n, off_h: off / 60 / n};
 }
 
 // ---------------------------------------------------------------- Actions (latest day only)
@@ -488,7 +491,7 @@ function actionLists() {
     const b = bench(x.width, x.hg) || {};
     const lostMin = Math.max(0, EFF_BAD() / 100 * (x.run + x.stop) - x.run);
     const beam = ok(x.warp_rate) && x.warp_rate > Math.max((S().warp_multiple || 2) * (b.warp_med || 0), S().warp_min_rate || 3);
-    out.eff.push({x, now: x.eff, gap: EFF_BAD() - x.eff, impact: lostMin * x.rpm / 1e6, lostMin, beam});
+    out.eff.push({x, now: x.eff, gap: EFF_BAD() - x.eff, impact: lostMin * x.rpm / PICK_LAKH, lostMin, beam});
   }
   const floor = (D.pressure.floor || []).slice(-1)[0];
   for (const x of L) {
@@ -499,7 +502,7 @@ function actionLists() {
     const offRB = ok(rB) && x.rpm < rB - tolRpm(rB), offRT = ok(rT) && x.rpm < rT - tolRpm(rT);
     if (offRB || offRT) {
       const ref = Math.max(offRB ? rB : 0, offRT ? rT : 0);
-      out.rpm.push({x, b, t, now: x.rpm, bm: rB, tg: rT, gap: ref - x.rpm, impact: (ref - x.rpm) * x.run / 1e6});
+      out.rpm.push({x, b, t, now: x.rpm, bm: rB, tg: rT, gap: ref - x.rpm, impact: (ref - x.rpm) * x.run / PICK_LAKH});
     }
     // CFM: benchmark CFM = benchmark air per 1,000 picks at this loom's own speed
     const cB = ok(b.apk) ? b.apk * x.rpm / 1000 : null, cT = ok(t.cfm) ? t.cfm : null;
@@ -539,7 +542,7 @@ function pageActions() {
   const kpi = (label, val, unit, d, sub) => el('div', {class: 'card kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'val'}, val, unit ? el('small', {text: unit}) : null), sub ? el('div', {class: 'note', text: sub}) : null, d);
   if (day) {
     kp.append(
-      kpi('Picks woven', f1(day.picks_m), 'M picks', delta(day.picks_m, pr && pr.picks_m, true, (x) => x.toFixed(1), 'M')),
+      kpi('Picks', f2(day.picks_l), 'lakh', delta(day.picks_l, pr && pr.picks_l, true, (x) => x.toFixed(2), ' lakh')),
       kpi('Efficiency', f1(day.eff), '%', delta(day.eff, pr && pr.eff, true, (x) => x.toFixed(1), ' pts')),
       kpi('Speed while running', f0(day.rpm), 'RPM', delta(day.rpm, pr && pr.rpm, true, (x) => x.toFixed(0), ' RPM')),
       kpi('Air per 1,000 picks', f1(day.apk), 'ft³', delta(day.apk, pr && pr.apk, false, (x) => x.toFixed(1), ' ft³')),
@@ -558,13 +561,13 @@ function pageActions() {
   const lostRpm = A.rpm.reduce((a, r) => a + r.impact, 0), lostEff = A.eff.reduce((a, r) => a + r.impact, 0);
   const exCfm = A.cfm.reduce((a, r) => a + r.gap, 0);
   s.append(el('div', {class: 'split'},
-    actionCard('a-rpm', 'RPM', `Below benchmark by more than ${S().tol_rpm_pct}% or below your target · ${f2(lostRpm)} M picks lost`, A.rpm,
-      ['Loom', ['RPM', 'picks/min'], ['Gap', 'RPM'], ['Lost', 'M picks']],
-      (r) => [loomCell(r.x), mcell(r.now, r.bm, r.tg, f0, true, tolRpm, tolRpm, {w: r.x.width, hg: r.x.hg, m: 'rpm'}), f0(r.gap), f2(r.impact)]),
-    actionCard('a-eff', 'Efficiency', `Below ${f0(EFF_BAD())}%, any quality · ${f2(lostEff)} M picks short of ${f0(EFF_BAD())}%`, A.eff,
-      ['Loom', ['Efficiency', '%'], ['Below line', 'points'], ['Short', 'M picks']],
+    actionCard('a-rpm', 'RPM', `Below benchmark by more than ${S().tol_rpm_pct}% or below your target · ${f2(lostRpm)} lakh picks lost`, A.rpm,
+      ['Loom', ['RPM', 'picks/min'], ['Gap', 'RPM'], ['Lost', 'lakh picks']],
+      (r) => [loomCell(r.x), mcell(r.now, r.bm, r.tg, f0, true, tolRpm, tolRpm, {w: r.x.width, hg: r.x.hg, m: 'rpm'}), f0(r.gap), f3(r.impact)]),
+    actionCard('a-eff', 'Efficiency', `Below ${f0(EFF_BAD())}%, any quality · ${f2(lostEff)} lakh picks short of ${f0(EFF_BAD())}%`, A.eff,
+      ['Loom', ['Efficiency', '%'], ['Below line', 'points'], ['Short', 'lakh picks']],
       (r) => [el('div', {}, loomCell(r.x), r.beam ? el('span', {class: 'pill info', text: `likely beam · ${f1(r.x.warp_rate)} warp/100k picks`}) : null),
-        effCell(r.now), f1(r.gap), f2(r.impact)]),
+        effCell(r.now), f1(r.gap), f3(r.impact)]),
     actionCard('a-cfm', 'CFM', `Above benchmark CFM by more than ${S().tol_air_pct}% or above your target · ${f1(exCfm)} CFM excess while running`, A.cfm,
       ['Loom', ['CFM', 'ft³/min running'], ['Air', 'ft³/1,000 picks'], ['Excess', 'CFM']],
       (r) => [loomCell(r.x), mcell(r.now, r.bm, r.tg, f1, false, tolAir, tolAir, {w: r.x.width, hg: r.x.hg, m: 'apk', view: 'cfm', rpm: r.x.rpm}), f1(r.x.apk), f1(r.gap)],
