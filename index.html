@@ -173,6 +173,40 @@ dialog.bmp::backdrop{background:rgba(10,12,20,.45)}
 .bmp tr.out td{color:var(--muted)}
 .bmp .formula{font-family:var(--f-mono);font-size:12.5px;background:var(--soft);border-radius:6px;padding:8px 10px}
 </style>
+<style>
+/* Desktop layout (laptop and larger). Everything here applies from 1280px up, so phones, tablets and small windows keep the layout above.
+   Tabs move to a left sidebar, the header shrinks to one row, KPI cards sit in 4 columns, charts stop growing past
+   a readable size, and the benchmark run panel opens as a drawer on the right so the page stays visible. */
+@media (min-width:1280px){
+  .wrap{max-width:none;padding-inline:24px}
+  header.top,main{margin-left:236px;max-width:1500px}
+  header.top{padding-block:12px 10px}
+  h1{font-size:22px}
+  nav.tabs{position:fixed;left:24px;top:calc(env(safe-area-inset-top,0px) + 18px);width:208px;max-height:calc(100vh - 36px);
+    flex-direction:column;gap:2px;margin:0;overflow-x:visible;overflow-y:auto}
+  nav.tabs a{display:flex;justify-content:space-between;align-items:center;font-size:15px;padding:9px 12px;
+    border-bottom:0;border-left:3px solid transparent;border-radius:6px}
+  nav.tabs a:hover{background:var(--soft);color:var(--ink)}
+  nav.tabs a[aria-current="page"]{background:var(--accent-soft);color:var(--ink);border-left-color:var(--thread)}
+  section.page{padding-top:16px}
+  .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .chart{max-width:1080px;margin-inline:auto}
+  /* Benchmark run panel as a right-hand drawer */
+  dialog.bmp{width:min(1080px,80vw);height:100vh;max-height:100vh;margin:0 0 0 auto;border-radius:12px 0 0 12px;
+    border-width:0 0 0 1px;overflow-y:auto}
+  dialog.bmp::backdrop{background:rgba(10,12,20,.3)}
+}
+@media (min-width:1280px) and (max-width:1439px){
+  /* slimmer sidebar so the wide Quality table still fits on 1280-1366px laptops */
+  .wrap{padding-inline:16px}
+  header.top,main{margin-left:200px}
+  nav.tabs{left:16px;width:176px}
+}
+@media (min-width:1280px) and (prefers-reduced-motion:no-preference){
+  dialog.bmp[open]{animation:drawer .18s ease-out}
+}
+@keyframes drawer{from{transform:translateX(28px);opacity:.5}to{transform:none;opacity:1}}
+</style>
 </head>
 <body>
 <div class="wrap">
