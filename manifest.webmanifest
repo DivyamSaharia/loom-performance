@@ -1,14 +1,26 @@
 {
-  "name": "Weavelon 2 Loom Performance",
+  "name": "Hanuman Weavelon 2 Loom Performance",
   "short_name": "W2 Looms",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f3f4f7",
-  "theme_color": "#2f43c6",
+  "theme_color": "#002a00",
   "icons": [
-    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"},
-    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
-    {"src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
   ]
 }

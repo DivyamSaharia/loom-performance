@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Weavelon 2 Loom Performance</title>
+<title>Hanuman Weavelon 2 · Loom Performance</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="W2 Looms">
@@ -174,6 +174,25 @@ dialog.bmp::backdrop{background:rgba(10,12,20,.45)}
 .bmp .formula{font-family:var(--f-mono);font-size:12.5px;background:var(--soft);border-radius:6px;padding:8px 10px}
 </style>
 <style>
+/* Hanuman Weavelon 2 branding. Brand greens are used for the logo, header rule, active tab and sign-in only;
+   data colours (red/green status, blue links and bars) are unchanged so status stays readable. */
+:root{--brand:#14501c;--brand-soft:#e7f1cf;--brand-ink:#ffffff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--brand:#a6ce38;--brand-soft:#1f2a14;--brand-ink:#0a1a00}}
+:root[data-theme="dark"]{--brand:#a6ce38;--brand-soft:#1f2a14;--brand-ink:#0a1a00}
+header.top{border-top:3px solid var(--brand)}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+img.logo{width:44px;height:44px;flex:none;display:block;background:#fff;border-radius:10px;padding:2px}
+.eyebrow{font-family:var(--f-display);font-stretch:85%;font-weight:700;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--brand)}
+.brand h1{line-height:1.1}
+nav.tabs a[aria-current="page"]{border-bottom-color:var(--brand)}
+.gate{text-align:center;justify-items:center}
+.gate>*{max-width:100%}
+.gate input,.gate button{width:100%}
+.gate .note,.gate .err{text-align:left;width:100%}
+.gate-logo{display:block;width:72px;height:72px;background:#fff;border-radius:16px;padding:4px}
+.gate button{background:var(--brand);color:var(--brand-ink)}
+</style>
+<style>
 /* Desktop layout (laptop and larger). Everything here applies from 1280px up, so phones, tablets and small windows keep the layout above.
    Tabs move to a left sidebar, the header shrinks to one row, KPI cards sit in 4 columns, charts stop growing past
    a readable size, and the benchmark run panel opens as a drawer on the right so the page stays visible. */
@@ -187,7 +206,7 @@ dialog.bmp::backdrop{background:rgba(10,12,20,.45)}
   nav.tabs a{display:flex;justify-content:space-between;align-items:center;font-size:15px;padding:9px 12px;
     border-bottom:0;border-left:3px solid transparent;border-radius:6px}
   nav.tabs a:hover{background:var(--soft);color:var(--ink)}
-  nav.tabs a[aria-current="page"]{background:var(--accent-soft);color:var(--ink);border-left-color:var(--thread)}
+  nav.tabs a[aria-current="page"]{background:var(--brand-soft);color:var(--ink);border-left-color:var(--brand)}
   section.page{padding-top:16px}
   .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
   .chart{max-width:1080px;margin-inline:auto}
@@ -212,9 +231,13 @@ dialog.bmp::backdrop{background:rgba(10,12,20,.45)}
 <div class="wrap">
   <header class="top">
     <div class="titlerow">
-      <div>
-        <h1>Weavelon 2 Loom Performance</h1>
-        <div class="asof" id="asof">Loading the latest day…</div>
+      <div class="brand">
+        <img class="logo" src="logo.svg" alt="Hanuman" width="44" height="44">
+        <div>
+          <div class="eyebrow">Hanuman Weavelon 2</div>
+          <h1>Loom Performance</h1>
+          <div class="asof" id="asof">Loading the latest day…</div>
+        </div>
       </div>
       <div class="controls">
         <button type="button" class="ghost" id="refresh" title="Reload the latest data">Refresh</button>
@@ -1190,7 +1213,7 @@ function showGate(msg) {
   $('#asof').textContent = 'Locked';
   const inp = el('input', {type: 'text', id: 'pass', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: 'XXXX-XXXX-XXXX-XXXX', 'aria-label': 'Passcode'});
   const go = el('button', {type: 'submit', text: 'Open'});
-  const form = el('form', {class: 'gate'}, el('h2', {text: 'Enter the app passcode'}),
+  const form = el('form', {class: 'gate'}, el('img', {class: 'gate-logo', src: 'logo.svg', alt: 'Hanuman', width: '72', height: '72'}), el('h2', {text: 'Enter the app passcode'}),
     el('p', {class: 'note', style: 'margin:0', text: 'Asked once on each device. It unlocks the loom data and lets you save targets.'}),
     inp, msg ? el('p', {class: 'err', style: 'margin:0', text: msg}) : null, go);
   form.addEventListener('submit', (ev) => { ev.preventDefault(); const k = normKey(inp.value); if (!k) return; setKey(k); load(); });
