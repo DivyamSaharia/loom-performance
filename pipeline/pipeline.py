@@ -310,6 +310,7 @@ def cmd_compute(a):
             v = build(a, as_of=d)
             v['unassigned'] = data['unassigned']   # head-group questions are always the current ones
             v['snapshots'] = keep
+            v['generated_at'] = ''   # fixed, so an unchanged snapshot is not rewritten every run
             json.dump(v, open(os.path.join(days_out, d + '.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
 
 
