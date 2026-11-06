@@ -297,6 +297,29 @@ def r1(x, n=1):
 
 
 def cmd_compute(a):
+    """Latest view (data.json + notification) plus one as-of snapshot per complete day (--days-out)."""
+    data = build(a)
+    days_out = getattr(a, 'days_out', None)
+    if days_out:
+        os.makedirs(days_out, exist_ok=True)
+        keep = data['complete_days'][-SNAP_DAYS:]
+        for f in os.listdir(days_out):
+            if f.endswith('.json') and f[:-5] not in keep:
+                os.remove(os.path.join(days_out, f))
+        for d in keep:
+            v = build(a, as_of=d)
+            v['unassigned'] = data['unassigned']   # head-group questions are always the current ones
+            v['snapshots'] = keep
+            json.dump(v, open(os.path.join(days_out, d + '.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
+
+
+SNAP_DAYS = 60
+
+
+def build(a, as_of=None):
+    """Compute the app data. With as_of, use only history up to and including that date, so every
+    figure (benchmarks included) is what the app would have shown on that day. Writes a.out and
+    a.notify only for the latest view (as_of None)."""
     cfg = json.load(open(a.config))
     S = dict(benchmark_min_run_min=720, benchmark_min_loom_days=15, benchmark_min_dates=5, benchmark_min_looms=2,
              benchmark_pct_high=90, benchmark_pct_low=10, tol_rpm_pct=3, tol_eff_pts=5, tol_air_pct=5,
@@ -314,6 +337,9 @@ def cmd_compute(a):
 
     log = read_csv(os.path.join(a.store, 'shift_log.csv'), LOG_COLS)
     reg = read_csv(os.path.join(a.store, 'file_register.csv'), REG_COLS)
+    if as_of:
+        log = [r for r in log if r['date'] <= as_of]
+        reg = [r for r in reg if r['folder_date'] <= as_of]
     num = ['run', 'stop', 'rpm', 'eff', 'af1', 'af2', 'picks', 'cfm', 'main', 'warp', 'weft']
     for r in log:
         r['loom'] = int(r['loom'])
@@ -788,9 +814,13 @@ def cmd_compute(a):
                        warp=x['warp'], warp_rate=x['warp_rate'], beam=x['beam'],
                        styles=x['styles'], eligible=x['eligible']) for x in sorted(recs, key=lambda x: (x['date'], x['loom']))
                   if x['date'] in complete[-60:]],
-        files=reg[-60:],
+        files=reg[-60:], as_of=as_of,
     )
-    json.dump(clean(data), open(a.out, 'w'), ensure_ascii=False, separators=(',', ':'))
+    data = clean(data)
+    if as_of:
+        return data
+    data['snapshots'] = complete[-SNAP_DAYS:]
+    json.dump(data, open(a.out, 'w'), ensure_ascii=False, separators=(',', ':'))
 
     # ---- notification text (latest day only; RPM, efficiency, CFM, pressure vs benchmark and target)
     targets = {}
@@ -868,6 +898,7 @@ def cmd_compute(a):
         L.append(f"{len(unassigned)} name(s) need a head group: " + ', '.join(u['style'] for u in unassigned[:3]))
     open(a.notify, 'w').write('\n'.join(L))
     print('\n'.join(L))
+    return data
 
 
 def main():
@@ -881,7 +912,7 @@ def main():
     p.add_argument('--settings', required=True); p.add_argument('--head-groups', required=True); p.add_argument('--out', required=True)
     p = sp.add_parser('compute'); p.add_argument('--store', required=True); p.add_argument('--config', required=True)
     p.add_argument('--out', required=True); p.add_argument('--notify', required=True); p.add_argument('--assign')
-    p.add_argument('--targets')
+    p.add_argument('--targets'); p.add_argument('--days-out', help='folder for one as-of snapshot per complete day')
     a = ap.parse_args()
     dict(ingest=cmd_ingest, status=cmd_status, config=cmd_config, compute=cmd_compute)[a.cmd](a)
 

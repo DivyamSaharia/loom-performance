@@ -140,6 +140,9 @@ tr.pick.sel td{background:var(--accent-soft)}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
 .toolbar label{font-size:12.5px;color:var(--muted)}
 .toolbar select{width:auto;min-width:180px}
+.controls select.day{width:auto;min-width:150px;font-size:12.5px;padding:5px 8px}
+.asof .past{color:var(--accent);font-weight:600}
+.asof button.ghost{margin-left:6px;padding:2px 8px}
 .big{font-family:var(--f-display);font-stretch:80%;font-weight:700;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
 .big small{font-size:14px;font-weight:600;color:var(--muted);margin-left:2px}
 .arrow{color:var(--muted);margin:0 6px}
@@ -240,6 +243,7 @@ nav.tabs a[aria-current="page"]{border-bottom-color:var(--brand)}
         </div>
       </div>
       <div class="controls">
+        <select class="day" id="day" aria-label="View date" title="Show the app as it stood on an earlier day"></select>
         <button type="button" class="ghost" id="refresh" title="Reload the latest data">Refresh</button>
         <div class="seg" role="group" aria-label="Loom width">
           <button type="button" id="w190" data-w="190" aria-pressed="true">190 cm</button>
@@ -537,7 +541,7 @@ function pageActions() {
   const s = el('section', {class: 'page', id: 'actions'});
   const day = kpiSet([D.latest]), pr = priorDates().length ? kpiSet(priorDates()) : null;
   s.append(el('div', {}, el('h2', {text: `${wLabel()} on ${dfmt(D.latest)}`}),
-    el('p', {class: 'lead', text: 'Day totals across shifts A and B for the latest upload, compared with the average of the days before it. Everything on this page uses the latest day only.'})));
+    el('p', {class: 'lead', text: 'Day totals across shifts A and B for the day shown, compared with the average of the days before it. Everything on this page uses the latest day only.'})));
   const kp = el('div', {class: 'kpis'});
   const kpi = (label, val, unit, d, sub) => el('div', {class: 'card kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'val'}, val, unit ? el('small', {text: unit}) : null), sub ? el('div', {class: 'note', text: sub}) : null, d);
   if (day) {
@@ -639,7 +643,7 @@ function loomTable(recs) {
 function pageQuality() {
   const s = el('section', {class: 'page', id: 'quality'});
   s.append(el('div', {}, el('h2', {text: `Head groups on ${wLabel()} looms, ${dfmt(D.latest)}`}),
-    el('p', {class: 'lead', text: `Running conditions from the latest upload (looms that ran at least 60 min), against each head group's benchmark from all history and your target where set. Benchmarks become final after ${S().benchmark_min_loom_days} loom-days on ${S().benchmark_min_dates} dates from ${S().benchmark_min_looms} looms. Open a head group to see its looms.`})));
+    el('p', {class: 'lead', text: `Running conditions from the day shown (looms that ran at least 60 min), against each head group's benchmark from all history and your target where set. Benchmarks become final after ${S().benchmark_min_loom_days} loom-days on ${S().benchmark_min_dates} dates from ${S().benchmark_min_looms} looms. Open a head group to see its looms.`})));
   const L = latestRecs();
   const by = new Map();
   for (const x of L) { const k = key(x.width, x.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
@@ -1157,6 +1161,10 @@ TAB = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'actions';
 const API = 'https://script.google.com/macros/s/AKfycbwD3PuZjPLN9BDkCo0UwuG1m2OrIvWw1PV-UXwebdLQlZMIh-x3e9ocw2KLVIWCwQAVQA/exec';
 const KEY_STORE = 'w2-passcode';
 let lastLoad = 0, loading = false;
+// Date view: LATEST is data/data.enc.json; VIEW is the date shown ('' = latest).
+// Older dates load data/days/<date>.enc.json: the app exactly as it stood on that day, benchmarks included.
+let LATEST = null, VIEW = '';
+const SNAP = new Map();
 
 const getKey = () => { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return window.__w2key || ''; } };
 const setKey = (k) => { window.__w2key = k; try { localStorage.setItem(KEY_STORE, k); } catch (e) {} };
@@ -1224,6 +1232,54 @@ function showGate(msg) {
   inp.focus();
 }
 
+async function fetchSealed(path, pass) {
+  const r = await fetch(path + '?t=' + Date.now(), {cache: 'no-store'});
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const sealed = await r.json();
+  try { return JSON.parse(await openSealed(sealed, pass)); }
+  catch (e) { const err = new Error('passcode'); err.passcode = true; throw err; }
+}
+
+function fillDays() {
+  const sel = $('#day');
+  const days = ((LATEST && LATEST.snapshots) || []).slice().reverse();
+  sel.replaceChildren(...days.map((d, i) => el('option', {value: i === 0 ? '' : d, text: i === 0 ? `Latest · ${dfmt(d)}` : dfmt(d), selected: (i === 0 ? '' : d) === VIEW ? true : null})));
+  sel.hidden = days.length < 2;
+}
+
+function show(data) {
+  D = data;
+  BM.clear();
+  for (const b of D.benchmarks || []) BM.set(key(b.width, b.hg), b);
+  const done = (D.days || []).filter((d) => d.status === 'complete').length;
+  if (VIEW) {
+    $('#asof').replaceChildren(el('span', {class: 'past', text: `Viewing ${dfmt(D.latest)}`}),
+      ` as it stood that day · ${done} day${done === 1 ? '' : 's'} of history then`,
+      el('button', {type: 'button', class: 'ghost', text: 'Back to latest', onclick: () => setView('')}));
+  } else {
+    $('#asof').replaceChildren('Latest complete day ', el('b', {text: dfmt(D.latest)}), ` · ${done} day${done === 1 ? '' : 's'} of history · updated ${D.generated_at} IST`);
+  }
+  fillDays();
+  render();
+}
+
+async function setView(d) {
+  VIEW = d || '';
+  if (!VIEW) { if (LATEST) show(LATEST); return; }
+  const pass = getKey();
+  if (SNAP.has(VIEW)) { show(SNAP.get(VIEW)); return; }
+  $('#main').replaceChildren(el('div', {class: 'loading', text: `Loading ${dfmt(VIEW)}…`}));
+  try {
+    const v = await fetchSealed(`data/days/${VIEW}.enc.json`, pass);
+    SNAP.set(VIEW, v);
+    if (VIEW === d) show(v);
+  } catch (e) {
+    VIEW = '';
+    if (LATEST) show(LATEST);
+    $('#main').prepend(el('p', {class: 'err', text: `Could not load ${dfmt(d)}. Showing the latest day instead.`}));
+  }
+}
+
 async function load(quiet) {
   if (loading) return;
   const pass = getKey();
@@ -1231,27 +1287,22 @@ async function load(quiet) {
   loading = true;
   if (!quiet || !D) $('#main').replaceChildren(el('div', {class: 'loading', text: 'Loading loom data…'}));
   try {
-    const r = await fetch('data/data.enc.json?t=' + Date.now(), {cache: 'no-store'});
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const sealed = await r.json();
-    let text;
-    try { text = await openSealed(sealed, pass); }
-    catch (e) { clearKey(); loading = false; showGate('That passcode did not work. Check it and try again.'); return; }
-    D = JSON.parse(text);
+    LATEST = await fetchSealed('data/data.enc.json', pass);
   } catch (e) {
     loading = false;
+    if (e.passcode) { clearKey(); showGate('That passcode did not work. Check it and try again.'); return; }
     if (!D) $('#main').replaceChildren(el('div', {class: 'loading', text: 'Could not load the loom data. Check your connection and tap Refresh; if it persists, the daily run may have failed.'}));
     return;
   }
   loading = false;
   lastLoad = Date.now();
-  BM.clear();
-  for (const b of D.benchmarks || []) BM.set(key(b.width, b.hg), b);
-  const done = (D.days || []).filter((d) => d.status === 'complete').length;
-  $('#asof').replaceChildren('Latest complete day ', el('b', {text: dfmt(D.latest)}), ` · ${done} day${done === 1 ? '' : 's'} of history · updated ${D.generated_at} IST`);
+  SNAP.clear();
+  if (VIEW && !(LATEST.snapshots || []).includes(VIEW)) VIEW = '';
+  if (VIEW === (LATEST.snapshots || []).slice(-1)[0]) VIEW = '';
   if (API) { db = sheetDb; loadState(); } else { db = null; targetsLoaded = true; }
-  render();
+  if (VIEW) setView(VIEW); else show(LATEST);
 }
+$('#day').addEventListener('change', (ev) => setView(ev.target.value));
 
 // Data health page: a way to lock this device again.
 const basePageData = PAGES.data;
@@ -1263,7 +1314,7 @@ PAGES.data = () => {
 
 $('#refresh').addEventListener('click', () => load(true));
 // The home-screen app stays in memory on iPhone; refetch when it comes back after a while.
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastLoad > 15 * 60e3) load(true); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !VIEW && Date.now() - lastLoad > 15 * 60e3) load(true); });
 load();
 })();
 </script>
