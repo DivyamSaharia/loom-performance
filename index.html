@@ -327,7 +327,7 @@ const BM = new Map();
 // view state
 const OPEN = new Set(); const SHOWALL = {};
 let ASSIGN_OPEN = null; // null = automatic: open while any name is unsaved
-let PMODE = 'bm', PVIEW = 'loom', PALL = false, CMODE = 'bm', CVIEW = 'loom', CALL = false, WPER = 'day', WQ = '', TREND_METRIC = 'eff', TREND_HL = '';
+let PMODE = 'bm', PVIEW = 'loom', PALL = false, CMODE = 'bm', CVIEW = 'loom', CALL = false, EMODE = 'bm', EVIEW = 'loom', EALL = false, WPER = 'day', WQ = '', TREND_METRIC = 'eff', TREND_HL = '';
 // thresholds set in this page (the rest come from the Config Sheet's Settings tab)
 const PRESS_TOL = 0.1;      // kgf/cm² over benchmark or target before a loom is listed
 const OFF_LONG = 240;       // minutes powered down in the day
@@ -388,6 +388,33 @@ function applyPanna(data) {
 // Benchmark CFM for a loom-day = benchmark air per 1,000 fabric picks × panna × the loom's RPM ÷ 1,000 (CFM itself is never doubled).
 const cfmOf = (apk, w, hg, rpm) => ok(apk) && ok(rpm) && rpm > 0 ? apk * pf(w, hg) * rpm / 1000 : null;
 
+// ---------------------------------------------------------------- Effective RPM
+// Effective RPM = RPM × efficiency ÷ 100 = machine picks per minute of run + stop time. Benchmark: 90th percentile of the
+// head group's loom-days (like RPM); best: the highest loom-day; target: 93% of the target RPM (no separate entry).
+const ERPM_TGT = 0.93;
+const erpmOf = (x) => x && ok(x.rpm) && ok(x.eff) ? x.rpm * x.eff / 100 : null;
+const tgtE = (w, hg) => { const t = tgt(w, hg); return t && ok(t.rpm) ? t.rpm * ERPM_TGT : null; };
+// Data from before the pipeline computed it: derive it on each loom-day, and the benchmark from the loom-days kept on the page.
+function addErpm(data) {
+  if (!data || data._erpm) return; data._erpm = true;
+  const fix = (x) => { if (x && !ok(x.erpm)) x.erpm = erpmOf(x); };
+  for (const x of data.loomdays || []) fix(x);
+  const pHigh = (data.settings && data.settings.benchmark_pct_high) || 90;
+  for (const b of data.benchmarks || []) {
+    for (const R of Object.values(b.runs || {})) for (const r of [R.lo, R.hi, R.best, ...(R.top || [])]) fix(r);
+    if (b.runs && b.runs.erpm) { if (!ok(b.erpm)) b.erpm = b.runs.erpm.value; continue; }
+    const s = (data.loomdays || []).filter((x) => String(x.width) === String(b.width) && x.hg === b.hg && x.eligible && ok(x.erpm) && (!data.latest || x.date <= data.latest))
+      .sort((a, c) => a.erpm - c.erpm || a.date.localeCompare(c.date) || a.loom - c.loom);
+    if (!s.length) continue;
+    const k = (s.length - 1) * pHigh / 100, f = Math.floor(k), c = Math.ceil(k), fr = k - f;
+    const val = f === c ? s[f].erpm : s[f].erpm + (s[c].erpm - s[f].erpm) * fr;
+    const better = s.filter((x) => x.erpm >= val - 1e-9).sort((a, c2) => c2.erpm - a.erpm || a.date.localeCompare(c2.date) || a.loom - c2.loom);
+    const R = {pct: pHigh, value: val, pos: k, of: s.length, lo: s[f], lo_w: f !== c ? 1 - fr : 1, dropped: [], best: s[s.length - 1], n_better: better.length, top: better.slice(0, 40), local: true};
+    if (f !== c) Object.assign(R, {hi: s[c], hi_w: fr});
+    b.runs = b.runs || {}; b.runs.erpm = R; b.erpm = val; b.best_erpm = s[s.length - 1].erpm;
+  }
+}
+
 function agg(L) {
   let picks = 0, fpicks = 0, run = 0, stop = 0, air = 0, warp = 0, mw = 0, mmax = 0; const looms = new Set();
   for (const x of L) {
@@ -395,19 +422,20 @@ function agg(L) {
     mw += (x.main || 0) * (x.run || 0); mmax = Math.max(mmax, x.main_max || 0); looms.add(x.loom);
   }
   if (!run || !picks) return null;
-  return {looms: looms.size, picks, fpicks, run, stop, air, warp, rpm: picks / run, eff: 100 * run / (run + stop),
+  return {looms: looms.size, picks, fpicks, run, stop, air, warp, rpm: picks / run, eff: 100 * run / (run + stop), erpm: picks / (run + stop),
     apk: 1000 * air / fpicks, cfm: air / run, main: mw / run, main_max: mmax, warpRate: warp / picks * 1e5};
 }
 
 // ---------------------------------------------------------------- Best loom-day
 // The single best loom-day behind each benchmark: fastest RPM, lowest air per 1,000 picks, lowest pressure.
 // New data carries it with the benchmark (all history); older data falls back to the loom-days kept on this page.
-const BEST_OK = {rpm: 1, apk: 1, main_max: 1, main: 1};
+const BEST_OK = {rpm: 1, erpm: 1, apk: 1, main_max: 1, main: 1};
+const HIGH = {rpm: 1, erpm: 1};   // metrics where higher is better
 function bestRec(w, hg, m) {
   const b = bench(w, hg); if (!b || !BEST_OK[m]) return null;
   const R = b.runs && b.runs[m];
   if (R && R.best) return R.best;
-  const hi = m === 'rpm';
+  const hi = !!HIGH[m];
   const L = (D.loomdays || []).filter((x) => String(x.width) === String(w) && x.hg === hg && x.eligible && ok(x[m]) && (m !== 'main_max' || x[m] > 0));
   if (!L.length) return null;
   return L.reduce((a, x) => (hi ? x[m] > a[m] : x[m] < a[m]) ? x : a);
@@ -416,8 +444,8 @@ const bestVal = (w, hg, m) => { const r = bestRec(w, hg, m); return r ? r[m] : n
 // Loom-days at or better than the benchmark, best first.
 function betterRecs(w, hg, m) {
   const b = bench(w, hg); const R = b && b.runs && b.runs[m]; if (!R) return {list: [], n: 0, full: true};
-  if (R.top) return {list: R.top, n: R.n_better != null ? R.n_better : R.top.length, full: (R.n_better || R.top.length) <= R.top.length};
-  const hi = m === 'rpm';
+  if (R.top) return {list: R.top, n: R.n_better != null ? R.n_better : R.top.length, full: (R.n_better || R.top.length) <= R.top.length, local: !!R.local};
+  const hi = !!HIGH[m];
   const L = (D.loomdays || []).filter((x) => String(x.width) === String(w) && x.hg === hg && x.eligible && ok(x[m]) && (m !== 'main_max' || x[m] > 0)
     && (hi ? x[m] >= R.value - 1e-9 : x[m] <= R.value + 1e-9)).sort((a, c) => hi ? c[m] - a[m] : a[m] - c[m]);
   return {list: L, n: L.length, full: false, local: true};
@@ -481,7 +509,7 @@ const tolAir = (r) => r * (S().tol_air_pct || 5) / 100;
 const tolP = () => PRESS_TOL;
 function keyline(extra) {
   return el('div', {class: 'keyline'},
-    el('span', {}, `bm = benchmark (90th percentile for RPM, 10th for air and pressure, all history) · best = the single best loom-day · click either to see the loom-days behind it · tgt = your target · line = efficiency below ${f0(EFF_BAD())}% is bad, whatever the quality`),
+    el('span', {}, `bm = benchmark (90th percentile for RPM and effective RPM, 10th for air and pressure, all history) · best = the single best loom-day · click either to see the loom-days behind it · tgt = your target (effective RPM: ${f0(ERPM_TGT * 100)}% of target RPM) · line = efficiency below ${f0(EFF_BAD())}% is bad, whatever the quality`),
     el('span', {}, 'Loom numbers and head groups are clickable too. 280 cm picks and air per 1,000 picks count double panna unless switched to single.'),
     el('span', {}, el('b', {text: '▼ ▲'}), ' worse than a reference by more than its tolerance; the missed one is ', el('u', {text: 'underlined'})),
     extra ? el('span', {text: extra}) : null);
@@ -490,6 +518,7 @@ function keyline(extra) {
 // ---------------------------------------------------------------- Drill-down panel (benchmark, best, loom, head group)
 const BMETA = {
   rpm: {label: 'RPM', unit: 'picks/min', fmt: (x) => f0(x), best: 'high'},
+  erpm: {label: 'Effective RPM', unit: 'picks/min of run + stop time', fmt: (x) => f0(x), best: 'high'},
   apk: {label: 'Air per 1,000 picks', unit: 'ft³ / 1,000 picks', fmt: (x) => f1(x), best: 'low'},
   main_max: {label: 'Main pressure (day max)', unit: 'kgf/cm²', fmt: (x) => f2(x), best: 'low'},
   main: {label: 'Main pressure (run-weighted avg)', unit: 'kgf/cm²', fmt: (x) => f2(x), best: 'low'},
@@ -547,8 +576,8 @@ function drawPanel(keepScroll) {
 const closePanel = () => { if (dlg && dlg.open) dlg.close(); };
 
 // One table layout for loom-day records everywhere in the panel and the Benchmarks tab.
-const RCOLS = [['Date'], ['Loom'], ['Head group'], ['RPM', 'picks/min', 'rpm'], ['Eff', '%', 'eff'], ['CFM', 'ft³/min running', 'cfm'], ['Air', 'ft³/1,000 picks', 'apk'],
-  ['Main avg', 'kgf/cm²', 'main'], ['Main max', 'kgf/cm²', 'main_max'], ['Warp', 'breaks', 'warp'], ['Warp rate', '/100k picks', 'warp_rate'], ['Picks', 'lakh', 'picks'],
+const RCOLS = [['Date'], ['Loom'], ['Head group'], ['RPM', 'picks/min', 'rpm'], ['Eff', '%', 'eff'], ['Eff. RPM', 'RPM × eff', 'erpm'], ['CFM', 'ft³/min running', 'cfm'], ['Air', 'ft³/1,000 picks', 'apk'],
+  ['Main max', 'kgf/cm²', 'main_max'], ['Warp', 'breaks', 'warp'], ['Warp rate', '/100k picks', 'warp_rate'], ['Picks', 'lakh', 'picks'],
   ['Beam'], ['Run', 'h'], ['Style as uploaded']];
 function runTable(recs, w, hg, opts = {}) {
   const hl = opts.hl, cols = RCOLS.filter((c) => (opts.hgCol || c[0] !== 'Head group') && (!opts.noLoom || c[0] !== 'Loom'));
@@ -561,7 +590,7 @@ function runTable(recs, w, hg, opts = {}) {
     if (x.__row) { tb.append(x.__row); continue; }
     const xw = x.width || w, xh = x.hg || hg;
     const fp = ok(x.fpicks) ? x.fpicks : (x.picks || 0) * pf(xw, xh);
-    const v = {rpm: f0(x.rpm), eff: f1(x.eff), cfm: f1(x.cfm), apk: f1(x.apk), main: f2(x.main), main_max: f2(x.main_max), warp: f0(x.warp), warp_rate: f2(x.warp_rate), picks: f2(fp / PICK_LAKH)};
+    const v = {rpm: f0(x.rpm), eff: f1(x.eff), erpm: f0(ok(x.erpm) ? x.erpm : erpmOf(x)), cfm: f1(x.cfm), apk: f1(x.apk), main: f2(x.main), main_max: f2(x.main_max), warp: f0(x.warp), warp_rate: f2(x.warp_rate), picks: f2(fp / PICK_LAKH)};
     tb.append(el('tr', {class: opts.rowClass ? opts.rowClass(x) : null}, ...lead.map((c) => el('td', {class: 'num'}, c[2](x))), ...cols.map((c) => {
       if (c[0] === 'Date') return el('td', {class: 'd', text: dfmt(x.date)});
       if (c[0] === 'Loom') return el('td', {class: 'num'}, loomLink(x.loom, x.date), el('div', {class: 'note', text: x.type || ''}));
@@ -588,18 +617,18 @@ function bmDetail(w, hg, m, kind, opts = {}) {
     const r = bestRec(w, hg, m);
     if (!r) return [el('div', {class: 'empty', text: m === 'warp_rate' ? 'The warp benchmark is a median, so there is no best loom-day for it.' : 'No loom-day to show.'})];
     const gap = ok(R.value) ? (M.best === 'high' ? r[m] - R.value : R.value - r[m]) : null;
-    out.push(el('div', {class: 'lead'}, `Best ${m === 'rpm' ? 'RPM' : M.label.charAt(0).toLowerCase() + M.label.slice(1)} `, el('b', {text: `${M.fmt(r[m])} ${M.unit}`}),
+    out.push(el('div', {class: 'lead'}, `Best ${m === 'rpm' ? 'RPM' : m === 'erpm' ? 'effective RPM' : M.label.charAt(0).toLowerCase() + M.label.slice(1)} `, el('b', {text: `${M.fmt(r[m])} ${M.unit}`}),
       ok(gap) ? ` · ${M.fmt(Math.abs(gap))} ${M.best === 'high' ? 'faster than' : 'below'} the ${pctTxt} benchmark of ${M.fmt(R.value)}` : '',
-      ` · the ${M.best === 'high' ? 'fastest' : 'lowest'} of ${R.of} counted loom-days${b.runs[m].best ? '' : ' kept on this page'}`));
+      ` · the ${M.best === 'high' ? 'fastest' : 'lowest'} of ${R.of} counted loom-days${b.runs[m].best && !R.local ? '' : ' kept on this page'}`));
     out.push(cfmNote(r[m], 'best'));
     out.push(runTable([r], w, hg, {hl: m}));
     return out;
   }
   const tie = R.hi && Math.abs(R.hi[m] - R.lo[m]) < 1e-9;
   out.push(el('div', {class: 'lead'}, `${asCfm ? 'Air per 1,000 picks (shown as CFM on the page)' : M.label} benchmark `, el('b', {text: `${M.fmt(R.value)} ${M.unit}`}),
-    ` · ${pctTxt} of ${R.of} counted loom-days · `, benchTag(b)));
+    ` · ${pctTxt} of ${R.of} counted loom-days${R.local ? ' kept on this page' : ''} · `, benchTag(b)));
+  if (m === 'erpm') out.push(el('p', {class: 'scopenote', text: `Effective RPM = RPM × efficiency ÷ 100, the picks a loom makes per minute of run plus stop time. Target effective RPM = ${f0(ERPM_TGT * 100)}% of the target RPM.`}));
   out.push(cfmNote(R.value, 'benchmark'));
-  if (m === 'main') out.push(el('p', {class: 'scopenote', text: 'Where a head group has no day-max pressure benchmark, the run-weighted average pressure is used instead.'}));
   const pair = [[R.lo, R.lo_w], [R.hi, R.hi_w]].filter((p) => p[0]);
   out.push(el('div', {}, el('h3', {text: R.hi && !tie ? 'The two loom-days either side of the benchmark' : 'The loom-day at the benchmark'}),
     el('p', {class: 'note', text: R.hi && !tie ? `The ${pctTxt} falls at position ${f2(R.pos + 1)} of ${R.of} counted loom-days, between these two. Weight = how much each contributes.` : `The ${pctTxt} lands on this loom-day.`}),
@@ -639,11 +668,11 @@ function benchSummary(w, hg, A, nowLabel) {
   const nowCell = (v, fmt, bad, hi) => el('span', {style: bad ? 'color:var(--bad);font-weight:700' : null, text: fmt(v) + (bad ? (hi ? ' ▼' : ' ▲') : '')});
   const rows = [
     ['RPM', 'picks/min', A && nowCell(A.rpm, f0, worse(A.rpm, b.rpm, true, tolRpm(b.rpm || 0)), true), btn(b.rpm, 'rpm', f0), btn(bestVal(w, hg, 'rpm'), 'rpm', f0, {kind: 'best'}), f0(t.rpm)],
+    ['Effective RPM', `RPM × eff · target ${f0(ERPM_TGT * 100)}% of target RPM`, A && nowCell(A.erpm, f0, worse(A.erpm, b.erpm, true, tolRpm(b.erpm || 0)), true), btn(b.erpm, 'erpm', f0), btn(bestVal(w, hg, 'erpm'), 'erpm', f0, {kind: 'best'}), f0(tgtE(w, hg))],
     ['CFM', 'ft³/min running, at this RPM', A && nowCell(A.cfm, f1, worse(A.cfm, cfmOf(b.apk, w, hg, rpm), false, tolAir(cfmOf(b.apk, w, hg, rpm) || 0))),
       ok(rpm) ? btn(cfmOf(b.apk, w, hg, rpm), 'apk', f1, {view: 'cfm', rpm}) : '—', ok(rpm) ? btn(cfmOf(bestVal(w, hg, 'apk'), w, hg, rpm), 'apk', f1, {kind: 'best', view: 'cfm', rpm}) : '—', f1(t.cfm)],
     ['Air', 'ft³/1,000 picks' + (pf(w, hg) === 2 ? ', double panna' : ''), A && nowCell(A.apk, f1, worse(A.apk, b.apk, false, tolAir(b.apk || 0))), btn(b.apk, 'apk', f1), btn(bestVal(w, hg, 'apk'), 'apk', f1, {kind: 'best'}), '—'],
     ['Main pressure', 'kgf/cm², day max', A && nowCell(A.main_max, f2, worse(A.main_max, b[pk], false, PRESS_TOL)), btn(b[pk], pk, f2), btn(bestVal(w, hg, pk), pk, f2, {kind: 'best'}), f2(t.main)],
-    ['Main pressure', 'kgf/cm², run-weighted avg', A && f2(A.main), btn(b.main, 'main', f2), btn(bestVal(w, hg, 'main'), 'main', f2, {kind: 'best'}), '—'],
     ['Efficiency', '%', A && nowCell(A.eff, f1, A.eff < EFF_BAD(), true), `line ${f0(EFF_BAD())}`, '—', '—'],
     ['Warp breaks', 'per 100k picks', A && f2(A.warpRate), btn(b.warp_med, 'warp_rate', f2), '—', '—']];
   const t2 = el('table');
@@ -736,7 +765,9 @@ function hgView(hg, w, date) {
 function openGuide() {
   pushView(() => ({title: 'Guide', sub: 'How the figures on this app are worked out', body: [el('div', {class: 'card guide'},
     el('h3', {text: 'Benchmark and best'}),
-    el('p', {text: 'Every head group has a benchmark per loom width from all its history: the 90th percentile for RPM and the 10th percentile for air per 1,000 picks and main pressure. Best is the single best loom-day behind it (fastest RPM, lowest air, lowest pressure). Click any bm or best figure to see the loom-days behind it.'}),
+    el('p', {text: 'Every head group has a benchmark per loom width from all its history: the 90th percentile for RPM and the 10th percentile for air per 1,000 picks and main pressure. Best is the single best loom-day behind it (fastest RPM, lowest air, lowest pressure). Best is shown wherever the benchmark and target are: in tables, on the charts (green dot), and as a "To best" reference on the CFM, Effective RPM and Pressure tabs. Click any bm or best figure to see the loom-days behind it.'}),
+    el('h3', {text: 'Effective RPM'}),
+    el('p', {text: `Effective RPM = RPM × efficiency ÷ 100, the picks a loom makes per minute of run plus stop time. Benchmark is the 90th percentile of the head group's loom-days, best its highest loom-day, and the target is ${f0(ERPM_TGT * 100)}% of the target RPM you set.`}),
     el('h3', {text: 'CFM'}),
     el('p', {text: 'Benchmark CFM is the benchmark air per 1,000 picks at the RPM the loom actually ran, so a loom is not rewarded for running slow. CFM itself is what the loom reads, on every width.'}),
     el('h3', {text: 'Double panna (280 cm)'}),
@@ -904,11 +935,12 @@ function loomTable(recs) {
     const cB = cfmOf(b.apk, x.width, x.hg, x.rpm);
     return [el('span', {}, loomLink(x.loom, x.date), el('div', {class: 'note', text: x.type})),
       mcell(x.rpm, b.rpm, t.rpm, f0, true, tolRpm, tolRpm, {w: x.width, hg: x.hg, m: 'rpm'}), effCell(x.eff),
+      mcell(x.erpm, b.erpm, tgtE(x.width, x.hg), f0, true, tolRpm, tolRpm, {w: x.width, hg: x.hg, m: 'erpm'}),
       mcell(x.cfm, cB, t.cfm, f1, false, tolAir, tolAir, {w: x.width, hg: x.hg, m: 'apk', view: 'cfm', rpm: x.rpm}), mcell(x.apk, b.apk, null, f1, false, tolAir, null, {w: x.width, hg: x.hg, m: 'apk'}),
       mcell(x.main_max, ok(b.main_max) ? b.main_max : b.main, t.main, f2, false, tolP, tolP, {w: x.width, hg: x.hg, m: pkey(b)}),
       el('span', {}, f0(x.warp), el('div', {class: 'note', text: f1(x.warp_rate) + ' /100k'})), x.beam || '—', f1(x.run / 60)];
   });
-  return table(['Loom', ['RPM', 'picks/min'], ['Eff', '%'], ['CFM', 'ft³/min'], ['Air', 'ft³/1,000 picks'], ['Main', 'kgf/cm², max'], ['Warp', 'breaks'], 'Beam', ['Run', 'h']], rows, [1, 2, 3, 4, 5, 6, 8]);
+  return table(['Loom', ['RPM', 'picks/min'], ['Eff', '%'], ['Eff. RPM', 'RPM × eff'], ['CFM', 'ft³/min'], ['Air', 'ft³/1,000 picks'], ['Main', 'kgf/cm², max'], ['Warp', 'breaks'], 'Beam', ['Run', 'h']], rows, [1, 2, 3, 4, 5, 6, 7, 9]);
 }
 function pageQuality() {
   const s = el('section', {class: 'page', id: 'quality'});
@@ -920,8 +952,8 @@ function pageQuality() {
   const groups = [...by.entries()].map(([k, recs]) => ({k, w: recs[0].width, hg: recs[0].hg, recs, A: agg(recs)})).filter((g) => g.A)
     .sort((a, b) => (a.hg === 'Unassigned') - (b.hg === 'Unassigned') || a.w.localeCompare(b.w) || b.A.picks - a.A.picks);
   const t = el('table');
-  const hdr = ['Head group', ['Looms', 'ran'], ['RPM', 'picks/min'], ['Efficiency', '%'], ['CFM', 'ft³/min running'], ['Air', 'ft³/1,000 picks'], ['Main pressure', 'kgf/cm², highest'], ['Warp breaks', 'total · /100k picks'], 'Benchmark basis', ''];
-  t.append(el('thead', {}, el('tr', {}, hdr.map((h, i) => Array.isArray(h) ? th(h[0], h[1], i > 0 && i < 8) : th(h, null, false)))));
+  const hdr = ['Head group', ['Looms', 'ran'], ['RPM', 'picks/min'], ['Efficiency', '%'], ['Eff. RPM', 'RPM × eff'], ['CFM', 'ft³/min running'], ['Air', 'ft³/1,000 picks'], ['Main pressure', 'kgf/cm², highest'], ['Warp breaks', 'total · /100k picks'], 'Benchmark basis', ''];
+  t.append(el('thead', {}, el('tr', {}, hdr.map((h, i) => Array.isArray(h) ? th(h[0], h[1], i > 0 && i < 9) : th(h, null, false)))));
   const tb = el('tbody');
   for (const g of groups) {
     const b = bench(g.w, g.hg) || {}, tg = tgt(g.w, g.hg) || {}, A = g.A;
@@ -934,13 +966,14 @@ function pageQuality() {
       el('td', {class: 'num', text: A.looms}),
       el('td', {class: 'mvc'}, mcell(A.rpm, b.rpm, tg.rpm, f0, true, tolRpm, tolRpm, {w: g.w, hg: g.hg, m: 'rpm'})),
       el('td', {class: 'mvc'}, effCell(A.eff)),
+      el('td', {class: 'mvc'}, mcell(A.erpm, b.erpm, tgtE(g.w, g.hg), f0, true, tolRpm, tolRpm, {w: g.w, hg: g.hg, m: 'erpm'})),
       el('td', {class: 'mvc'}, mcell(A.cfm, cB, tg.cfm, f1, false, tolAir, tolAir, {w: g.w, hg: g.hg, m: 'apk', view: 'cfm', rpm: A.rpm})),
       el('td', {class: 'mvc'}, mcell(A.apk, b.apk, null, f1, false, tolAir, null, {w: g.w, hg: g.hg, m: 'apk'})),
-      el('td', {class: 'mvc'}, mcell(A.main_max, ok(b.main_max) ? b.main_max : b.main, tg.main, f2, false, tolP, tolP, {w: g.w, hg: g.hg, m: pkey(b)}), el('div', {class: 'note', text: 'avg ' + f2(A.main)})),
+      el('td', {class: 'mvc'}, mcell(A.main_max, ok(b.main_max) ? b.main_max : b.main, tg.main, f2, false, tolP, tolP, {w: g.w, hg: g.hg, m: pkey(b)})),
       el('td', {class: 'num'}, f0(A.warp), el('div', {class: 'note', text: f1(A.warpRate) + ' /100k'})),
       el('td', {}, g.hg === 'Unassigned' ? el('span', {class: 'pill muted', text: 'assign a head group'}) : benchTag(bench(g.w, g.hg))),
       el('td', {}, btn)));
-    if (open) tb.append(el('tr', {class: 'drillrow'}, el('td', {colspan: 10}, el('div', {class: 'note', style: 'margin-bottom:6px', text: `${g.hg}, ${g.w} cm: each loom against the head group benchmark and target`}), loomTable(g.recs))));
+    if (open) tb.append(el('tr', {class: 'drillrow'}, el('td', {colspan: 11}, el('div', {class: 'note', style: 'margin-bottom:6px', text: `${g.hg}, ${g.w} cm: each loom against the head group benchmark and target`}), loomTable(g.recs))));
   }
   t.append(tb);
   s.append(card('Current vs benchmark', 'CFM benchmark is the benchmark air per 1,000 picks at the RPM actually run', el('div', {class: 'tablebox'}, t), keyline()));
@@ -960,16 +993,26 @@ function pressLooms() {
     const b = bench(l.width, l.hg) || {}, t = tgt(l.width, l.hg) || {};
     const bm = ok(b.main_max) ? b.main_max : (ok(b.main) ? b.main : null);
     const tg = ok(t.main) ? t.main : null;
-    return {...l, bm, tg, ref: PMODE === 'tgt' ? (ok(tg) ? tg : bm) : bm};
+    const best = l.hg !== 'Unassigned' ? bestVal(l.width, l.hg, pkey(b)) : null;
+    return {...l, bm, best, tg, ref: refOf(PMODE, bm, best, tg)};
   });
 }
+// Reference for the "if every loom ran at…" figures: benchmark, best loom-day or target (falling back to the benchmark where unset).
+function refOf(mode, bm, best, tg) { return mode === 'tgt' ? (ok(tg) ? tg : bm) : mode === 'best' ? (ok(best) ? best : bm) : bm; }
+const REF_NOTE = {bm: 'Head group benchmark', best: 'Best loom-day where there is one, benchmark otherwise', tgt: 'Target where you set one, benchmark otherwise'};
+function modeSeg(cur, set, nT, label) {
+  const b = (v, text) => el('button', {type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', text, onclick: () => { set(v); render(); }});
+  return el('div', {class: 'seg', role: 'group', 'aria-label': label}, b('bm', 'Bring looms to benchmark'), b('best', 'To best'), b('tgt', `To target (${nT} set)`));
+}
+// Best marker in the bar charts: a filled circle (benchmark is a tick, target a hollow diamond).
+function bestDot(svg, cx, cy) { svg.append(svgEl('circle', {cx, cy, r: 5.5, fill: css('--good'), stroke: css('--panel'), 'stroke-width': 1.5})); }
 const lowered = (l) => ok(l.ref) ? Math.min(l.main, l.ref) : l.main;
 function pressureChart(rows, floorNow, floorNew) {
   const Wd = 900, rowH = 24, m = {l: 210, r: 60, t: 34, b: 40};
   const H = m.t + m.b + rows.length * rowH;
-  const xmax = Math.ceil(Math.max(5, ...rows.map((r) => Math.max(r.main, r.bm || 0, r.tg || 0))) * 2) / 2 + 0.25;
+  const xmax = Math.ceil(Math.max(5, ...rows.map((r) => Math.max(r.main, r.bm || 0, r.best || 0, r.tg || 0))) * 2) / 2 + 0.25;
   const x = (v) => m.l + (Wd - m.l - m.r) * v / xmax;
-  const svg = svgEl('svg', {viewBox: `0 0 ${Wd} ${H}`, width: '100%', class: 'chart', role: 'img', 'aria-label': 'Main pressure per loom: current against benchmark and target'});
+  const svg = svgEl('svg', {viewBox: `0 0 ${Wd} ${H}`, width: '100%', class: 'chart', role: 'img', 'aria-label': 'Main pressure per loom: current against benchmark, best and target'});
   const muted = css('--muted'), line = css('--line'), ink = css('--barline'), bar = css('--bar'), bad = css('--bad');
   for (let v = 0; v <= xmax + 1e-9; v += 0.5) {
     svg.append(svgEl('line', {x1: x(v), x2: x(v), y1: m.t - 6, y2: H - m.b, stroke: line}));
@@ -981,8 +1024,9 @@ function pressureChart(rows, floorNow, floorNew) {
     const lt = svgEl('text', {x: m.l - 10, y: y + 15, 'text-anchor': 'end', 'font-size': 12, fill: ink, class: 'lkt', 'data-loom': r.loom}); lt.textContent = `${r.loom} · ${r.hg} · ${r.width}`; lt.addEventListener('click', () => openLoom(r.loom, D.latest)); svg.append(lt);
     svg.append(svgEl('rect', {x: x(0), y: y + 5, width: Math.max(1, x(r.main) - x(0)), height: 13, rx: 2, fill: bar}));
     if (ok(r.bm)) svg.append(svgEl('rect', {x: x(r.bm) - 1.5, y: y + 1, width: 3, height: 21, fill: ink}));
+    if (ok(r.best)) bestDot(svg, x(r.best), y + 11.5);
     if (ok(r.tg)) { const cx = x(r.tg), cy = y + 11.5; svg.append(svgEl('path', {d: `M${cx} ${cy - 7}L${cx + 7} ${cy}L${cx} ${cy + 7}L${cx - 7} ${cy}Z`, fill: css('--panel'), stroke: ink, 'stroke-width': 2})); }
-    const vt = svgEl('text', {x: x(Math.max(r.main, r.bm || 0, r.tg || 0)) + 10, y: y + 15, 'font-size': 11.5, fill: ink, 'font-family': 'IBM Plex Mono, monospace'}); vt.textContent = r.main.toFixed(2); svg.append(vt);
+    const vt = svgEl('text', {x: x(Math.max(r.main, r.bm || 0, r.best || 0, r.tg || 0)) + 10, y: y + 15, 'font-size': 11.5, fill: ink, 'font-family': 'IBM Plex Mono, monospace'}); vt.textContent = r.main.toFixed(2); svg.append(vt);
   });
   const vline = (v, label, dash, color, row) => {
     if (!ok(v)) return;
@@ -998,6 +1042,7 @@ function legendShape(kind) {
   const ink = css('--barline');
   if (kind === 'bar') s.append(svgEl('rect', {x: 1, y: 3, width: 20, height: 8, rx: 2, fill: css('--bar')}));
   if (kind === 'tick') s.append(svgEl('rect', {x: 9.5, y: 0, width: 3, height: 14, fill: ink}));
+  if (kind === 'circle') s.append(svgEl('circle', {cx: 11, cy: 7, r: 5.5, fill: css('--good'), stroke: css('--panel'), 'stroke-width': 1.5}));
   if (kind === 'diamond') s.append(svgEl('path', {d: 'M11 1L17 7L11 13L5 7Z', fill: css('--panel'), stroke: ink, 'stroke-width': 2}));
   if (kind === 'dash') s.append(svgEl('line', {x1: 11, x2: 11, y1: 0, y2: 14, stroke: ink, 'stroke-width': 1.6, 'stroke-dasharray': '7 4'}));
   if (kind === 'dot') s.append(svgEl('line', {x1: 11, x2: 11, y1: 0, y2: 14, stroke: css('--bad'), 'stroke-width': 1.6, 'stroke-dasharray': '2 3'}));
@@ -1008,7 +1053,7 @@ function pagePressure() {
   const P = D.pressure; const fl = (P.floor || []).slice(-1)[0];
   const drop = P.line_drop_kgf || 0.2 / KGF;
   s.append(el('div', {}, el('h2', {text: `Main pressure, all 72 looms, ${dfmt(D.latest)}`}),
-    el('p', {class: 'lead', text: `One compressor serves both widths, so this page always covers both. The loom with the highest main pressure sets the floor; the compressor must give that plus ${f2(drop)} kgf/cm² (0.2 bar) line drop. Benchmark pressure is the 10th percentile of each head group's daily highest main pressure on that width. Click any benchmark figure to see the loom runs behind it.`})));
+    el('p', {class: 'lead', text: `One compressor serves both widths, so this page always covers both. The loom with the highest main pressure sets the floor; the compressor must give that plus ${f2(drop)} kgf/cm² (0.2 bar) line drop. Benchmark pressure is the 10th percentile of each head group's daily highest main pressure on that width. Click any benchmark or best figure to see the loom runs behind it.`})));
   if (W !== 'all') s.append(el('div', {class: 'scopenote', text: `The ${W} cm switch does not narrow this page: pressure is set across both widths.`}));
   const looms = pressLooms();
   const floorNow = looms.length ? Math.max(...looms.map((l) => l.main)) : null;
@@ -1018,24 +1063,22 @@ function pagePressure() {
   const why = (l) => !ok(l.ref) ? 'has no benchmark yet' : l.main <= l.ref + 1e-9 ? 'is already at or below its reference' : 'is at its reference';
   const holdNote = holders.length ? 'Held by ' + holders.slice(0, 3).map((l) => `loom ${l.loom} (${l.hg}), which ${why(l)}`).join('; ') + (holders.length > 3 ? ` and ${holders.length - 3} more` : '') : '';
   const nT = Object.keys(TG).filter((k) => ok(TG[k].main)).length;
-  const mode = el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference pressure'},
-    el('button', {type: 'button', 'aria-pressed': PMODE === 'bm' ? 'true' : 'false', text: 'Bring looms to benchmark', onclick: () => { PMODE = 'bm'; render(); }}),
-    el('button', {type: 'button', 'aria-pressed': PMODE === 'tgt' ? 'true' : 'false', text: `To target (${nT} set)`, onclick: () => { PMODE = 'tgt'; render(); }}));
+  const mode = modeSeg(PMODE, (v) => { PMODE = v; }, nT, 'Reference pressure');
   const sumBox = el('div', {class: 'kpis'},
     el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: 'Floor now'}), el('div', {class: 'big'}, f2(floorNow), el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: fl ? `loom ${fl.loom}, ${fl.hg}` : ''}))),
     el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: 'Floor after the work'}), el('div', {class: 'big'}, f2(floorNew), el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: holdNote}))),
     el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: 'Compressor setpoint'}), el('div', {class: 'big'}, f2(floorNow + drop), el('span', {class: 'arrow', text: '→'}), f2(floorNew + drop), el('small', {text: 'kgf/cm²'})))),
     el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: 'Compressor energy saved'}), el('div', {class: 'big'}, `${f1(rule * 100)}–${f1(adia * 100)}`, el('small', {text: '%'})), el('div', {class: 'note', text: '7%-per-bar rule to adiabatic estimate'}))));
-  s.append(card('If every loom ran at its reference pressure', PMODE === 'tgt' ? 'Target where you set one, benchmark otherwise' : 'Head group benchmark (10th percentile)', el('div', {class: 'toolbar'}, mode), sumBox,
+  s.append(card('If every loom ran at its reference pressure', PMODE === 'bm' ? 'Head group benchmark (10th percentile)' : REF_NOTE[PMODE], el('div', {class: 'toolbar'}, mode), sumBox,
     el('p', {class: 'note', text: 'Each loom above its reference is brought down to it; looms already below stay where they are. Looms with no head group or no benchmark stay as they are.'})));
 
   // chart: current vs benchmark and target, looms sorted by current pressure
   const sorted = looms.slice().sort((a, b) => b.main - a.main || a.loom - b.loom);
   const shown = PALL ? sorted : sorted.slice(0, 25);
-  s.append(card('Current vs benchmark, by loom', PALL ? `All ${sorted.length} looms` : `Highest 25 of ${sorted.length} looms`,
+  s.append(card('Current vs benchmark, best and target, by loom', PALL ? `All ${sorted.length} looms` : `Highest 25 of ${sorted.length} looms`,
     el('div', {class: 'tablebox'}, pressureChart(shown, floorNow, floorNew)),
     el('div', {class: 'legend'}, el('span', {class: 'lg'}, legendShape('bar'), 'Current'), el('span', {class: 'lg'}, legendShape('tick'), 'Benchmark'),
-      el('span', {class: 'lg'}, legendShape('diamond'), 'Target'), el('span', {class: 'lg'}, legendShape('dot'), 'Floor now'), el('span', {class: 'lg'}, legendShape('dash'), 'Floor after the work')),
+      el('span', {class: 'lg'}, legendShape('circle'), 'Best'), el('span', {class: 'lg'}, legendShape('diamond'), 'Target'), el('span', {class: 'lg'}, legendShape('dot'), 'Floor now'), el('span', {class: 'lg'}, legendShape('dash'), 'Floor after the work')),
     el('button', {class: 'link', type: 'button', text: PALL ? 'Show the highest 25' : `Show all ${sorted.length} looms`, onclick: () => { PALL = !PALL; render(); }})));
 
   // loom-wise / quality-wise comparison
@@ -1044,12 +1087,13 @@ function pagePressure() {
     el('button', {type: 'button', 'aria-pressed': PVIEW === 'quality' ? 'true' : 'false', text: 'Quality-wise', onclick: () => { PVIEW = 'quality'; render(); }}));
   let body;
   if (PVIEW === 'loom') {
-    body = table(['Loom', 'Head group', ['Now', 'kgf/cm²'], ['Benchmark', 'kgf/cm²'], ['Target', 'kgf/cm²'], ['Excess', 'kgf/cm² over reference'], 'Status'],
+    body = table(['Loom', 'Head group', ['Now', 'kgf/cm²'], ['Benchmark', 'kgf/cm²'], ['Best', 'kgf/cm²'], ['Target', 'kgf/cm²'], ['Excess', 'kgf/cm² over reference'], 'Status'],
       sorted.map((l) => {
         const ex = ok(l.ref) ? l.main - l.ref : null;
-        return [loomLink(l.loom, D.latest), el('span', {}, hgLink(l.hg, l.width, D.latest), el('div', {class: 'note', text: `${l.width} cm ${l.type}`})), f2(l.main), ok(l.bm) ? bmBtn(f2(l.bm), l.width, l.hg, pkey(bench(l.width, l.hg))) : '—', f2(l.tg), ok(ex) ? (ex > 0 ? '+' : '') + f2(ex) : '—',
+        return [loomLink(l.loom, D.latest), el('span', {}, hgLink(l.hg, l.width, D.latest), el('div', {class: 'note', text: `${l.width} cm ${l.type}`})), f2(l.main), ok(l.bm) ? bmBtn(f2(l.bm), l.width, l.hg, pkey(bench(l.width, l.hg))) : '—',
+          ok(l.best) ? bmBtn(f2(l.best), l.width, l.hg, pkey(bench(l.width, l.hg)), {kind: 'best'}) : '—', f2(l.tg), ok(ex) ? (ex > 0 ? '+' : '') + f2(ex) : '—',
           Math.abs(l.main - floorNow) < 1e-9 ? el('span', {class: 'pill bad', text: 'sets floor'}) : ok(ex) && ex > PRESS_TOL ? el('span', {class: 'pill warn', text: 'above reference'}) : ''];
-      }), [2, 3, 4, 5]);
+      }), [2, 3, 4, 5, 6]);
   } else {
     const by = new Map();
     for (const l of looms) { const k = key(l.width, l.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(l); }
@@ -1060,11 +1104,12 @@ function pagePressure() {
       const [r1, r2] = saving(floorNow, only);
       return {l0, L, hi, avg, only, r1, r2};
     }).sort((a, b) => b.hi - a.hi);
-    body = table(['Head group', ['Looms', 'ran'], ['Highest now', 'kgf/cm²'], ['Average now', 'kgf/cm²'], ['Benchmark', 'kgf/cm²'], ['Target', 'kgf/cm²'], ['Floor if only this quality is fixed', 'kgf/cm²'], ['Energy saved', '% of compressor']],
-      rows.map((r) => [el('span', {}, hgLink(r.l0.hg, r.l0.width, D.latest), el('div', {class: 'note', text: r.l0.width + ' cm'})), r.L.length, f2(r.hi), f2(r.avg), ok(r.l0.bm) ? bmBtn(f2(r.l0.bm), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg))) : '—', f2(r.l0.tg),
-        r.only < floorNow - 1e-9 ? el('b', {text: f2(r.only)}) : f2(r.only), r.r2 > 0 ? `${f1(r.r1 * 100)}–${f1(r.r2 * 100)}` : '0']), [1, 2, 3, 4, 5, 6, 7]);
+    body = table(['Head group', ['Looms', 'ran'], ['Highest now', 'kgf/cm²'], ['Average now', 'kgf/cm²'], ['Benchmark', 'kgf/cm²'], ['Best', 'kgf/cm²'], ['Target', 'kgf/cm²'], ['Floor if only this quality is fixed', 'kgf/cm²'], ['Energy saved', '% of compressor']],
+      rows.map((r) => [el('span', {}, hgLink(r.l0.hg, r.l0.width, D.latest), el('div', {class: 'note', text: r.l0.width + ' cm'})), r.L.length, f2(r.hi), f2(r.avg), ok(r.l0.bm) ? bmBtn(f2(r.l0.bm), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg))) : '—',
+        ok(r.l0.best) ? bmBtn(f2(r.l0.best), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg)), {kind: 'best'}) : '—', f2(r.l0.tg),
+        r.only < floorNow - 1e-9 ? el('b', {text: f2(r.only)}) : f2(r.only), r.r2 > 0 ? `${f1(r.r1 * 100)}–${f1(r.r2 * 100)}` : '0']), [1, 2, 3, 4, 5, 6, 7, 8]);
   }
-  s.append(card('Benchmark and target vs running pressure', PVIEW === 'quality' ? 'The floor only drops when every quality at the top comes down, so most single-quality rows show no saving on their own.' : 'Highest pressure each loom ran at in the day',
+  s.append(card('Benchmark, best and target vs running pressure', PVIEW === 'quality' ? 'The floor only drops when every quality at the top comes down, so most single-quality rows show no saving on their own.' : 'Highest pressure each loom ran at in the day',
     el('div', {class: 'toolbar'}, view), body));
 
   s.append(el('div', {class: 'split'},
@@ -1085,9 +1130,10 @@ function cfmRefs(x) {
   const b = bench(x.width, x.hg) || {}, t = tgt(x.width, x.hg) || {};
   const bm = x.hg !== 'Unassigned' ? cfmOf(b.apk, x.width, x.hg, x.rpm) : null;
   const tg = x.hg !== 'Unassigned' && ok(t.cfm) ? t.cfm : null;
-  const ref = CMODE === 'tgt' ? (ok(tg) ? tg : bm) : bm;
+  const best = x.hg !== 'Unassigned' ? cfmOf(bestVal(x.width, x.hg, 'apk'), x.width, x.hg, x.rpm) : null;
+  const ref = refOf(CMODE, bm, best, tg);
   const after = ok(ref) ? Math.min(x.cfm, ref) : x.cfm;
-  return {bm, tg, ref, after, ex: x.cfm - after};
+  return {bm, best, tg, ref, after, ex: x.cfm - after};
 }
 function cfmDay(date) {
   // every loom-day record with run time (same base as the Actions tab's total CFM), current benchmarks
@@ -1096,45 +1142,48 @@ function cfmDay(date) {
   for (const x of L) { const r = cfmRefs(x); now += x.cfm * x.run; after += r.after * x.run; }
   return L.length ? {now: now / 1440, after: after / 1440, air: now, n: new Set(L.map((x) => x.loom)).size} : null;
 }
-function cfmChart(rows) {
-  const Wd = 900, rowH = 24, m = {l: 210, r: 60, t: 14, b: 40};
+// Horizontal bar per loom: current value, benchmark tick, best dot, target diamond. rows: {x (loom-day), v, bm, best, tg, ex}
+// o: {step, labelEvery, axis, aria, dec, exSign}
+function refChart(rows, o) {
+  const Wd = 900, rowH = 24, m = {l: 210, r: 70, t: 14, b: 40};
   const H = m.t + m.b + rows.length * rowH;
-  const top = Math.max(10, ...rows.map((r) => Math.max(r.x.cfm, r.bm || 0, r.tg || 0)));
-  const xmax = Math.ceil(top / 10) * 10 + 5;
+  const top = Math.max(o.step * 2, ...rows.map((r) => Math.max(r.v || 0, r.bm || 0, r.best || 0, r.tg || 0)));
+  const xmax = Math.ceil(top / o.labelEvery) * o.labelEvery + o.step;
   const x = (v) => m.l + (Wd - m.l - m.r) * v / xmax;
-  const svg = svgEl('svg', {viewBox: `0 0 ${Wd} ${H}`, width: '100%', class: 'chart', role: 'img', 'aria-label': 'CFM per loom while running: current against benchmark and target'});
+  const svg = svgEl('svg', {viewBox: `0 0 ${Wd} ${H}`, width: '100%', class: 'chart', role: 'img', 'aria-label': o.aria});
   const muted = css('--muted'), line = css('--line'), ink = css('--barline'), bar = css('--bar');
-  for (let v = 0; v <= xmax + 1e-9; v += 5) {
+  for (let v = 0; v <= xmax + 1e-9; v += o.step) {
     svg.append(svgEl('line', {x1: x(v), x2: x(v), y1: m.t - 6, y2: H - m.b, stroke: line}));
-    if (v % 10 === 0) { const t = svgEl('text', {x: x(v), y: H - m.b + 16, 'text-anchor': 'middle', 'font-size': 11.5, fill: muted}); t.textContent = v; svg.append(t); }
+    if (Math.abs(v / o.labelEvery - Math.round(v / o.labelEvery)) < 1e-9) { const t = svgEl('text', {x: x(v), y: H - m.b + 16, 'text-anchor': 'middle', 'font-size': 11.5, fill: muted}); t.textContent = v; svg.append(t); }
   }
-  const ax = svgEl('text', {x: m.l + (Wd - m.l - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: muted}); ax.textContent = 'CFM, ft³/min while running'; svg.append(ax);
+  const ax = svgEl('text', {x: m.l + (Wd - m.l - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: muted}); ax.textContent = o.axis; svg.append(ax);
   rows.forEach((r, i) => {
     const y = m.t + i * rowH;
     const lt = svgEl('text', {x: m.l - 10, y: y + 15, 'text-anchor': 'end', 'font-size': 12, fill: ink, class: 'lkt', 'data-loom': r.x.loom}); lt.textContent = `${r.x.loom} · ${r.x.hg} · ${r.x.width}`; lt.addEventListener('click', () => openLoom(r.x.loom, r.x.date)); svg.append(lt);
-    svg.append(svgEl('rect', {x: x(0), y: y + 5, width: Math.max(1, x(r.x.cfm) - x(0)), height: 13, rx: 2, fill: bar}));
+    svg.append(svgEl('rect', {x: x(0), y: y + 5, width: Math.max(1, x(r.v || 0) - x(0)), height: 13, rx: 2, fill: bar}));
     if (ok(r.bm)) svg.append(svgEl('rect', {x: x(r.bm) - 1.5, y: y + 1, width: 3, height: 21, fill: ink}));
+    if (ok(r.best)) bestDot(svg, x(r.best), y + 11.5);
     if (ok(r.tg)) { const cx = x(r.tg), cy = y + 11.5; svg.append(svgEl('path', {d: `M${cx} ${cy - 7}L${cx + 7} ${cy}L${cx} ${cy + 7}L${cx - 7} ${cy}Z`, fill: css('--panel'), stroke: ink, 'stroke-width': 2})); }
-    const vt = svgEl('text', {x: x(Math.max(r.x.cfm, r.bm || 0, r.tg || 0)) + 10, y: y + 15, 'font-size': 11.5, fill: ink, 'font-family': 'IBM Plex Mono, monospace'});
-    vt.textContent = r.x.cfm.toFixed(1) + (r.ex > 0.05 ? `  +${r.ex.toFixed(1)}` : ''); svg.append(vt);
+    const vt = svgEl('text', {x: x(Math.max(r.v || 0, r.bm || 0, r.best || 0, r.tg || 0)) + 10, y: y + 15, 'font-size': 11.5, fill: ink, 'font-family': 'IBM Plex Mono, monospace'});
+    vt.textContent = (r.v || 0).toFixed(o.dec) + (r.ex > 0.05 ? `  ${o.exSign}${r.ex.toFixed(o.dec)}` : ''); svg.append(vt);
   });
   return svg;
 }
+const chartLegend = (what, exText) => el('div', {class: 'legend'}, el('span', {class: 'lg'}, legendShape('bar'), `Current ${what}`), el('span', {class: 'lg'}, legendShape('tick'), `Benchmark ${what}`),
+  el('span', {class: 'lg'}, legendShape('circle'), `Best ${what}`), el('span', {class: 'lg'}, legendShape('diamond'), `Target ${what}`), el('span', {text: exText}));
 function pageCfm() {
   const s = el('section', {class: 'page', id: 'cfm'});
   s.append(el('div', {}, el('h2', {text: `CFM, ${wLabel()} looms, ${dfmt(D.latest)}`}),
-    el('p', {class: 'lead', text: 'The compressor supplies the sum of every loom\'s air, so each loom brought down to its reference cuts total demand directly. Benchmark CFM is the head group\'s benchmark air per 1,000 picks (10th percentile) at the RPM the loom actually ran, so a loom is not rewarded for running slow. Click any benchmark figure to see the loom runs behind it.'})));
+    el('p', {class: 'lead', text: 'The compressor supplies the sum of every loom\'s air, so each loom brought down to its reference cuts total demand directly. Benchmark CFM is the head group\'s benchmark air per 1,000 picks (10th percentile) at the RPM the loom actually ran, so a loom is not rewarded for running slow; best CFM is the best loom-day\'s air per 1,000 picks at that RPM. Click any benchmark or best figure to see the loom runs behind it.'})));
   const recs = latestRecs().map((x) => ({x, ...cfmRefs(x)}));
   const day = cfmDay(D.latest);
   const nT = Object.keys(TG).filter((k) => ok(TG[k].cfm)).length;
-  const mode = el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference CFM'},
-    el('button', {type: 'button', 'aria-pressed': CMODE === 'bm' ? 'true' : 'false', text: 'Bring looms to benchmark', onclick: () => { CMODE = 'bm'; render(); }}),
-    el('button', {type: 'button', 'aria-pressed': CMODE === 'tgt' ? 'true' : 'false', text: `To target (${nT} set)`, onclick: () => { CMODE = 'tgt'; render(); }}));
+  const mode = modeSeg(CMODE, (v) => { CMODE = v; }, nT, 'Reference CFM');
   const above = recs.filter((r) => ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref));
   const noRef = recs.filter((r) => !ok(r.ref)).length;
   const saved = day ? day.now - day.after : null, pct = day && day.now ? 100 * saved / day.now : null;
   const kp = (label, big, unit, note) => el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'big'}, ...big, el('small', {text: unit})), note ? el('div', {class: 'note', text: note}) : null));
-  s.append(card('If every loom ran at its reference CFM', CMODE === 'tgt' ? 'Target where you set one, benchmark otherwise' : 'Head group benchmark at each loom\'s own RPM',
+  s.append(card('If every loom ran at its reference CFM', (CMODE === 'bm' ? 'Head group benchmark' : REF_NOTE[CMODE]) + ' at each loom\'s own RPM',
     el('div', {class: 'toolbar'}, mode),
     el('div', {class: 'kpis'},
       kp('Total CFM now', [f0(day && day.now)], 'CFM', `24-h average draw of ${day ? day.n : 0} looms · ${f0(day && day.air)} ft³ in the day`),
@@ -1145,10 +1194,9 @@ function pageCfm() {
 
   const sorted = recs.slice().sort((a, b) => b.ex - a.ex || b.x.cfm - a.x.cfm || a.x.loom - b.x.loom);
   const shown = CALL ? sorted : sorted.slice(0, 25);
-  s.append(card('Current vs benchmark, by loom', CALL ? `All ${sorted.length} looms, most excess first` : `25 looms with the most excess, of ${sorted.length}`,
-    el('div', {class: 'tablebox'}, cfmChart(shown)),
-    el('div', {class: 'legend'}, el('span', {class: 'lg'}, legendShape('bar'), 'Current CFM'), el('span', {class: 'lg'}, legendShape('tick'), 'Benchmark CFM'),
-      el('span', {class: 'lg'}, legendShape('diamond'), 'Target CFM'), el('span', {text: '+n after the value = excess CFM over the reference'})),
+  s.append(card('Current vs benchmark, best and target, by loom', CALL ? `All ${sorted.length} looms, most excess first` : `25 looms with the most excess, of ${sorted.length}`,
+    el('div', {class: 'tablebox'}, refChart(shown.map((r) => ({...r, v: r.x.cfm})), {step: 5, labelEvery: 10, axis: 'CFM, ft³/min while running', aria: 'CFM per loom while running: current against benchmark, best and target', dec: 1, exSign: '+'})),
+    chartLegend('CFM', '+n after the value = excess CFM over the reference'),
     el('button', {class: 'link', type: 'button', text: CALL ? 'Show the top 25' : `Show all ${sorted.length} looms`, onclick: () => { CALL = !CALL; render(); }})));
 
   const view = el('div', {class: 'seg', role: 'group', 'aria-label': 'View'},
@@ -1156,12 +1204,13 @@ function pageCfm() {
     el('button', {type: 'button', 'aria-pressed': CVIEW === 'quality' ? 'true' : 'false', text: 'Quality-wise', onclick: () => { CVIEW = 'quality'; render(); }}));
   let body;
   if (CVIEW === 'loom') {
-    body = table(['Loom', 'Head group', ['RPM', 'picks/min'], ['Now', 'CFM'], ['Benchmark', 'CFM at this RPM'], ['Target', 'CFM'], ['Excess', 'CFM over reference'], ['Air', 'ft³/1,000 picks'], ['Excess air', 'ft³ in the day'], 'Status'],
+    body = table(['Loom', 'Head group', ['RPM', 'picks/min'], ['Now', 'CFM'], ['Benchmark', 'CFM at this RPM'], ['Best', 'CFM at this RPM'], ['Target', 'CFM'], ['Excess', 'CFM over reference'], ['Air', 'ft³/1,000 picks'], ['Excess air', 'ft³ in the day'], 'Status'],
       sorted.map((r) => {
         const st = ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref) ? el('span', {class: 'pill warn', text: 'above reference'}) : !ok(r.ref) ? el('span', {class: 'pill muted', text: 'no reference'}) : '';
         return [loomLink(r.x.loom, r.x.date), el('span', {}, hgLink(r.x.hg, r.x.width, r.x.date), el('div', {class: 'note', text: `${r.x.width} cm ${r.x.type}`})), f0(r.x.rpm), f1(r.x.cfm),
-          ok(r.bm) ? bmBtn(f1(r.bm), r.x.width, r.x.hg, 'apk', {view: 'cfm', rpm: r.x.rpm}) : '—', f1(r.tg), r.ex > 0.05 ? '+' + f1(r.ex) : '0', f1(r.x.apk), r.ex > 0.05 ? f0(r.ex * r.x.run) : '0', st];
-      }), [2, 3, 4, 5, 6, 7, 8]);
+          ok(r.bm) ? bmBtn(f1(r.bm), r.x.width, r.x.hg, 'apk', {view: 'cfm', rpm: r.x.rpm}) : '—',
+          ok(r.best) ? bmBtn(f1(r.best), r.x.width, r.x.hg, 'apk', {kind: 'best', view: 'cfm', rpm: r.x.rpm}) : '—', f1(r.tg), r.ex > 0.05 ? '+' + f1(r.ex) : '0', f1(r.x.apk), r.ex > 0.05 ? f0(r.ex * r.x.run) : '0', st];
+      }), [2, 3, 4, 5, 6, 7, 8, 9]);
   } else {
     const by = new Map();
     for (const r of recs) { const k = key(r.x.width, r.x.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
@@ -1169,20 +1218,105 @@ function pageCfm() {
     const rows = [...by.values()].map((R) => {
       const x0 = R[0].x, A = agg(R.map((r) => r.x)), b = bench(x0.width, x0.hg) || {}, t = tgt(x0.width, x0.hg) || {};
       const exAir = R.reduce((a, r) => a + r.ex * r.x.run, 0);
-      return {x0, R, A, b, t, bm: x0.hg !== 'Unassigned' ? cfmOf(b.apk, x0.width, x0.hg, A.rpm) : null, exAir, over: R.filter((r) => ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref)).length};
+      const ba = x0.hg !== 'Unassigned' ? bestVal(x0.width, x0.hg, 'apk') : null;
+      return {x0, R, A, b, t, ba, bm: x0.hg !== 'Unassigned' ? cfmOf(b.apk, x0.width, x0.hg, A.rpm) : null, best: cfmOf(ba, x0.width, x0.hg, A.rpm), exAir, over: R.filter((r) => ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref)).length};
     }).sort((a, b) => b.exAir - a.exAir);
-    body = table(['Head group', ['Looms', 'ran'], ['RPM', 'picks/min'], ['CFM now', 'ft³/min running'], ['Benchmark', 'CFM at this RPM'], ['Target', 'CFM'], ['Air now', 'ft³/1,000 picks'], ['Air benchmark', 'ft³/1,000 picks'], ['Looms above', 'reference'], ['Saved if fixed', 'CFM, 24-h draw'], ['Share of saving', '%']],
+    body = table(['Head group', ['Looms', 'ran'], ['RPM', 'picks/min'], ['CFM now', 'ft³/min running'], ['Benchmark', 'CFM at this RPM'], ['Best', 'CFM at this RPM'], ['Target', 'CFM'], ['Air now', 'ft³/1,000 picks'], ['Air benchmark', 'ft³/1,000 picks'], ['Air best', 'ft³/1,000 picks'], ['Looms above', 'reference'], ['Saved if fixed', 'CFM, 24-h draw'], ['Share of saving', '%']],
       rows.map((r) => [el('span', {}, hgLink(r.x0.hg, r.x0.width, D.latest), el('div', {class: 'note', text: r.x0.width + ' cm'})), r.A.looms, f0(r.A.rpm), f1(r.A.cfm),
-        ok(r.bm) ? bmBtn(f1(r.bm), r.x0.width, r.x0.hg, 'apk', {view: 'cfm', rpm: r.A.rpm}) : '—', f1(r.t.cfm), f1(r.A.apk),
-        ok(r.b.apk) && r.x0.hg !== 'Unassigned' ? bmBtn(f1(r.b.apk), r.x0.width, r.x0.hg, 'apk') : '—', r.over, f1(r.exAir / 1440), tot > 0 ? f0(100 * r.exAir / tot) : '0']), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        ok(r.bm) ? bmBtn(f1(r.bm), r.x0.width, r.x0.hg, 'apk', {view: 'cfm', rpm: r.A.rpm}) : '—',
+        ok(r.best) ? bmBtn(f1(r.best), r.x0.width, r.x0.hg, 'apk', {kind: 'best', view: 'cfm', rpm: r.A.rpm}) : '—', f1(r.t.cfm), f1(r.A.apk),
+        ok(r.b.apk) && r.x0.hg !== 'Unassigned' ? bmBtn(f1(r.b.apk), r.x0.width, r.x0.hg, 'apk') : '—',
+        ok(r.ba) ? bmBtn(f1(r.ba), r.x0.width, r.x0.hg, 'apk', {kind: 'best'}) : '—', r.over, f1(r.exAir / 1440), tot > 0 ? f0(100 * r.exAir / tot) : '0']), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   }
-  s.append(card('Benchmark and target vs running CFM', CVIEW === 'quality' ? 'Unlike pressure, fixing one quality saves its own share straight away' : 'CFM while running on the latest day; benchmark at each loom\'s own RPM',
+  s.append(card('Benchmark, best and target vs running CFM', CVIEW === 'quality' ? 'Unlike pressure, fixing one quality saves its own share straight away' : 'CFM while running on the latest day; benchmark at each loom\'s own RPM',
     el('div', {class: 'toolbar'}, view), body));
 
   const hist = (D.complete_days || []).slice().reverse().slice(0, 14).map((d) => ({d, c: cfmDay(d)})).filter((h) => h.c);
-  s.append(card('Total CFM by day', 'Both shifts, 24-h average draw; "at reference" uses today\'s benchmarks and targets for every day',
+  s.append(card('Total CFM by day', 'Both shifts, 24-h average draw; "at reference" uses today\'s benchmarks, best and targets for every day',
     table(['Date', ['Total now', 'CFM'], ['At reference', 'CFM'], ['Excess', 'CFM'], ['Saving', '% of air'], ['Air in the day', 'ft³']],
       hist.map((h) => [dfmt(h.d), f0(h.c.now), f0(h.c.after), f0(h.c.now - h.c.after), f1(100 * (h.c.now - h.c.after) / h.c.now), f0(h.c.air)]), [1, 2, 3, 4, 5])));
+  return s;
+}
+
+// ---------------------------------------------------------------- Effective RPM
+// Same layout as the CFM tab. Every loom brought up to its reference effective RPM adds picks directly.
+// Reference = head group benchmark (90th percentile), best loom-day, or target (93% of target RPM); benchmark where unset.
+function erpmRefs(x) {
+  const b = bench(x.width, x.hg) || {}, has = x.hg !== 'Unassigned';
+  const bm = has && ok(b.erpm) ? b.erpm : null, best = has ? bestVal(x.width, x.hg, 'erpm') : null, tg = has ? tgtE(x.width, x.hg) : null;
+  const ref = refOf(EMODE, bm, best, tg);
+  const after = ok(ref) ? Math.max(x.erpm, ref) : x.erpm;
+  const gap = after - x.erpm;
+  return {bm, best, tg, ref, after, ex: gap, gain: gap * (x.run + x.stop) * pf(x.width, x.hg)};   // gain in fabric picks
+}
+function erpmDay(date) {
+  const L = (D.loomdays || []).filter((x) => x.date === date && inW(x.width) && x.run > 0);
+  let now = 0, gain = 0;
+  for (const x of L) { now += ok(x.fpicks) ? x.fpicks : x.picks; gain += erpmRefs(x).gain; }
+  const A = agg(L);
+  return L.length ? {now, after: now + gain, gain, erpm: A && A.erpm, n: new Set(L.map((x) => x.loom)).size} : null;
+}
+function pageErpm() {
+  const s = el('section', {class: 'page', id: 'erpm'});
+  s.append(el('div', {}, el('h2', {text: `Effective RPM, ${wLabel()} looms, ${dfmt(D.latest)}`}),
+    el('p', {class: 'lead', text: `Effective RPM = RPM × efficiency ÷ 100: the picks a loom actually makes per minute of run plus stop time, so it counts speed and stoppages together. Benchmark is the 90th percentile of each head group's loom-days (all history), best is its highest loom-day, and the target is ${f0(ERPM_TGT * 100)}% of your target RPM. Every loom brought up to its reference adds picks directly. Picks count double panna on 280 cm. Click any benchmark or best figure to see the loom runs behind it.`})));
+  const recs = latestRecs().map((x) => ({x, ...erpmRefs(x)}));
+  const day = erpmDay(D.latest);
+  const nT = Object.keys(TG).filter((k) => ok(TG[k].rpm)).length;
+  const mode = modeSeg(EMODE, (v) => { EMODE = v; }, nT, 'Reference effective RPM');
+  const below = recs.filter((r) => ok(r.ref) && r.x.erpm < r.ref - tolRpm(r.ref));
+  const noRef = recs.filter((r) => !ok(r.ref)).length;
+  const lk = (p) => f2(p / PICK_LAKH);
+  const kp = (label, big, unit, note) => el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'big'}, ...big, el('small', {text: unit})), note ? el('div', {class: 'note', text: note}) : null));
+  s.append(card('If every loom ran at its reference effective RPM', EMODE === 'bm' ? 'Head group benchmark (90th percentile)' : EMODE === 'tgt' ? `Target (${f0(ERPM_TGT * 100)}% of target RPM) where you set one, benchmark otherwise` : REF_NOTE[EMODE],
+    el('div', {class: 'toolbar'}, mode),
+    el('div', {class: 'kpis'},
+      kp('Effective RPM now', [f0(day && day.erpm)], 'RPM', `all ${day ? day.n : 0} looms that ran, picks ÷ (run + stop) minutes`),
+      kp('Picks now', [lk(day && day.now)], 'lakh', 'in the day'),
+      kp('Picks after the work', [lk(day && day.after)], 'lakh', 'each loom at or above its reference'),
+      kp('Picks gained', [lk(day && day.gain)], 'lakh', day && day.now ? `${f1(100 * day.gain / day.now)}% more output` : null)),
+    el('p', {class: 'note', text: `Each loom below its reference is brought up to it; looms already above stay where they are. ${below.length} loom${below.length === 1 ? ' is' : 's are'} below reference by more than ${S().tol_rpm_pct}%.${noRef ? ` ${noRef} loom${noRef === 1 ? ' has' : 's have'} no head group or benchmark and stay as they are.` : ''}`})));
+
+  const sorted = recs.slice().sort((a, b) => b.ex - a.ex || a.x.erpm - b.x.erpm || a.x.loom - b.x.loom);
+  const shown = EALL ? sorted : sorted.slice(0, 25);
+  s.append(card('Current vs benchmark, best and target, by loom', EALL ? `All ${sorted.length} looms, biggest shortfall first` : `25 looms with the biggest shortfall, of ${sorted.length}`,
+    el('div', {class: 'tablebox'}, refChart(shown.map((r) => ({...r, v: r.x.erpm})), {step: 50, labelEvery: 100, axis: 'Effective RPM, picks per minute of run + stop time', aria: 'Effective RPM per loom: current against benchmark, best and target', dec: 0, exSign: '−'})),
+    chartLegend('effective RPM', '−n after the value = effective RPM short of the reference'),
+    el('button', {class: 'link', type: 'button', text: EALL ? 'Show the top 25' : `Show all ${sorted.length} looms`, onclick: () => { EALL = !EALL; render(); }})));
+
+  const view = el('div', {class: 'seg', role: 'group', 'aria-label': 'View'},
+    el('button', {type: 'button', 'aria-pressed': EVIEW === 'loom' ? 'true' : 'false', text: 'Loom-wise', onclick: () => { EVIEW = 'loom'; render(); }}),
+    el('button', {type: 'button', 'aria-pressed': EVIEW === 'quality' ? 'true' : 'false', text: 'Quality-wise', onclick: () => { EVIEW = 'quality'; render(); }}));
+  let body;
+  if (EVIEW === 'loom') {
+    body = table(['Loom', 'Head group', ['RPM', 'picks/min'], ['Eff', '%'], ['Now', 'effective RPM'], ['Benchmark', 'effective RPM'], ['Best', 'effective RPM'], ['Target', `${f0(ERPM_TGT * 100)}% of target RPM`], ['Short', 'effective RPM'], ['Picks short', 'lakh in the day'], 'Status'],
+      sorted.map((r) => {
+        const st = ok(r.ref) && r.x.erpm < r.ref - tolRpm(r.ref) ? el('span', {class: 'pill warn', text: 'below reference'}) : !ok(r.ref) ? el('span', {class: 'pill muted', text: 'no reference'}) : '';
+        return [loomLink(r.x.loom, r.x.date), el('span', {}, hgLink(r.x.hg, r.x.width, r.x.date), el('div', {class: 'note', text: `${r.x.width} cm ${r.x.type}`})), f0(r.x.rpm), f1(r.x.eff), f0(r.x.erpm),
+          ok(r.bm) ? bmBtn(f0(r.bm), r.x.width, r.x.hg, 'erpm') : '—', ok(r.best) ? bmBtn(f0(r.best), r.x.width, r.x.hg, 'erpm', {kind: 'best'}) : '—', f0(r.tg),
+          r.ex > 0.5 ? '−' + f0(r.ex) : '0', r.ex > 0.5 ? lk(r.gain) : '0', st];
+      }), [2, 3, 4, 5, 6, 7, 8, 9]);
+  } else {
+    const by = new Map();
+    for (const r of recs) { const k = key(r.x.width, r.x.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
+    const tot = recs.reduce((a, r) => a + r.gain, 0);
+    const rows = [...by.values()].map((R) => {
+      const x0 = R[0].x, A = agg(R.map((r) => r.x)), b = bench(x0.width, x0.hg) || {}, has = x0.hg !== 'Unassigned';
+      return {x0, A, bm: has && ok(b.erpm) ? b.erpm : null, best: has ? bestVal(x0.width, x0.hg, 'erpm') : null, tg: has ? tgtE(x0.width, x0.hg) : null,
+        gain: R.reduce((a, r) => a + r.gain, 0), under: R.filter((r) => ok(r.ref) && r.x.erpm < r.ref - tolRpm(r.ref)).length};
+    }).sort((a, b) => b.gain - a.gain);
+    body = table(['Head group', ['Looms', 'ran'], ['RPM', 'picks/min'], ['Eff', '%'], ['Now', 'effective RPM'], ['Benchmark', 'effective RPM'], ['Best', 'effective RPM'], ['Target', `${f0(ERPM_TGT * 100)}% of target RPM`], ['Looms below', 'reference'], ['Gained if fixed', 'lakh picks'], ['Share of gain', '%']],
+      rows.map((r) => [el('span', {}, hgLink(r.x0.hg, r.x0.width, D.latest), el('div', {class: 'note', text: r.x0.width + ' cm'})), r.A.looms, f0(r.A.rpm), f1(r.A.eff), f0(r.A.erpm),
+        ok(r.bm) ? bmBtn(f0(r.bm), r.x0.width, r.x0.hg, 'erpm') : '—', ok(r.best) ? bmBtn(f0(r.best), r.x0.width, r.x0.hg, 'erpm', {kind: 'best'}) : '—', f0(r.tg),
+        r.under, lk(r.gain), tot > 0 ? f0(100 * r.gain / tot) : '0']), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  }
+  s.append(card('Benchmark, best and target vs running effective RPM', EVIEW === 'quality' ? 'Fixing one quality adds its own share of picks straight away' : 'Latest day; picks short = shortfall × (run + stop) minutes, double panna on 280 cm',
+    el('div', {class: 'toolbar'}, view), body));
+
+  const hist = (D.complete_days || []).slice().reverse().slice(0, 14).map((d) => ({d, c: erpmDay(d)})).filter((h) => h.c);
+  s.append(card('Picks by day', 'Both shifts; "at reference" uses today\'s benchmarks, best and targets for every day',
+    table(['Date', ['Effective RPM', 'all looms'], ['Picks now', 'lakh'], ['At reference', 'lakh'], ['Gained', 'lakh'], ['Gain', '% of picks']],
+      hist.map((h) => [dfmt(h.d), f0(h.c.erpm), lk(h.c.now), lk(h.c.after), lk(h.c.gain), f1(100 * h.c.gain / h.c.now)]), [1, 2, 3, 4, 5])));
   return s;
 }
 
@@ -1320,7 +1454,7 @@ function pageTrends() {
   const dates = (D.complete_days || []).slice(-30);
   s.append(el('div', {}, el('h2', {text: `Trends by head group, ${wLabel()}`}),
     el('p', {class: 'lead', text: 'Daily values for each head group over the last 30 complete days, from looms that ran at least 60 minutes. Line names sit at the right end of each line; pick one head group to highlight it.'})));
-  const metrics = [['eff', 'Efficiency', '%'], ['rpm', 'RPM', 'RPM'], ['cfm', 'CFM', 'CFM (ft³/min)'], ['apk', 'Air / 1,000 picks', 'ft³'], ['main_max', 'Main pressure', 'kgf/cm²'], ['warpRate', 'Warp breaks', 'per 100k picks']];
+  const metrics = [['eff', 'Efficiency', '%'], ['rpm', 'RPM', 'RPM'], ['erpm', 'Effective RPM', 'RPM × eff'], ['cfm', 'CFM', 'CFM (ft³/min)'], ['apk', 'Air / 1,000 picks', 'ft³'], ['main_max', 'Main pressure', 'kgf/cm²'], ['warpRate', 'Warp breaks', 'per 100k picks']];
   const seg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Metric'}, metrics.map(([k, l]) => el('button', {type: 'button', 'aria-pressed': TREND_METRIC === k ? 'true' : 'false', text: l, onclick: () => { TREND_METRIC = k; render(); }})));
   const by = new Map();
   for (const x of D.loomdays || []) { if (!inW(x.width) || x.run < 60 || x.hg === 'Unassigned' || !dates.includes(x.date)) continue; const k = key(x.width, x.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
@@ -1332,7 +1466,7 @@ function pageTrends() {
   const series = keys.map((k, i) => {
     const L = by.get(k); const [w, hg] = k.split('|');
     return {name: W === 'all' ? `${hg} · ${w}` : hg, color: HG_COLORS[i % HG_COLORS.length], hl: TREND_HL === k, dim: TREND_HL && TREND_HL !== k,
-      pts: dates.map((d) => { const A = agg(L.filter((x) => x.date === d)); const v = A ? A[TREND_METRIC] : null; return [d, ok(v) ? +v.toFixed(TREND_METRIC === 'rpm' ? 0 : 2) : null]; })};
+      pts: dates.map((d) => { const A = agg(L.filter((x) => x.date === d)); const v = A ? A[TREND_METRIC] : null; return [d, ok(v) ? +v.toFixed(TREND_METRIC === 'rpm' || TREND_METRIC === 'erpm' ? 0 : 2) : null]; })};
   });
   s.append(card('Daily trend', unit, el('div', {class: 'toolbar'}, seg, el('label', {for: 'trend-hl', text: 'Highlight'}), hl), el('div', {class: 'tablebox'}, lineChart(series, dates, 'Daily ' + TREND_METRIC + ' by head group', unit))));
   const dr = (D.alerts || []).filter((a) => a.scope === 'Quality' && (W === 'all' || a.msg.includes(W + ' cm')));
@@ -1344,7 +1478,7 @@ function pageTrends() {
 function pageTargets() {
   const s = el('section', {class: 'page', id: 'targets'});
   s.append(el('div', {}, el('h2', {text: `Targets, ${wLabel()}`}),
-    el('p', {class: 'lead', text: 'Set any or all of target CFM, RPM and main pressure for a head group on each width. Leave a box empty for no target. Every page compares against these alongside the benchmark; they apply as soon as you save. 280 cm head groups count double panna (picks ×2, air per 1,000 picks halved) unless you switch them to single panna here; that applies straight away too.'})));
+    el('p', {class: 'lead', text: `Set any or all of target CFM, RPM and main pressure for a head group on each width. Leave a box empty for no target. The effective RPM target is ${f0(ERPM_TGT * 100)}% of the target RPM, so it needs no box of its own. Every page compares against these alongside the benchmark and best; they apply as soon as you save. 280 cm head groups count double panna (picks ×2, air per 1,000 picks halved) unless you switch them to single panna here; that applies straight away too.`})));
   const ks = new Map();
   for (const b of D.benchmarks || []) if (inW(b.width)) ks.set(key(b.width, b.hg), {w: b.width, hg: b.hg});
   for (const x of D.loomdays || []) if (inW(x.width) && x.hg !== 'Unassigned') ks.set(key(x.width, x.hg), {w: x.width, hg: x.hg});
@@ -1356,8 +1490,9 @@ function pageTargets() {
   const rows = list.map(({w, hg}) => {
     const k = key(w, hg), b = bench(w, hg) || {}, t = TG[k] || {}, A = cur.has(k) ? agg(cur.get(k)) : null;
     const id = 'tg-' + tgtId(w, hg);
-    const inp = (f, step, now, bm, fmt, bk) => el('div', {}, el('input', {type: 'number', id: `${id}-${f}`, step, min: '0', inputmode: 'decimal', 'aria-label': `Target ${f} for ${hg} ${w} cm`, value: ok(t[f]) ? String(t[f]) : null}),
-      el('div', {class: 'hint'}, `now ${fmt(now)} · `, ok(bm) && bk ? bmBtn('bm ' + fmt(bm), w, hg, bk.m, bk) : `bm ${fmt(bm)}`));
+    const inp = (f, step, now, bm, best, fmt, bk, extra) => el('div', {}, el('input', {type: 'number', id: `${id}-${f}`, step, min: '0', inputmode: 'decimal', 'aria-label': `Target ${f} for ${hg} ${w} cm`, value: ok(t[f]) ? String(t[f]) : null}),
+      el('div', {class: 'hint'}, `now ${fmt(now)} · `, ok(bm) && bk ? bmBtn('bm ' + fmt(bm), w, hg, bk.m, bk) : `bm ${fmt(bm)}`,
+        ok(best) && bk ? [' · ', bmBtn('best ' + fmt(best), w, hg, bk.m, {...bk, kind: 'best'})] : null, extra || null));
     const msg = el('div', {class: 'meta'});
     const btn = el('button', {class: 'primary', type: 'button', text: 'Save', disabled: !db});
     btn.addEventListener('click', async () => {
@@ -1375,7 +1510,9 @@ function pageTargets() {
     });
     const cB = A ? cfmOf(b.apk, w, hg, A.rpm) : null;
     return [el('span', {}, hgLink(hg, w, D.latest), el('div', {class: 'note', text: w + ' cm'})),
-      inp('cfm', '0.1', A && A.cfm, cB, f1, {m: 'apk', view: 'cfm', rpm: A && A.rpm}), inp('rpm', '1', A && A.rpm, b.rpm, f0, {m: 'rpm'}), inp('main', '0.05', A && A.main_max, ok(b.main_max) ? b.main_max : b.main, f2, {m: pkey(b)}),
+      inp('cfm', '0.1', A && A.cfm, cB, A ? cfmOf(bestVal(w, hg, 'apk'), w, hg, A.rpm) : null, f1, {m: 'apk', view: 'cfm', rpm: A && A.rpm}),
+      inp('rpm', '1', A && A.rpm, b.rpm, bestVal(w, hg, 'rpm'), f0, {m: 'rpm'}, ok(t.rpm) ? el('div', {}, `effective RPM target ${f0(t.rpm * ERPM_TGT)} (${f0(ERPM_TGT * 100)}%)`) : null),
+      inp('main', '0.05', A && A.main_max, ok(b.main_max) ? b.main_max : b.main, bestVal(w, hg, pkey(b)), f2, {m: pkey(b)}),
       String(w) === '280' ? pannaSwitch(w, hg) : el('span', {class: 'note', text: 'single panna'}), el('div', {}, btn, msg)];
   });
   const tb = table(['Head group', ['Target CFM', 'ft³/min while running'], ['Target RPM', 'picks/min'], ['Target main pressure', 'kgf/cm²'], ['Panna', '280 cm: double unless switched'], ''], rows);
@@ -1409,11 +1546,11 @@ function pageData() {
 
 // ---------------------------------------------------------------- Benchmarks tab
 let BQ = '', BMET = 'rpm', BQS = '', BKIND = 'pct';
-const BMET_LIST = [['rpm', 'RPM'], ['apk', 'Air & CFM'], ['main_max', 'Main pressure (max)'], ['main', 'Main pressure (avg)'], ['warp_rate', 'Warp breaks']];
+const BMET_LIST = [['rpm', 'RPM'], ['erpm', 'Effective RPM'], ['apk', 'Air & CFM'], ['main_max', 'Main pressure'], ['warp_rate', 'Warp breaks']];
 function pageBench() {
   const s = el('section', {class: 'page', id: 'benchmarks'});
   s.append(el('div', {}, el('h2', {text: `Benchmarks, ${wLabel()}`}),
-    el('p', {class: 'lead', text: 'Pick a quality to see its benchmark (90th percentile for RPM, 10th for air and pressure, all history) and its single best loom-day, with the loom-days behind each. Click a loom number to open that loom.'})));
+    el('p', {class: 'lead', text: 'Pick a quality to see its benchmark (90th percentile for RPM and effective RPM, 10th for air and pressure, all history) and its single best loom-day, with the loom-days behind each. Click a loom number to open that loom.'})));
   const list = (D.benchmarks || []).filter((b) => inW(b.width)).slice().sort((a, b) => a.hg.localeCompare(b.hg) || String(a.width).localeCompare(String(b.width)));
   if (!list.length) { s.append(card('No benchmarks yet', null, el('div', {class: 'empty', text: 'Benchmarks appear once head groups have complete days of running.'}))); return s; }
   if (!BQ || !list.some((b) => key(b.width, b.hg) === BQ)) BQ = key(list[0].width, list[0].hg);
@@ -1463,7 +1600,7 @@ function pageBench() {
 
 // ---------------------------------------------------------------- Navigation, search, theme
 const ICONS = {
-  bolt: ['M13 3 4 14h7l-1 7 9-11h-7l1-7z'], layers: ['M12 3 3 8l9 5 9-5-9-5z', 'M3 12.5l9 5 9-5', 'M3 16.5l9 5 9-5'],
+  bolt: ['M13 3 4 14h7l-1 7 9-11h-7l1-7z'], spin: ['M20 12a8 8 0 1 1-2.3-5.6', 'M20 4v4h-4', 'M12 12l3-2'], layers: ['M12 3 3 8l9 5 9-5-9-5z', 'M3 12.5l9 5 9-5', 'M3 16.5l9 5 9-5'],
   bars: ['M5 20v-9', 'M12 20V4', 'M19 20v-6', 'M3 20h18'], wind: ['M3 8h10a3 3 0 1 0-3-3', 'M3 12h15a3 3 0 1 1-3 3', 'M3 16h6'],
   gauge: ['M4.5 17a8.5 8.5 0 1 1 15 0', 'M12 14l4-5', ['circle', {cx: 12, cy: 14, r: 1.3}]], power: ['M12 3v8', 'M7 5.8a8 8 0 1 0 10 0'],
   warp: ['M6 4v16', 'M12 4v6', 'M12 14v6', 'M18 4v16'], trend: ['M3 17l6-6 4 4 8-8', 'M15 7h6v6'],
@@ -1478,7 +1615,7 @@ function icon(name, size = 20) {
   for (const d of ICONS[name]) s.append(typeof d === 'string' ? svgEl('path', {d}) : svgEl(d[0], d[1]));
   return s;
 }
-const NAV = [['actions', 'Actions', 'bolt'], ['quality', 'Quality', 'layers'], ['benchmarks', 'Benchmarks', 'bars'], ['cfm', 'CFM', 'wind'], ['pressure', 'Pressure', 'gauge'],
+const NAV = [['actions', 'Actions', 'bolt'], ['quality', 'Quality', 'layers'], ['benchmarks', 'Benchmarks', 'bars'], ['cfm', 'CFM', 'wind'], ['erpm', 'Effective RPM', 'spin'], ['pressure', 'Pressure', 'gauge'],
   ['utilisation', 'Utilisation', 'power'], ['warp', 'Warp breaks', 'warp'], ['trends', 'Trends', 'trend'], ['targets', 'Targets', 'target']];
 const TITLES = Object.assign(Object.fromEntries(NAV.map((n) => [n[0], n[1]])), {data: 'Data health'});
 const MOB = ['actions', 'quality', 'benchmarks', 'cfm'];
@@ -1501,7 +1638,7 @@ function buildNav() {
   $('#gs-icon').replaceChildren(icon('search', 18));
 }
 
-const PAGES = {actions: pageActions, quality: pageQuality, benchmarks: pageBench, pressure: pagePressure, cfm: pageCfm, utilisation: pageUtil, warp: pageWarp, trends: pageTrends, targets: pageTargets, data: pageData};
+const PAGES = {actions: pageActions, quality: pageQuality, benchmarks: pageBench, pressure: pagePressure, cfm: pageCfm, erpm: pageErpm, utilisation: pageUtil, warp: pageWarp, trends: pageTrends, targets: pageTargets, data: pageData};
 function render() {
   if (!D) return;
   for (const b of document.querySelectorAll('.segmented[aria-label="Loom width"] button')) b.setAttribute('aria-pressed', b.dataset.w === W ? 'true' : 'false');
@@ -1718,6 +1855,7 @@ function show(data) {
   $('.filters').hidden = false;
   if (!pannaLoaded) SINGLE = new Set((D.panna && D.panna.single) || []);   // until the saved switches load
   applyPanna(D);
+  addErpm(D);
   BM.clear();
   for (const b of D.benchmarks || []) BM.set(key(b.width, b.hg), b);
   closePanel();

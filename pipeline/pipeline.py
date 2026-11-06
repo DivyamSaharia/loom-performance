@@ -237,7 +237,7 @@ def mad_filter(vals):
     return [x for x in vals if abs(x - med) <= 3 * 1.4826 * mad]
 
 
-RUN_FIELDS = ('date', 'loom', 'type', 'beam', 'run', 'stop', 'rpm', 'eff', 'cfm', 'apk', 'main', 'main_max',
+RUN_FIELDS = ('date', 'loom', 'type', 'beam', 'run', 'stop', 'rpm', 'eff', 'erpm', 'cfm', 'apk', 'main', 'main_max',
               'picks', 'fpicks', 'panna', 'air', 'warp', 'warp_rate', 'styles')
 TOP_MAX = 40   # loom-days at or better than a benchmark kept with it
 
@@ -251,6 +251,7 @@ def bench_runs(L, S):
     and which loom-days the outlier filter dropped. Stored so they survive after the loom-days leave
     the 60-day window the dashboard keeps."""
     spec = [('rpm', S['benchmark_pct_high'], False, lambda x: True, True),
+            ('erpm', S['benchmark_pct_high'], False, lambda x: True, True),
             ('apk', S['benchmark_pct_low'], False, lambda x: bool(x['apk']), False),
             ('main_max', S['benchmark_pct_low'], False, lambda x: x['main_max'] > 0, False),
             ('main', S['benchmark_pct_low'], False, lambda x: True, False),
@@ -418,6 +419,8 @@ def build(a, as_of=None):
         run = x['run']
         x['rpm'] = x['picks'] / run if run else 0
         x['eff'] = 100 * run / (run + x['stop']) if run + x['stop'] else 0
+        # effective RPM = RPM × efficiency = machine picks per minute of run + stop time
+        x['erpm'] = x['picks'] / (run + x['stop']) if run + x['stop'] else 0
         x['cfm'] = x['af1'] / x['af2'] if x['af2'] else 0
         x['air'] = x['af1'] / 60.0
         x['panna'] = panna_of(x['width'], x['hg'], single)
@@ -454,11 +457,12 @@ def build(a, as_of=None):
         b = dict(width=k[0], hg=k[1], n=n, dates=nd, looms=nl,
                  rpm=pct([x['rpm'] for x in L], S['benchmark_pct_high']),
                  eff=pct([x['eff'] for x in L], S['benchmark_pct_high']),
+                 erpm=pct([x['erpm'] for x in L], S['benchmark_pct_high']),
                  apk=pct([x['apk'] for x in L if x['apk']], S['benchmark_pct_low']),
                  main=pct([x['main'] for x in L], S['benchmark_pct_low']),
                  main_max=pct([x['main_max'] for x in L if x['main_max'] > 0] or [0], S['benchmark_pct_low']),
                  warp_med=st.median([x['warp_rate'] for x in L if x['warp_rate'] is not None] or [0]),
-                 best_rpm=max(x['rpm'] for x in L), best_eff=max(x['eff'] for x in L),
+                 best_rpm=max(x['rpm'] for x in L), best_eff=max(x['eff'] for x in L), best_erpm=max(x['erpm'] for x in L),
                  best_apk=min((x['apk'] for x in L if x['apk']), default=None),
                  best_main_max=min([x['main_max'] for x in L if x['main_max'] > 0] or [0]) or None,
                  best_main=min(x['main'] for x in L), panna=panna_of(k[0], k[1], single))
@@ -852,7 +856,7 @@ def build(a, as_of=None):
         machine={str(k): v for k, v in machine.items()},
         trends=trends, alerts=alerts, unassigned=unassigned, stop_air=slope,
         loomdays=[dict(date=x['date'], loom=x['loom'], hg=x['hg'], width=x['width'], type=x['type'],
-                       run=x['run'], stop=x['stop'], rpm=x['rpm'], eff=x['eff'], cfm=x['cfm'], apk=x['apk'],
+                       run=x['run'], stop=x['stop'], rpm=x['rpm'], eff=x['eff'], erpm=x['erpm'], cfm=x['cfm'], apk=x['apk'],
                        main=x['main'], main_max=x['main_max'], picks=x['picks'], fpicks=x['fpicks'], panna=x['panna'], air=x['air'],
                        warp=x['warp'], warp_rate=x['warp_rate'], beam=x['beam'],
                        styles=x['styles'], eligible=x['eligible']) for x in sorted(recs, key=lambda x: (x['date'], x['loom']))
