@@ -8,266 +8,316 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="W2 Looms">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#10131c" media="(prefers-color-scheme: dark)">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#f3f5f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <meta name="robots" content="noindex,nofollow">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<style>:root{box-sizing:border-box}*,*::before,*::after{box-sizing:inherit}body{margin:0;-webkit-text-size-adjust:100%}img{max-width:100%}[hidden]{display:none!important}
-.gate{max-width:380px;margin:12vh auto 0;padding:24px;background:var(--panel);border:1px solid var(--line);border-radius:12px;display:grid;gap:12px}
-.gate input{font:inherit;font-family:var(--f-mono);font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);width:100%;letter-spacing:.06em}
-.gate button{font:inherit;font-size:15px;font-weight:600;padding:10px 14px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}
-.toprow{display:flex;gap:8px;align-items:center}
-button.ghost{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:8px;padding:5px 10px;cursor:pointer}
-</style>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: sticky header with width switch and tabs; one page shown at a time; cards in auto-fit grids. */
+/* Look and feel follows the Hanuman Fabric Database app: deep green sidebar with a lime active item, grey search bar,
+   segmented controls, chips, white rounded cards and uppercase table headings. Phones get a bottom tab bar. */
+:root{box-sizing:border-box}*,*::before,*::after{box-sizing:inherit}
+body{margin:0;-webkit-text-size-adjust:100%}img{max-width:100%}[hidden]{display:none!important}
 :root{
-  --bg:#f3f4f7; --panel:#ffffff; --ink:#151a2b; --muted:#5c6378; --line:#dde0ea; --soft:#eceef4;
-  --accent:#2f43c6; --accent-soft:#e3e7fb; --thread:#c2581d;
-  --good:#1d7a4c; --good-soft:#e1f2e8; --warn:#9a6400; --warn-soft:#fbf0d9; --bad:#b4232c; --bad-soft:#fbe4e5;
-  --f-display:"Archivo","Arial Narrow",Arial,sans-serif; --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
-}
+  --bg:#f3f5f0; --panel:#ffffff; --fill:#e3e3e8; --soft:#ededf2; --ink:#1c1c1e; --muted:#6c6c70; --muted-2:#8e8e93; --line:#d1d1d6;
+  --brand:#002a00; --lime:#a6ce38; --accent:#2b6a1f; --accent-ink:#1e4a12; --accent-soft:#eef5dc; --side:#002a00;
+  --good:#1d6b35; --good-soft:#e2f1e4; --warn:#7a4300; --warn-soft:#fdf0d9; --bad:#b3261e; --bad-soft:#fbe5e3; --info:#0a5a50; --info-soft:#dcf2ee;
+  --bar:#a6ce38; --barline:#1c1c1e; --shadow:0 1px 2px rgba(0,0,0,.12); --glass:rgba(249,249,249,.92);
+  --f-body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace; color-scheme:light}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#10131c; --panel:#171b27; --ink:#e7e9f1; --muted:#9aa1b6; --line:#2a3042; --soft:#1f2433;
-  --accent:#8f9dff; --accent-soft:#252c52; --thread:#f08a4b;
-  --good:#5cc98f; --good-soft:#163326; --warn:#e6b450; --warn-soft:#342a12; --bad:#ff7a80; --bad-soft:#3a1b1e; color-scheme:dark}}
+  --bg:#000; --panel:#1c1c1e; --fill:#2c2c2e; --soft:#2c2c2e; --ink:#fff; --muted:#a1a1a6; --muted-2:#8e8e93; --line:#38383a;
+  --accent:#a6ce38; --accent-ink:#c5e27a; --accent-soft:#1f2a0e; --side:#001a00;
+  --good:#4cd17a; --good-soft:#123320; --warn:#ffc56b; --warn-soft:#3a2a10; --bad:#ff6b60; --bad-soft:#3a1714; --info:#6fe0cf; --info-soft:#0f3330;
+  --bar:#6f8f25; --barline:#ffffff; --shadow:0 1px 2px rgba(0,0,0,.5); --glass:rgba(22,22,24,.92); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#10131c; --panel:#171b27; --ink:#e7e9f1; --muted:#9aa1b6; --line:#2a3042; --soft:#1f2433;
-  --accent:#8f9dff; --accent-soft:#252c52; --thread:#f08a4b;
-  --good:#5cc98f; --good-soft:#163326; --warn:#e6b450; --warn-soft:#342a12; --bad:#ff7a80; --bad-soft:#3a1b1e; color-scheme:dark}
-body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
-.wrap{max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
-header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding-block:14px 0}
-.titlerow{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 20px;justify-content:space-between}
-h1{font-family:var(--f-display);font-stretch:80%;font-weight:750;font-size:26px;letter-spacing:.01em;margin:0;text-wrap:balance}
-.asof{color:var(--muted);font-size:13px}
+  --bg:#000; --panel:#1c1c1e; --fill:#2c2c2e; --soft:#2c2c2e; --ink:#fff; --muted:#a1a1a6; --muted-2:#8e8e93; --line:#38383a;
+  --accent:#a6ce38; --accent-ink:#c5e27a; --accent-soft:#1f2a0e; --side:#001a00;
+  --good:#4cd17a; --good-soft:#123320; --warn:#ffc56b; --warn-soft:#3a2a10; --bad:#ff6b60; --bad-soft:#3a1714; --info:#6fe0cf; --info-soft:#0f3330;
+  --bar:#6f8f25; --barline:#ffffff; --shadow:0 1px 2px rgba(0,0,0,.5); --glass:rgba(22,22,24,.92); color-scheme:dark}
+html,body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---- shell: sidebar (laptop) / bottom tab bar (phone) */
+.shell{min-height:100vh}
+.sidebar{display:none}
+.sb-brand{display:flex;align-items:center;gap:12px;padding:2px 6px 18px}
+.sb-logo{width:46px;height:46px;border-radius:10px;flex:none;display:block;background:#fff;padding:2px;box-shadow:0 0 0 1px rgba(255,255,255,.18)}
+.sb-top{letter-spacing:2px;text-transform:uppercase;color:var(--lime);font-size:12px;font-weight:700}
+.sb-main{color:#fff;white-space:nowrap;margin-top:2px;font-size:16px;font-weight:700}
+.sb-nav{display:flex;flex-direction:column;gap:2px}
+.sb-item{display:flex;align-items:center;gap:10px;width:100%;height:38px;padding:0 10px;border-radius:8px;color:rgba(255,255,255,.86);text-decoration:none;font-size:15px;border:0;background:none;cursor:pointer;text-align:left}
+.sb-item svg{color:var(--lime);flex:none}
+.sb-item:hover{background:rgba(255,255,255,.08)}
+.sb-item[aria-current="page"]{background:var(--lime);color:#002a00;font-weight:600}
+.sb-item[aria-current="page"] svg{color:#002a00}
+.sb-item .sb-count{margin-left:auto;font-size:13px;color:rgba(255,255,255,.6);font-variant-numeric:tabular-nums}
+.sb-item[aria-current="page"] .sb-count{color:rgba(0,42,0,.7)}
+.badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:600;text-align:center;line-height:18px}
+.sb-item .badge{margin-left:auto}
+.sb-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:12px}
+.sb-sync{display:flex;align-items:center;gap:6px;border-top:.5px solid rgba(255,255,255,.18);padding:10px 0 0 10px;font-size:13px;color:#fff}
+.sb-sync-text{flex:1;min-width:0}
+.sb-sync-sub{color:rgba(255,255,255,.62);margin-top:1px}
+.icon-btn{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border:0;background:none;color:var(--accent);border-radius:10px;cursor:pointer;padding:0;flex:none}
+.icon-btn:hover{background:var(--soft)}
+.sb-sync .icon-btn{color:var(--lime)}
+.sb-sync .icon-btn:hover{background:rgba(255,255,255,.08)}
+.app{width:100%;max-width:1520px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 2px) max(16px,env(safe-area-inset-right,0px)) 110px max(16px,env(safe-area-inset-left,0px))}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:52px}
+.topbar .side{display:flex;align-items:center;gap:2px}
+.mbrand{display:flex;align-items:center;gap:10px}
+.mbrand img{width:36px;height:36px;border-radius:9px;background:#fff;padding:2px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.mbrand .t1{letter-spacing:2px;text-transform:uppercase;color:var(--accent);font-size:11px;font-weight:700}
+.mbrand .t2{font-size:15px;font-weight:700;line-height:1.1}
+.large-title{margin:6px 0 2px;font-size:34px;font-weight:700;line-height:41px;letter-spacing:.3px}
+.asof{color:var(--muted);font-size:14px}
 .asof b{color:var(--ink);font-weight:600}
-.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
-.seg button{font:inherit;font-size:13px;border:0;background:none;color:var(--muted);padding:6px 12px;cursor:pointer}
-.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
-.seg button:focus-visible,nav.tabs a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-nav.tabs{display:flex;gap:2px;overflow-x:auto;margin-top:12px;scrollbar-width:none}
-nav.tabs a{font-family:var(--f-display);font-stretch:88%;font-weight:600;font-size:14px;letter-spacing:.02em;color:var(--muted);text-decoration:none;padding:8px 12px;border-bottom:3px solid transparent;white-space:nowrap}
-nav.tabs a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--thread)}
-nav.tabs a .count{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--bad);color:#fff;font-family:var(--f-mono);font-size:11px;text-align:center}
-section.page{display:grid;gap:18px;padding-top:18px}
-h2{font-family:var(--f-display);font-stretch:85%;font-weight:700;font-size:19px;margin:0}
-h3{font-family:var(--f-display);font-stretch:90%;font-weight:650;font-size:15px;margin:0}
-.lead{color:var(--muted);margin:2px 0 0;max-width:75ch}
+.asof .past{color:var(--accent);font-weight:600}
+.filters{display:grid;gap:10px;margin:16px 0 4px;max-width:900px}
+.frow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.search{display:flex;align-items:center;gap:8px;height:42px;background:var(--fill);border-radius:10px;padding:0 12px;color:var(--muted);position:relative}
+.search input{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:17px;color:var(--ink);padding:0}
+.search input::placeholder{color:var(--muted)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none}
+.search .kbd{font-size:12px;border:1px solid var(--line);border-radius:5px;padding:0 6px;color:var(--muted)}
+@media (max-width:1023px),(hover:none){.search .kbd{display:none}}
+.search .clear{border:0;background:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:2px 4px}
+.sugg{position:absolute;top:46px;left:0;right:0;background:var(--panel);border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.22);z-index:40;padding:6px;max-height:min(60vh,440px);overflow:auto;color:var(--ink)}
+.sugg button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;text-align:left;padding:9px 10px;border-radius:8px;cursor:pointer;font-size:15px}
+.sugg button:hover,.sugg button.on{background:var(--accent-soft)}
+.sugg .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);width:72px;flex:none}
+.sugg .s{color:var(--muted);font-size:13px;margin-left:auto;white-space:nowrap}
+.sugg .none{padding:10px;color:var(--muted)}
+.filternote{font-size:13px;color:var(--muted)}
+.filternote b{color:var(--ink)}
+.segmented,.seg{display:inline-flex;background:var(--fill);border-radius:9px;padding:2px;gap:2px;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.segmented{display:flex}
+.segmented button,.seg button{flex:1;white-space:nowrap;border:0;background:none;border-radius:7px;height:32px;padding:0 14px;font-size:15px;font-weight:500;color:var(--ink);cursor:pointer}
+.seg button{height:28px;font-size:13px;padding:0 12px;flex:none}
+.segmented button:disabled,.seg button:disabled{opacity:.4;cursor:default}
+.segmented button[aria-pressed="true"],.seg button[aria-pressed="true"]{background:var(--panel);box-shadow:var(--shadow);font-weight:600}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--panel);white-space:nowrap;border-radius:16px;height:32px;padding:0 12px;font-size:14px;cursor:pointer;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+select.chip{width:auto;max-width:100%;appearance:none;-webkit-appearance:none;padding-right:28px;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 15px) 14px,calc(100% - 10px) 14px;background-size:5px 5px;background-repeat:no-repeat}
+.tabbar{position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;justify-content:space-around;padding:7px 0 calc(env(safe-area-inset-bottom,0px) + 4px);min-height:50px;background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);box-shadow:0 -.5px 0 var(--line)}
+.tabbar a,.tabbar button{flex:1;min-width:0;max-width:84px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;font-weight:500;color:var(--muted);text-decoration:none;border:0;background:none;padding:0;cursor:pointer;position:relative}
+.tabbar [aria-current="page"]{color:var(--accent);font-weight:600}
+.tabbar .badge{position:absolute;top:-4px;left:calc(50% + 6px)}
+dialog.more{border:0;border-radius:14px 14px 0 0;padding:8px 0 calc(env(safe-area-inset-bottom,0px) + 10px);margin:auto 0 0;width:100%;max-width:100%;background:var(--panel);color:var(--ink)}
+dialog.more::backdrop{background:rgba(0,0,0,.35)}
+dialog.more a{display:flex;align-items:center;gap:12px;padding:12px 20px;color:var(--ink);text-decoration:none;font-size:17px}
+dialog.more a svg{color:var(--accent)}
+dialog.more a[aria-current="page"]{font-weight:600;color:var(--accent-ink)}
+@media (min-width:1024px){
+  .shell{display:grid;grid-template-columns:232px minmax(0,1fr);align-items:start}
+  .sidebar{display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--side);color:#fff;padding:18px 12px 14px}
+  .tabbar,.mbrand,.m-only{display:none!important}
+  .app{padding:4px 28px 64px}
+}
+@media (min-width:1024px) and (max-width:1365px){.shell{grid-template-columns:208px minmax(0,1fr)}.sb-logo{width:40px;height:40px;border-radius:9px}.sb-main{font-size:15px}.app{padding-inline:16px}}
+
+/* ---- content */
+section.page{display:grid;gap:16px;padding-top:14px}
+h2{font-size:20px;font-weight:700;margin:0;letter-spacing:.1px}
+h3{font-size:16px;font-weight:650;margin:0}
+.lead{color:var(--muted);margin:3px 0 0;max-width:80ch;font-size:14px}
 .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
-.card.attn{border-color:var(--warn);box-shadow:inset 4px 0 0 var(--warn)}
+.split{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr))}
+.card{background:var(--panel);border-radius:12px;padding:16px;min-width:0;box-shadow:var(--shadow)}
+.card.attn{box-shadow:inset 4px 0 0 var(--warn),var(--shadow)}
 .cardhead{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px}
 .note{color:var(--muted);font-size:12.5px}
-.kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}
-.kpi .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.kpi .val{font-family:var(--f-display);font-stretch:80%;font-weight:700;font-size:30px;line-height:1.1;font-variant-numeric:tabular-nums}
-.kpi .val small{font-size:15px;font-weight:600;color:var(--muted);margin-left:2px}
-.delta{font-family:var(--f-mono);font-size:12px}
+.kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr))}
+@media (min-width:1280px){.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.kpi .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.kpi .val{font-weight:700;font-size:30px;line-height:1.15;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.kpi .val small{font-size:15px;font-weight:600;color:var(--muted);margin-left:3px}
+.big{font-weight:700;font-size:26px;line-height:1.15;font-variant-numeric:tabular-nums}
+.big small{font-size:14px;font-weight:600;color:var(--muted);margin-left:3px}
+.arrow{color:var(--muted);margin:0 6px}
+.delta{font-size:12.5px;font-variant-numeric:tabular-nums}
 .up-good,.down-good{color:var(--good)} .up-bad,.down-bad{color:var(--bad)} .flat{color:var(--muted)}
 .tablebox{overflow-x:auto;max-width:100%}
-table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:inherit}
-th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font-size:12px;color:var(--muted);font-weight:500;white-space:nowrap}
-td.num,th.num{text-align:right;font-family:var(--f-mono);font-size:13px;white-space:nowrap}
+table{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:tabular-nums;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:.5px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.2px;vertical-align:bottom;white-space:nowrap;line-height:14px;padding-top:10px}
+th .unit{display:block;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;margin-top:2px}
+td.num,th.num{text-align:right;white-space:nowrap}
+tbody tr:last-child>td{border-bottom:0}
+th.hl,td.hl{background:var(--accent-soft);color:var(--accent-ink)}
+td.hl{font-weight:700}
 tr.sub td{color:var(--muted);font-size:12.5px}
-.pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:500;white-space:nowrap}
+.pill{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:600;white-space:nowrap}
 .pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.warn{background:var(--warn-soft);color:var(--warn)}
-.pill.good{background:var(--good-soft);color:var(--good)} .pill.info{background:var(--accent-soft);color:var(--accent)} .pill.muted{background:var(--soft);color:var(--muted)}
-.rank{font-family:var(--f-display);font-weight:700;font-size:18px;color:var(--thread);width:28px}
-.metric{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;font-size:13px}
-.metric .m{font-weight:600}
-.bar{height:6px;border-radius:3px;background:var(--soft);position:relative;min-width:60px}
-.bar span{position:absolute;inset:0 auto 0 0;border-radius:3px;background:var(--thread)}
-.alerts{display:grid;gap:6px;margin:0;padding:0;list-style:none}
-.alerts li{display:flex;gap:10px;align-items:baseline;font-size:13.5px}
-.empty{color:var(--muted);font-size:13px;padding:6px 0}
+.pill.good{background:var(--good-soft);color:var(--good)} .pill.info{background:var(--info-soft);color:var(--info)} .pill.muted{background:var(--soft);color:var(--muted)}
+.pill.lime{background:var(--accent-soft);color:var(--accent-ink)}
+.alerts{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.alerts li{display:flex;gap:10px;align-items:baseline;font-size:14px}
+.empty{color:var(--muted);font-size:13.5px;padding:6px 0}
 .assign{display:grid;gap:10px}
-.assign .row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.assign .row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:.5px solid var(--line)}
 .assign .row:last-child{border-bottom:0}
 .assign .name{font-family:var(--f-mono);font-size:13px;word-break:break-word}
 .assign .meta{color:var(--muted);font-size:12px}
-select,input[type=text]{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);min-width:0;width:100%}
-button.primary{font:inherit;font-size:13px;font-weight:600;padding:6px 14px;border-radius:6px;border:0;background:var(--accent);color:#fff;cursor:pointer}
-button.primary:disabled{opacity:.5;cursor:default}
+select,input[type=text]{font:inherit;font-size:14px;padding:7px 10px;border:0;border-radius:8px;background:var(--fill);color:var(--ink);min-width:0;width:100%}
+input[type=number]{font:inherit;font-size:14px;padding:6px 8px;border:0;border-radius:8px;background:var(--fill);color:var(--ink);width:100px;font-variant-numeric:tabular-nums}
+button.primary{font:inherit;font-size:14px;font-weight:600;padding:7px 16px;border-radius:8px;border:0;background:var(--brand);color:#fff;cursor:pointer}
+:root[data-theme="dark"] button.primary{background:var(--lime);color:#002a00}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) button.primary{background:var(--lime);color:#002a00}}
+button.primary:disabled{opacity:.45;cursor:default}
+button.ghost{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:16px;padding:5px 12px;cursor:pointer}
 .saved{color:var(--good);font-size:12.5px}
 .err{color:var(--bad);font-size:12.5px}
 @media (max-width:640px){.assign .row{grid-template-columns:1fr}}
 svg text{font-family:var(--f-body)}
 .chart{width:100%;height:auto;display:block}
+@media (min-width:1024px){.chart{max-width:1080px;margin-inline:auto}}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:8px}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
-.heat td{padding:0;border:0}
-.heat td.c{width:22px;height:18px}
-.heat th{padding:2px 4px;font-size:11px}
-.split{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))}
+.lg{display:inline-flex;align-items:center;gap:6px}
+.lg svg{flex:none}
 .why{font-size:13px;color:var(--ink);margin:4px 0 0}
 .mono{font-family:var(--f-mono);font-size:12.5px}
 .loading{padding:40px 0;color:var(--muted)}
-@media (prefers-reduced-motion:no-preference){section.page{animation:fade .25s ease-out}}
+@media (prefers-reduced-motion:no-preference){section.page{animation:fade .2s ease-out}}
 @keyframes fade{from{opacity:.4}to{opacity:1}}
-</style>
-<style>
-/* Additions: metric cells (value + benchmark/target line), shape-coded legends, drill-down rows, target inputs. */
-:root{--bar:#7f8bd6;--barline:#151a2b}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bar:#4e5aa8;--barline:#e7e9f1}}
-:root[data-theme="dark"]{--bar:#4e5aa8;--barline:#e7e9f1}
 .mv{white-space:nowrap}
-.mv .v{font-family:var(--f-mono);font-size:13px;font-weight:500}
-.mv .v .mk{font-family:var(--f-body);font-weight:700;margin-left:3px;color:var(--bad)}
-.mv .ref{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);margin-top:1px}
+.mv .v{font-weight:600}
+.mv .v .mk{font-weight:700;margin-left:3px;color:var(--bad)}
+.mv .ref{font-size:12px;color:var(--muted);margin-top:1px}
 .mv .ref .miss{color:var(--bad);font-weight:600;text-decoration:underline;text-underline-offset:2px}
 td.mvc{text-align:right}
 .unit{font-weight:400;color:var(--muted)}
-th .unit{display:block;font-size:11px}
-.keyline{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted);margin-top:8px}
+.keyline{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted);margin-top:10px}
 .keyline b{color:var(--bad);font-weight:700}
 .keyline u{color:var(--bad);text-underline-offset:2px}
-button.link{font:inherit;font-size:12.5px;border:0;background:none;color:var(--accent);cursor:pointer;padding:2px 0;text-align:left}
-button.drill{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:3px 8px;cursor:pointer;white-space:nowrap}
-button.drill[aria-expanded="true"]{background:var(--accent-soft);border-color:var(--accent)}
-tr.drillrow>td{background:var(--soft);padding:10px 12px}
-tr.drillrow table{font-size:13px}
+button.link{font:inherit;font-size:13px;border:0;background:none;color:var(--accent);cursor:pointer;padding:4px 0;text-align:left;font-weight:600}
+button.drill{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:16px;padding:3px 10px;cursor:pointer;white-space:nowrap}
+button.drill[aria-expanded="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+tr.drillrow>td{background:var(--bg);padding:10px 12px}
 tr.pick{cursor:pointer}
 tr.pick:hover td{background:var(--soft)}
 tr.pick.sel td{background:var(--accent-soft)}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
 .toolbar label{font-size:12.5px;color:var(--muted)}
 .toolbar select{width:auto;min-width:180px}
-.controls select.day{width:auto;min-width:150px;font-size:12.5px;padding:5px 8px}
-.asof .past{color:var(--accent);font-weight:600}
-.asof button.ghost{margin-left:6px;padding:2px 8px}
-.big{font-family:var(--f-display);font-stretch:80%;font-weight:700;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
-.big small{font-size:14px;font-weight:600;color:var(--muted);margin-left:2px}
-.arrow{color:var(--muted);margin:0 6px}
-.lg{display:inline-flex;align-items:center;gap:6px}
-.lg svg{flex:none}
-input[type=number]{font:inherit;font-family:var(--f-mono);font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);width:96px}
 .tg td{vertical-align:middle}
-.tg .hint{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
-.scopenote{font-size:12.5px;color:var(--muted);background:var(--soft);border-radius:6px;padding:6px 10px}
+.tg .hint{font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
+.scopenote{font-size:13px;color:var(--muted);background:var(--bg);border-radius:8px;padding:8px 12px}
 details.collapsible>summary{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap;cursor:pointer;list-style:none}
 details.collapsible>summary::-webkit-details-marker{display:none}
 details.collapsible>summary h3::before{content:"▸";display:inline-block;width:14px;transition:transform .15s}
 details.collapsible[open]>summary h3::before{transform:rotate(90deg)}
 details.collapsible[open]>summary{margin-bottom:10px}
-details.collapsible>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-/* Benchmark run panel */
-button.bmb{font:inherit;border:0;background:none;padding:0;margin:0;color:var(--accent);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+/* clickable figures: benchmark / best values, loom numbers, head groups */
+button.bmb,button.lk,button.hgl{font:inherit;border:0;background:none;padding:0;margin:0;cursor:pointer;text-align:inherit;color:var(--accent);text-decoration:underline dotted;text-decoration-thickness:1px;text-underline-offset:3px}
 button.bmb.miss{color:var(--bad);font-weight:600;text-decoration:underline solid}
-button.bmb:hover{text-decoration-style:solid}
-dialog.bmp{width:min(1120px,calc(100vw - 24px));overflow-x:hidden;max-height:calc(100vh - 32px);padding:0;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);box-shadow:0 18px 50px rgba(0,0,0,.25)}
-dialog.bmp::backdrop{background:rgba(10,12,20,.45)}
-.bmp .hd{position:sticky;top:0;z-index:1;background:var(--panel);border-bottom:1px solid var(--line);padding:14px 18px;display:flex;gap:12px;justify-content:space-between;align-items:flex-start}
-.bmp .bd{padding:14px 18px 20px;display:grid;gap:16px}
+button.bmb.best{color:var(--info)}
+button.lk{font-weight:700;color:var(--ink);text-decoration-color:var(--muted-2)}
+button.hgl{font-weight:600;color:var(--ink);text-decoration-color:var(--muted-2)}
+button.bmb:hover,button.lk:hover,button.hgl:hover{text-decoration-style:solid;color:var(--accent)}
+svg .lkt{cursor:pointer}
+svg .lkt:hover{text-decoration:underline}
+/* drill-down panel (benchmark / loom / head group): right-hand drawer on laptops, sheet on phones */
+dialog.bmp{width:min(1100px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow-x:hidden;padding:0;border:0;border-radius:14px;background:var(--bg);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog.bmp::backdrop{background:rgba(0,0,0,.38)}
+.bmp .hd{position:sticky;top:0;z-index:2;background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--line);padding:12px 16px;display:flex;gap:10px;justify-content:space-between;align-items:flex-start}
+.bmp .hd .ttl{min-width:0;flex:1}
+.bmp .hd h2{font-size:22px}
+.bmp .bd{padding:14px 16px 24px;display:grid;gap:14px}
 .bmp .bd>*{min-width:0}
-.bmp td.d{white-space:nowrap}
-.bmp .x{font:inherit;font-size:20px;line-height:1;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;width:32px;height:32px;cursor:pointer;flex:none}
-.bmp table{font-size:13px}
-.bmp td.hl,.bmp th.hl{background:var(--accent-soft)}
+td.d{white-space:nowrap}
+.bmp .x,.bmp .back{font-size:15px;line-height:1;border:0;background:var(--fill);color:var(--ink);border-radius:16px;height:32px;min-width:32px;padding:0 10px;cursor:pointer;flex:none}
+.bmp .back{color:var(--accent);font-weight:600}
+.bmp table{font-size:13.5px}
 .bmp tr.brk td{font-weight:600}
-.bmp tr.mark td{padding:3px 8px;background:var(--thread);color:#fff;font-size:12px;font-weight:600}
-.bmp tr.out td{color:var(--muted)}
-.bmp .formula{font-family:var(--f-mono);font-size:12.5px;background:var(--soft);border-radius:6px;padding:8px 10px}
-</style>
-<style>
-/* Hanuman Weavelon 2 branding. Brand greens are used for the logo, header rule, active tab and sign-in only;
-   data colours (red/green status, blue links and bars) are unchanged so status stays readable. */
-:root{--brand:#14501c;--brand-soft:#e7f1cf;--brand-ink:#ffffff}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--brand:#a6ce38;--brand-soft:#1f2a14;--brand-ink:#0a1a00}}
-:root[data-theme="dark"]{--brand:#a6ce38;--brand-soft:#1f2a14;--brand-ink:#0a1a00}
-header.top{border-top:3px solid var(--brand)}
-.brand{display:flex;align-items:center;gap:12px;min-width:0}
-img.logo{width:44px;height:44px;flex:none;display:block;background:#fff;border-radius:10px;padding:2px}
-.eyebrow{font-family:var(--f-display);font-stretch:85%;font-weight:700;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--brand)}
-.brand h1{line-height:1.1}
-nav.tabs a[aria-current="page"]{border-bottom-color:var(--brand)}
-.gate{text-align:center;justify-items:center}
-.gate>*{max-width:100%}
-.gate input,.gate button{width:100%}
-.gate .note,.gate .err{text-align:left;width:100%}
-.gate-logo{display:block;width:72px;height:72px;background:#fff;border-radius:16px;padding:4px}
-.gate button{background:var(--brand);color:var(--brand-ink)}
-</style>
-<style>
-/* Desktop layout (laptop and larger). Everything here applies from 1280px up, so phones, tablets and small windows keep the layout above.
-   Tabs move to a left sidebar, the header shrinks to one row, KPI cards sit in 4 columns, charts stop growing past
-   a readable size, and the benchmark run panel opens as a drawer on the right so the page stays visible. */
-@media (min-width:1280px){
-  .wrap{max-width:none;padding-inline:24px}
-  header.top,main{margin-left:236px;max-width:1500px}
-  header.top{padding-block:12px 10px}
-  h1{font-size:22px}
-  nav.tabs{position:fixed;left:24px;top:calc(env(safe-area-inset-top,0px) + 18px);width:208px;max-height:calc(100vh - 36px);
-    flex-direction:column;gap:2px;margin:0;overflow-x:visible;overflow-y:auto}
-  nav.tabs a{display:flex;justify-content:space-between;align-items:center;font-size:15px;padding:9px 12px;
-    border-bottom:0;border-left:3px solid transparent;border-radius:6px}
-  nav.tabs a:hover{background:var(--soft);color:var(--ink)}
-  nav.tabs a[aria-current="page"]{background:var(--brand-soft);color:var(--ink);border-left-color:var(--brand)}
-  section.page{padding-top:16px}
-  .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .chart{max-width:1080px;margin-inline:auto}
-  /* Benchmark run panel as a right-hand drawer */
-  dialog.bmp{width:min(1080px,80vw);height:100vh;max-height:100vh;margin:0 0 0 auto;border-radius:12px 0 0 12px;
-    border-width:0 0 0 1px;overflow-y:auto}
-  dialog.bmp::backdrop{background:rgba(10,12,20,.3)}
+.bmp tr.mark td{padding:4px 12px;background:var(--brand);color:#fff;font-size:12px;font-weight:600}
+.formula{font-family:var(--f-mono);font-size:12.5px;background:var(--bg);border-radius:8px;padding:8px 12px;margin-top:8px}
+.card .formula{background:var(--bg)}
+.bmp .card .formula{background:var(--soft)}
+.sw{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+@media (min-width:1024px){
+  dialog.bmp{width:min(1100px,80vw);height:100vh;max-height:100vh;margin:0 0 0 auto;border-radius:14px 0 0 14px;overflow-y:auto}
+  dialog.bmp::backdrop{background:rgba(0,0,0,.28)}
 }
-@media (min-width:1280px) and (max-width:1439px){
-  /* slimmer sidebar so the wide Quality table still fits on 1280-1366px laptops */
-  .wrap{padding-inline:16px}
-  header.top,main{margin-left:200px}
-  nav.tabs{left:16px;width:176px}
+@media (max-width:1023px){
+  dialog.bmp{width:100vw;max-width:100vw;height:calc(100vh - 28px);max-height:none;margin:auto 0 0;border-radius:14px 14px 0 0;overflow-y:auto}
 }
-@media (min-width:1280px) and (prefers-reduced-motion:no-preference){
-  dialog.bmp[open]{animation:drawer .18s ease-out}
-}
+@media (min-width:1024px) and (prefers-reduced-motion:no-preference){dialog.bmp[open]{animation:drawer .18s ease-out}}
 @keyframes drawer{from{transform:translateX(28px);opacity:.5}to{transform:none;opacity:1}}
+/* Benchmarks tab */
+.bench-layout{display:grid;gap:16px}
+@media (min-width:1180px){.bench-layout{grid-template-columns:minmax(300px,380px) minmax(0,1fr);align-items:start}.bench-list{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}}
+.bench-list .search{margin-bottom:10px}
+.qrow{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;text-align:left;padding:10px 8px;border-radius:8px;cursor:pointer;color:var(--ink);position:relative}
+.qrow+.qrow::before{content:"";position:absolute;top:0;left:8px;right:0;border-top:.5px solid var(--line)}
+.qrow:hover{background:var(--soft)}
+.qrow[aria-pressed="true"]{background:var(--accent-soft)}
+.qrow[aria-pressed="true"]::before,.qrow[aria-pressed="true"]+.qrow::before{display:none}
+.qrow .qn{font-weight:600;font-size:15px}
+.qrow .qs{color:var(--muted);font-size:12.5px}
+.qrow .qv{margin-left:auto;text-align:right;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.qdot{width:10px;height:10px;border-radius:3px;flex:none}
+/* sign-in */
+.gate{max-width:380px;margin:12vh auto 0;padding:24px;background:var(--panel);border-radius:14px;box-shadow:var(--shadow);display:grid;gap:12px;text-align:center;justify-items:center}
+.gate>*{max-width:100%}
+.gate input{font:inherit;font-family:var(--f-mono);font-size:16px;padding:10px 12px;border:0;border-radius:10px;background:var(--fill);color:var(--ink);width:100%;letter-spacing:.06em}
+.gate button{font:inherit;font-size:16px;font-weight:600;padding:11px 14px;border-radius:10px;border:0;background:var(--brand);color:#fff;cursor:pointer;width:100%}
+.gate .note,.gate .err{text-align:left;width:100%}
+.gate-logo{display:block;width:72px;height:72px;background:#fff;border-radius:16px;padding:4px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.guide p{margin:0 0 8px;max-width:75ch}
+.guide h3{margin:12px 0 4px}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <div class="titlerow">
-      <div class="brand">
-        <img class="logo" src="logo.svg" alt="Hanuman" width="44" height="44">
-        <div>
-          <div class="eyebrow">Hanuman Weavelon 2</div>
-          <h1>Loom Performance</h1>
-          <div class="asof" id="asof">Loading the latest day…</div>
-        </div>
+<div class="shell">
+  <aside class="sidebar" aria-label="Navigation">
+    <div class="sb-brand">
+      <img class="sb-logo" src="logo.svg" alt="Hanuman" width="46" height="46">
+      <div><div class="sb-top">Hanuman</div><div class="sb-main">Weavelon 2 Looms</div></div>
+    </div>
+    <nav class="sb-nav" id="sbnav" aria-label="Pages"></nav>
+    <div class="sb-foot">
+      <a class="sb-item" href="#data" data-tab="data" id="sb-data"></a>
+      <button type="button" class="sb-item" id="sb-guide"></button>
+      <div class="sb-sync"><div class="sb-sync-text"><div id="sync1">Loom data</div><div class="sb-sync-sub" id="sync2">Loading…</div></div>
+        <button type="button" class="icon-btn" id="refresh" title="Reload the latest data" aria-label="Reload the latest data"></button></div>
+    </div>
+  </aside>
+  <div class="app">
+    <div class="topbar">
+      <div class="side">
+        <div class="mbrand"><img src="logo.svg" alt="Hanuman" width="36" height="36"><div><div class="t1">Hanuman</div><div class="t2">Weavelon 2 Looms</div></div></div>
+        <button type="button" class="icon-btn" id="theme" title="Light or dark" aria-label="Switch light or dark"></button>
+        <button type="button" class="icon-btn" id="help" title="Guide" aria-label="Guide"></button>
       </div>
-      <div class="controls">
-        <select class="day" id="day" aria-label="View date" title="Show the app as it stood on an earlier day"></select>
-        <button type="button" class="ghost" id="refresh" title="Reload the latest data">Refresh</button>
-        <div class="seg" role="group" aria-label="Loom width">
-          <button type="button" id="w190" data-w="190" aria-pressed="true">190 cm</button>
-          <button type="button" id="w280" data-w="280" aria-pressed="false">280 cm</button>
-          <button type="button" id="wall" data-w="all" aria-pressed="false">Both</button>
-        </div>
+      <div class="side">
+        <button type="button" class="icon-btn m-only" id="refresh-m" title="Reload the latest data" aria-label="Reload the latest data"></button>
       </div>
     </div>
-    <nav class="tabs" aria-label="Pages">
-      <a href="#actions" data-tab="actions">Actions <span class="count" id="cnt-assign" hidden></span></a>
-      <a href="#quality" data-tab="quality">Quality</a>
-      <a href="#pressure" data-tab="pressure">Pressure</a>
-      <a href="#cfm" data-tab="cfm">CFM</a>
-      <a href="#utilisation" data-tab="utilisation">Utilisation</a>
-      <a href="#warp" data-tab="warp">Warp breaks</a>
-      <a href="#trends" data-tab="trends">Trends</a>
-      <a href="#targets" data-tab="targets">Targets</a>
-      <a href="#data" data-tab="data">Data health</a>
-    </nav>
-  </header>
-
-  <main id="main"><div class="loading">Loading loom data…</div></main>
+    <h1 class="large-title" id="ptitle">Loom Performance</h1>
+    <div class="asof" id="asof">Loading the latest day…</div>
+    <div class="filters">
+      <div class="search" id="gsearch" role="search"><span id="gs-icon" aria-hidden="true"></span>
+        <input type="search" id="q" placeholder="Search loom or head group" autocomplete="off" spellcheck="false" aria-label="Search loom number or head group" aria-autocomplete="list" aria-controls="sugg">
+        <button type="button" class="clear" id="q-clear" aria-label="Clear search" hidden>×</button><span class="kbd" id="q-kbd" aria-hidden="true">/</span>
+        <div class="sugg" id="sugg" role="listbox" hidden></div></div>
+      <div class="segmented" role="group" aria-label="Loom width">
+        <button type="button" data-w="190" aria-pressed="true">190 cm</button>
+        <button type="button" data-w="280" aria-pressed="false">280 cm</button>
+        <button type="button" data-w="all" aria-pressed="false">Both widths</button>
+      </div>
+      <div class="frow"><select class="chip day" id="day" aria-label="View date" title="Show the app as it stood on an earlier day"></select><span class="filternote" id="fnote"></span></div>
+    </div>
+    <main id="main"><div class="loading">Loading loom data…</div></main>
+  </div>
 </div>
-
+<nav class="tabbar" id="tabbar" aria-label="Pages"></nav>
+<dialog class="more" id="more" aria-label="More pages"></dialog>
 <script>
 (() => {
 'use strict';
@@ -313,15 +363,64 @@ const tgtId = (w, hg) => (w + '__' + hg).replace(/[^A-Za-z0-9_-]/g, '_').slice(0
 const S = () => D.settings || {};
 const UNITS = {rpm: 'RPM', eff: '%', cfm: 'CFM (ft³/min)', apk: 'ft³ / 1,000 picks', main: 'kgf/cm²', warp: 'breaks', warpRate: 'per 100k picks'};
 
+// ---------------------------------------------------------------- Double panna
+// 280 cm looms weave two panels side by side, so each machine pick makes two fabric picks. Default: double panna for every
+// 280 cm head group; a head group can be switched to single panna (saved in the Config Sheet's App targets tab as a panna__ row).
+// Fabric picks drive "Picks" and air per 1,000 picks. RPM, CFM and warp-break rate stay on the machine's own picks.
+let SINGLE = new Set(), pannaLoaded = false;
+const pf = (w, hg) => String(w) === '280' && !SINGLE.has(hg) ? 2 : 1;
+const pannaId = (w, hg) => 'panna__' + tgtId(w, hg);
+// Re-derive fabric picks and air per 1,000 picks for the current switches. Idempotent: loom-day records keep machine picks and air;
+// benchmark air figures are rescaled from the panna the pipeline applied when it computed them (old data: none applied).
+function applyPanna(data) {
+  if (!data) return;
+  const fix = (x, w, hg) => { if (!x) return; const f = pf(w, hg); x.fpicks = (x.picks || 0) * f; x.apk = x.fpicks && ok(x.air) ? 1000 * x.air / x.fpicks : null; };
+  for (const x of data.loomdays || []) fix(x, x.width, x.hg);
+  for (const b of data.benchmarks || []) {
+    if (!b._o) b._o = {pf: ok(b.panna) ? b.panna : 1, apk: b.apk, best_apk: b.best_apk, cur_apk: b.cur_apk, rv: b.runs && b.runs.apk ? b.runs.apk.value : null};
+    const s = b._o.pf / pf(b.width, b.hg);
+    b.apk = ok(b._o.apk) ? b._o.apk * s : b._o.apk; b.best_apk = ok(b._o.best_apk) ? b._o.best_apk * s : b._o.best_apk;
+    b.cur_apk = ok(b._o.cur_apk) ? b._o.cur_apk * s : b._o.cur_apk;
+    for (const R of Object.values(b.runs || {})) for (const r of [R.lo, R.hi, R.best, ...(R.top || [])]) fix(r, b.width, b.hg);
+    if (b.runs && b.runs.apk && ok(b._o.rv)) b.runs.apk.value = b._o.rv * s;
+  }
+}
+// Benchmark CFM for a loom-day = benchmark air per 1,000 fabric picks × panna × the loom's RPM ÷ 1,000 (CFM itself is never doubled).
+const cfmOf = (apk, w, hg, rpm) => ok(apk) && ok(rpm) && rpm > 0 ? apk * pf(w, hg) * rpm / 1000 : null;
+
 function agg(L) {
-  let picks = 0, run = 0, stop = 0, air = 0, warp = 0, mw = 0, mmax = 0; const looms = new Set();
+  let picks = 0, fpicks = 0, run = 0, stop = 0, air = 0, warp = 0, mw = 0, mmax = 0; const looms = new Set();
   for (const x of L) {
-    picks += x.picks || 0; run += x.run || 0; stop += x.stop || 0; air += x.air || 0; warp += x.warp || 0;
+    picks += x.picks || 0; fpicks += ok(x.fpicks) ? x.fpicks : (x.picks || 0); run += x.run || 0; stop += x.stop || 0; air += x.air || 0; warp += x.warp || 0;
     mw += (x.main || 0) * (x.run || 0); mmax = Math.max(mmax, x.main_max || 0); looms.add(x.loom);
   }
   if (!run || !picks) return null;
-  return {looms: looms.size, picks, run, stop, air, warp, rpm: picks / run, eff: 100 * run / (run + stop),
-    apk: 1000 * air / picks, cfm: air / run, main: mw / run, main_max: mmax, warpRate: warp / picks * 1e5};
+  return {looms: looms.size, picks, fpicks, run, stop, air, warp, rpm: picks / run, eff: 100 * run / (run + stop),
+    apk: 1000 * air / fpicks, cfm: air / run, main: mw / run, main_max: mmax, warpRate: warp / picks * 1e5};
+}
+
+// ---------------------------------------------------------------- Best loom-day
+// The single best loom-day behind each benchmark: fastest RPM, lowest air per 1,000 picks, lowest pressure.
+// New data carries it with the benchmark (all history); older data falls back to the loom-days kept on this page.
+const BEST_OK = {rpm: 1, apk: 1, main_max: 1, main: 1};
+function bestRec(w, hg, m) {
+  const b = bench(w, hg); if (!b || !BEST_OK[m]) return null;
+  const R = b.runs && b.runs[m];
+  if (R && R.best) return R.best;
+  const hi = m === 'rpm';
+  const L = (D.loomdays || []).filter((x) => String(x.width) === String(w) && x.hg === hg && x.eligible && ok(x[m]) && (m !== 'main_max' || x[m] > 0));
+  if (!L.length) return null;
+  return L.reduce((a, x) => (hi ? x[m] > a[m] : x[m] < a[m]) ? x : a);
+}
+const bestVal = (w, hg, m) => { const r = bestRec(w, hg, m); return r ? r[m] : null; };
+// Loom-days at or better than the benchmark, best first.
+function betterRecs(w, hg, m) {
+  const b = bench(w, hg); const R = b && b.runs && b.runs[m]; if (!R) return {list: [], n: 0, full: true};
+  if (R.top) return {list: R.top, n: R.n_better != null ? R.n_better : R.top.length, full: (R.n_better || R.top.length) <= R.top.length};
+  const hi = m === 'rpm';
+  const L = (D.loomdays || []).filter((x) => String(x.width) === String(w) && x.hg === hg && x.eligible && ok(x[m]) && (m !== 'main_max' || x[m] > 0)
+    && (hi ? x[m] >= R.value - 1e-9 : x[m] <= R.value + 1e-9)).sort((a, c) => hi ? c[m] - a[m] : a[m] - c[m]);
+  return {list: L, n: L.length, full: false, local: true};
 }
 const latestRecs = (minRun = 60) => (D.loomdays || []).filter((x) => x.date === D.latest && x.run >= minRun && inW(x.width));
 const priorDates = () => (D.complete_days || []).filter((d) => d < D.latest).slice(-7);
@@ -362,6 +461,11 @@ function mcell(now, bm, tg, fmt, higherBetter, tolBm, tolTg, ref) {
   const mk = (missB || missT) ? el('span', {class: 'mk', 'aria-label': higherBetter ? 'below reference' : 'above reference', text: higherBetter ? '▼' : '▲'}) : null;
   const refs = [];
   refs.push(ref && ok(bm) ? bmBtn('bm ' + fmt(bm), ref.w, ref.hg, ref.m, {miss: missB, view: ref.view, rpm: ref.rpm}) : el('span', {class: missB ? 'miss' : null, text: 'bm ' + fmt(bm)}));
+  if (ref && BEST_OK[ref.m]) {
+    let bv = bestVal(ref.w, ref.hg, ref.m);
+    if (ref.view === 'cfm') bv = cfmOf(bv, ref.w, ref.hg, ref.rpm);
+    if (ok(bv)) refs.push(' · ', bmBtn('best ' + fmt(bv), ref.w, ref.hg, ref.m, {kind: 'best', view: ref.view, rpm: ref.rpm}));
+  }
   if (ok(tg)) refs.push(' · ', el('span', {class: missT ? 'miss' : null, text: 'tgt ' + fmt(tg)}));
   return el('div', {class: 'mv'}, el('div', {class: 'v'}, fmt(now), mk), el('div', {class: 'ref'}, refs));
 }
@@ -377,12 +481,13 @@ const tolAir = (r) => r * (S().tol_air_pct || 5) / 100;
 const tolP = () => PRESS_TOL;
 function keyline(extra) {
   return el('div', {class: 'keyline'},
-    el('span', {}, `bm = benchmark (90th percentile for RPM, 10th for air and pressure, all history; click it to see the loom runs behind it) · tgt = your target · line = efficiency below ${f0(EFF_BAD())}% is bad, whatever the quality`),
+    el('span', {}, `bm = benchmark (90th percentile for RPM, 10th for air and pressure, all history) · best = the single best loom-day · click either to see the loom-days behind it · tgt = your target · line = efficiency below ${f0(EFF_BAD())}% is bad, whatever the quality`),
+    el('span', {}, 'Loom numbers and head groups are clickable too. 280 cm picks and air per 1,000 picks count double panna unless switched to single.'),
     el('span', {}, el('b', {text: '▼ ▲'}), ' worse than a reference by more than its tolerance; the missed one is ', el('u', {text: 'underlined'})),
     extra ? el('span', {text: extra}) : null);
 }
 
-// ---------------------------------------------------------------- Benchmark run panel
+// ---------------------------------------------------------------- Drill-down panel (benchmark, best, loom, head group)
 const BMETA = {
   rpm: {label: 'RPM', unit: 'picks/min', fmt: (x) => f0(x), best: 'high'},
   apk: {label: 'Air per 1,000 picks', unit: 'ft³ / 1,000 picks', fmt: (x) => f1(x), best: 'low'},
@@ -390,91 +495,256 @@ const BMETA = {
   main: {label: 'Main pressure (run-weighted avg)', unit: 'kgf/cm²', fmt: (x) => f2(x), best: 'low'},
   warp_rate: {label: 'Warp break rate (median)', unit: 'per 100k picks', fmt: (x) => f2(x), best: 'low'}};
 const pkey = (b) => b && ok(b.main_max) ? 'main_max' : 'main';
-// A benchmark figure that opens the runs behind it. view 'cfm' shows the air benchmark as CFM.
+const stopKey = (e) => e.stopPropagation();
+const pctText = (p) => p === 50 ? 'median' : `${f0(p)}th percentile`;
+// A benchmark or best figure that opens the loom-days behind it. view 'cfm' shows the air figure as CFM.
 function bmBtn(text, w, hg, m, opts = {}) {
-  const b = bench(w, hg);
-  if (!b || !b.runs || !b.runs[m]) return el('span', {class: opts.miss ? 'miss' : null, text});
-  return el('button', {type: 'button', class: 'bmb' + (opts.miss ? ' miss' : ''), text, title: 'See the loom runs behind this benchmark',
-    'aria-label': `${text}: show the loom runs behind the ${BMETA[m].label} benchmark for ${hg}, ${w} cm`,
-    onclick: (e) => { e.stopPropagation(); openBm(w, hg, m, opts); }, onkeydown: (e) => e.stopPropagation()});
+  const b = bench(w, hg); const best = opts.kind === 'best';
+  if (!b || !b.runs || !b.runs[m] || (best && !bestRec(w, hg, m))) return el('span', {class: opts.miss ? 'miss' : null, text});
+  return el('button', {type: 'button', class: 'bmb' + (opts.miss ? ' miss' : '') + (best ? ' best' : ''), text,
+    title: best ? 'See the best loom-day' : 'See the loom-days behind this benchmark',
+    'aria-label': `${text}: show the ${best ? 'best loom-day' : 'loom-days behind the benchmark'} for ${BMETA[m].label}, ${hg}, ${w} cm`,
+    onclick: (e) => { e.stopPropagation(); openBm(w, hg, m, opts); }, onkeydown: stopKey});
 }
-let bmDlg = null;
-function openBm(w, hg, m, opts = {}) {
-  const b = bench(w, hg); const R = b.runs[m]; const M = BMETA[m];
-  if (!bmDlg) { bmDlg = el('dialog', {class: 'bmp', 'aria-labelledby': 'bmp-t'}); bmDlg.addEventListener('click', (e) => { if (e.target === bmDlg) bmDlg.close(); }); document.body.append(bmDlg); }
-  const asCfm = opts.view === 'cfm' && m === 'apk';
-  const pctTxt = R.pct === 50 ? 'median' : `${f0(R.pct)}th percentile`;
-  const tie = R.hi && Math.abs(R.hi[m] - R.lo[m]) < 1e-9;
-  const runs = [R.lo, R.hi].filter(Boolean);
-  const isBr = (x) => runs.some((r) => r.date === x.date && r.loom === x.loom);
-  const dropped = new Set((R.dropped || []).map(([d, l]) => d + '|' + l));
-  const cols = [['Date'], ['Loom'], ['RPM', 'picks/min', 'rpm'], ['Efficiency', '%', 'eff'], ['CFM', 'ft³/min running', 'cfm'], ['Air', 'ft³/1,000 picks', 'apk'],
-    ['Main avg', 'kgf/cm²', 'main'], ['Main max', 'kgf/cm²', 'main_max'], ['Warp breaks', 'count', 'warp'], ['Warp rate', '/100k picks', 'warp_rate'], ['Beam'], ['Run', 'h'], ['Style as uploaded']];
-  const hlKey = m;
-  const head = (extra) => el('thead', {}, el('tr', {}, [...(extra || []), ...cols].map((c) => {
-    const t = th(c[0], c[1], !!c[2] || c[0] === 'Run' || c[0] === 'Loom'); if (c[2] === hlKey) t.classList.add('hl'); return t; })));
-  const cells = (x) => {
-    const v = {rpm: f0(x.rpm), eff: f1(x.eff), cfm: f1(x.cfm), apk: f1(x.apk), main: f2(x.main), main_max: f2(x.main_max), warp: f0(x.warp), warp_rate: f2(x.warp_rate)};
-    return cols.map((c) => {
+// Loom numbers and head groups anywhere on the page open their own details for the date shown.
+function loomLink(loom, date, label) {
+  return el('button', {type: 'button', class: 'lk', 'data-loom': String(loom), text: label != null ? label : String(loom), title: `Loom ${loom}: details`,
+    'aria-label': `Loom ${loom}: show details`, onclick: (e) => { e.stopPropagation(); openLoom(+loom, date || D.latest); }, onkeydown: stopKey});
+}
+function hgLink(hg, w, date, label) {
+  if (!hg || hg === 'Unassigned' || hg === '—') return el('span', {'data-hg': hg || '', text: label || hg || '—'});
+  return el('button', {type: 'button', class: 'hgl', 'data-hg': hg, text: label || hg, title: `${hg}: benchmark and looms`,
+    'aria-label': `${hg}${w ? ', ' + w + ' cm' : ''}: show benchmark and looms`, onclick: (e) => { e.stopPropagation(); openHg(hg, w, date || D.latest); }, onkeydown: stopKey});
+}
+// Turn "Loom 12" in alert text into a link.
+function linkify(text, date) {
+  const parts = String(text).split(/(\b[Ll]oom \d{1,2}\b)/);
+  return parts.map((p) => { const m = /^[Ll]oom (\d{1,2})$/.exec(p); return m && (D.machine || {})[m[1]] ? loomLink(+m[1], date, p) : p; });
+}
+
+let dlg = null; const STACK = [];
+function panelEl() {
+  if (!dlg) {
+    dlg = el('dialog', {class: 'bmp', 'aria-labelledby': 'bmp-t'});
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener('close', () => { STACK.length = 0; });
+    document.body.append(dlg);
+  }
+  return dlg;
+}
+function pushView(fn) { const d = panelEl(); if (!d.open) STACK.length = 0; STACK.push(fn); drawPanel(); if (!d.open) d.showModal(); }
+function drawPanel(keepScroll) {
+  const d = panelEl(); if (!STACK.length) return;
+  const y = d.scrollTop; const v = STACK[STACK.length - 1]();
+  d.replaceChildren(
+    el('div', {class: 'hd'},
+      STACK.length > 1 ? el('button', {class: 'back', type: 'button', text: '‹ Back', onclick: () => { STACK.pop(); drawPanel(); }}) : null,
+      el('div', {class: 'ttl'}, el('h2', {id: 'bmp-t', text: v.title}), v.sub ? el('div', {class: 'lead'}, v.sub) : null),
+      el('button', {class: 'x', type: 'button', 'aria-label': 'Close', text: '×', onclick: () => d.close()})),
+    el('div', {class: 'bd'}, ...v.body.filter(Boolean)));
+  d.scrollTop = keepScroll ? y : 0;
+}
+const closePanel = () => { if (dlg && dlg.open) dlg.close(); };
+
+// One table layout for loom-day records everywhere in the panel and the Benchmarks tab.
+const RCOLS = [['Date'], ['Loom'], ['Head group'], ['RPM', 'picks/min', 'rpm'], ['Eff', '%', 'eff'], ['CFM', 'ft³/min running', 'cfm'], ['Air', 'ft³/1,000 picks', 'apk'],
+  ['Main avg', 'kgf/cm²', 'main'], ['Main max', 'kgf/cm²', 'main_max'], ['Warp', 'breaks', 'warp'], ['Warp rate', '/100k picks', 'warp_rate'], ['Picks', 'lakh', 'picks'],
+  ['Beam'], ['Run', 'h'], ['Style as uploaded']];
+function runTable(recs, w, hg, opts = {}) {
+  const hl = opts.hl, cols = RCOLS.filter((c) => (opts.hgCol || c[0] !== 'Head group') && (!opts.noLoom || c[0] !== 'Loom'));
+  const lead = opts.lead || [];
+  const t = el('table');
+  t.append(el('thead', {}, el('tr', {}, [...lead.map((c) => th(c[0], c[1], true)), ...cols.map((c) => {
+    const h = th(c[0], c[1], !!c[2] || c[0] === 'Run' || c[0] === 'Loom'); if (c[2] && c[2] === hl) h.classList.add('hl'); return h; })])));
+  const tb = el('tbody');
+  for (const x of recs) {
+    if (x.__row) { tb.append(x.__row); continue; }
+    const xw = x.width || w, xh = x.hg || hg;
+    const fp = ok(x.fpicks) ? x.fpicks : (x.picks || 0) * pf(xw, xh);
+    const v = {rpm: f0(x.rpm), eff: f1(x.eff), cfm: f1(x.cfm), apk: f1(x.apk), main: f2(x.main), main_max: f2(x.main_max), warp: f0(x.warp), warp_rate: f2(x.warp_rate), picks: f2(fp / PICK_LAKH)};
+    tb.append(el('tr', {class: opts.rowClass ? opts.rowClass(x) : null}, ...lead.map((c) => el('td', {class: 'num'}, c[2](x))), ...cols.map((c) => {
       if (c[0] === 'Date') return el('td', {class: 'd', text: dfmt(x.date)});
-      if (c[0] === 'Loom') return el('td', {class: 'num'}, el('b', {text: x.loom}), el('div', {class: 'note', text: x.type || ''}));
+      if (c[0] === 'Loom') return el('td', {class: 'num'}, loomLink(x.loom, x.date), el('div', {class: 'note', text: x.type || ''}));
+      if (c[0] === 'Head group') return el('td', {}, hgLink(x.hg, xw, x.date));
       if (c[0] === 'Beam') return el('td', {class: 'mono d', text: x.beam || '—'});
       if (c[0] === 'Run') return el('td', {class: 'num', text: f1(x.run / 60)});
       if (c[0] === 'Style as uploaded') return el('td', {class: 'mono', text: (x.styles || []).join(', ') || '—'});
-      return el('td', {class: 'num' + (c[2] === hlKey ? ' hl' : ''), text: v[c[2]]});
-    });
-  };
-  // 1. the runs that set the benchmark
-  const brTb = el('tbody');
-  for (const [r, wt] of [[R.lo, R.lo_w], [R.hi, R.hi_w]]) if (r) brTb.append(el('tr', {}, el('td', {class: 'num', text: R.hi ? `${f0(wt * 100)}%` : '100%'}), cells(r)));
-  const vFmt = (x) => M.fmt(x);
-  const formula = R.hi && !tie
-    ? `${vFmt(R.lo[m])} × ${f2(R.lo_w)} + ${vFmt(R.hi[m])} × ${f2(R.hi_w)} = ${vFmt(R.value)} ${M.unit}`
-    : `${vFmt(R.value)} ${M.unit}${tie ? ' (both loom-days either side have this value)' : ' (falls exactly on this loom-day)'}`;
-  const brNote = R.hi && !tie
-    ? `The ${pctTxt} falls at position ${f2(R.pos + 1)} of ${R.of} counted loom-days, between these two. Weight = how much each contributes.`
-    : `The ${pctTxt} lands on this loom-day.`;
-  // 2. every run in the pool (from the 60 days of detail on this page)
-  const hiBest = M.best === 'high';
-  const pool = (D.loomdays || []).filter((x) => String(x.width) === String(w) && x.hg === hg && x.rpm > 0);
-  const status = (x) => {
-    if (x.run < (S().benchmark_min_run_min || 720)) return ['muted', `short run (<${f0((S().benchmark_min_run_min || 720) / 60)} h)`, false];
-    if ((m === 'main_max' && !(x.main_max > 0)) || (m === 'apk' && !ok(x.apk)) || (m === 'warp_rate' && !ok(x.warp_rate))) return ['muted', 'no value', false];
-    if (dropped.has(x.date + '|' + x.loom)) return ['warn', 'outlier, not counted', false];
-    if (isBr(x)) return ['info', 'sets benchmark', true];
-    return ['good', 'counted', true];
-  };
-  const rows = pool.map((x) => ({x, s: status(x)}));
-  const val = (x) => ok(x[m]) ? x[m] : (hiBest ? -Infinity : Infinity);
-  rows.sort((a, b) => (hiBest ? val(b.x) - val(a.x) : val(a.x) - val(b.x)) || a.x.date.localeCompare(b.x.date) || a.x.loom - b.x.loom);
-  const counted = rows.filter((r) => r.s[2]).length;
-  const pTb = el('tbody'); let marked = false;
-  const markRow = () => el('tr', {class: 'mark'}, el('td', {colspan: cols.length + 1, text: `▶ benchmark ${vFmt(R.value)} ${M.unit} (${pctTxt}) · ${hiBest ? 'better (faster) above, slower below' : 'better (lower) above, higher below'}`}));
-  for (const r of rows) {
-    const worse = hiBest ? val(r.x) < R.value - 1e-9 : val(r.x) > R.value + 1e-9;
-    if (!marked && worse) { pTb.append(markRow()); marked = true; }
-    pTb.append(el('tr', {class: (r.s[1] === 'sets benchmark' ? 'brk' : '') + (r.s[2] ? '' : ' out')}, el('td', {}, el('span', {class: 'pill ' + r.s[0], text: r.s[1]})), cells(r.x)));
+      return el('td', {class: 'num' + (c[2] === hl ? ' hl' : ''), text: v[c[2]]});
+    })));
   }
-  if (!marked) pTb.append(markRow());
-  const older = R.of - counted;
-  const metricWord = asCfm ? 'Air per 1,000 picks (shown as CFM on the page)' : M.label;
-  bmDlg.replaceChildren(
-    el('div', {class: 'hd'},
-      el('div', {}, el('h2', {id: 'bmp-t', text: `${hg} · ${w} cm`}),
-        el('div', {class: 'lead'}, `${metricWord} benchmark `, el('b', {text: `${vFmt(R.value)} ${M.unit}`}), ` · ${pctTxt} of ${R.of} counted loom-days${dropped.size ? ` (${dropped.size} outlier${dropped.size === 1 ? '' : 's'} left out)` : ''} · `, benchTag(b))),
-      el('button', {class: 'x', type: 'button', 'aria-label': 'Close', text: '×', onclick: () => bmDlg.close()})),
-    el('div', {class: 'bd'},
-      asCfm ? el('p', {class: 'scopenote', text: `CFM benchmarks on the page are this air figure converted at each loom's own speed: benchmark CFM = ${vFmt(R.value)} × RPM ÷ 1,000.${ok(opts.rpm) ? ` At ${f0(opts.rpm)} RPM that is ${f1(R.value * opts.rpm / 1000)} CFM.` : ''} The loom-days below set the air figure; their own CFM is in the CFM column.`}) : null,
-      m === 'main' ? el('p', {class: 'scopenote', text: 'This head group has no day-max pressure benchmark, so the run-weighted average pressure is used instead.'}) : null,
-      el('div', {}, el('h3', {text: R.hi && !tie ? 'The two loom-days either side of the benchmark' : 'The loom-day at the benchmark'}),
-        el('p', {class: 'note', text: brNote}),
-        el('div', {class: 'tablebox'}, el('table', {}, head([['Weight']]), brTb)),
-        el('div', {class: 'formula', text: formula})),
-      el('div', {}, el('h3', {text: `Every loom-day for ${hg} on ${w} cm (${rows.length})`}),
-        el('p', {class: 'note', text: `Sorted ${hiBest ? 'fastest' : 'lowest'} first. Every loom-day that ran at least ${f0((S().benchmark_min_run_min || 720) / 60)} h counts towards the benchmark; no outlier filter is applied. Loom-days that ran under ${f0((S().benchmark_min_run_min || 720) / 60)} h are shown but not counted.${older > 0 ? ` ${older} older counted loom-day${older === 1 ? ' is' : 's are'} older than the 60 days kept in detail, so not listed.` : ''}`}),
-        el('div', {class: 'tablebox'}, el('table', {}, head([['Status']]), pTb)))));
-  if (!bmDlg.open) bmDlg.showModal();
-  bmDlg.scrollTop = 0;
+  t.append(tb);
+  return el('div', {class: 'tablebox'}, t);
+}
+
+// Benchmark (percentile) or best loom-day for one metric of one quality: the content of the panel and of the Benchmarks tab.
+function bmDetail(w, hg, m, kind, opts = {}) {
+  const b = bench(w, hg); const R = b && b.runs && b.runs[m]; const M = BMETA[m];
+  if (!R) return [el('div', {class: 'empty', text: 'No benchmark for this metric yet.'})];
+  const asCfm = opts.view === 'cfm' && m === 'apk';
+  const pctTxt = pctText(R.pct);
+  const out = [];
+  const cfmNote = (v, label) => asCfm ? el('p', {class: 'scopenote', text: `CFM figures on the page are this air figure converted at each loom's own speed: ${label} CFM = ${M.fmt(v)} × RPM ÷ 1,000${pf(w, hg) === 2 ? ' × 2 (double panna)' : ''}.${ok(opts.rpm) ? ` At ${f0(opts.rpm)} RPM that is ${f1(cfmOf(v, w, hg, opts.rpm))} CFM.` : ''} The loom-days below set the air figure; their own CFM is in the CFM column.`}) : null;
+  if (kind === 'best') {
+    const r = bestRec(w, hg, m);
+    if (!r) return [el('div', {class: 'empty', text: m === 'warp_rate' ? 'The warp benchmark is a median, so there is no best loom-day for it.' : 'No loom-day to show.'})];
+    const gap = ok(R.value) ? (M.best === 'high' ? r[m] - R.value : R.value - r[m]) : null;
+    out.push(el('div', {class: 'lead'}, `Best ${m === 'rpm' ? 'RPM' : M.label.charAt(0).toLowerCase() + M.label.slice(1)} `, el('b', {text: `${M.fmt(r[m])} ${M.unit}`}),
+      ok(gap) ? ` · ${M.fmt(Math.abs(gap))} ${M.best === 'high' ? 'faster than' : 'below'} the ${pctTxt} benchmark of ${M.fmt(R.value)}` : '',
+      ` · the ${M.best === 'high' ? 'fastest' : 'lowest'} of ${R.of} counted loom-days${b.runs[m].best ? '' : ' kept on this page'}`));
+    out.push(cfmNote(r[m], 'best'));
+    out.push(runTable([r], w, hg, {hl: m}));
+    return out;
+  }
+  const tie = R.hi && Math.abs(R.hi[m] - R.lo[m]) < 1e-9;
+  out.push(el('div', {class: 'lead'}, `${asCfm ? 'Air per 1,000 picks (shown as CFM on the page)' : M.label} benchmark `, el('b', {text: `${M.fmt(R.value)} ${M.unit}`}),
+    ` · ${pctTxt} of ${R.of} counted loom-days · `, benchTag(b)));
+  out.push(cfmNote(R.value, 'benchmark'));
+  if (m === 'main') out.push(el('p', {class: 'scopenote', text: 'Where a head group has no day-max pressure benchmark, the run-weighted average pressure is used instead.'}));
+  const pair = [[R.lo, R.lo_w], [R.hi, R.hi_w]].filter((p) => p[0]);
+  out.push(el('div', {}, el('h3', {text: R.hi && !tie ? 'The two loom-days either side of the benchmark' : 'The loom-day at the benchmark'}),
+    el('p', {class: 'note', text: R.hi && !tie ? `The ${pctTxt} falls at position ${f2(R.pos + 1)} of ${R.of} counted loom-days, between these two. Weight = how much each contributes.` : `The ${pctTxt} lands on this loom-day.`}),
+    runTable(pair.map((p) => Object.assign({}, p[0], {__w: p[1]})), w, hg, {hl: m, lead: [['Weight', null, (x) => R.hi ? `${f0(x.__w * 100)}%` : '100%']]}),
+    el('div', {class: 'formula', text: R.hi && !tie ? `${M.fmt(R.lo[m])} × ${f2(R.lo_w)} + ${M.fmt(R.hi[m])} × ${f2(R.hi_w)} = ${M.fmt(R.value)} ${M.unit}`
+      : `${M.fmt(R.value)} ${M.unit}${tie ? ' (both loom-days either side have this value)' : ''}`})));
+  if (R.pct !== 50) {
+    const B = betterRecs(w, hg, m);
+    out.push(el('div', {}, el('h3', {text: `Loom-days ${M.best === 'high' ? 'at or above' : 'at or below'} the benchmark (${B.n})`}),
+      el('p', {class: 'note', text: `These make up the best ${f0(M.best === 'high' ? 100 - R.pct : R.pct)}% that the benchmark is drawn from, ${M.best === 'high' ? 'fastest' : 'lowest'} first.${B.list.length < B.n ? ` Showing the best ${B.list.length}.` : ''}${B.local ? ' From the 60 days kept in detail on this page.' : ''}`}),
+      B.list.length ? runTable(B.list, w, hg, {hl: m}) : el('div', {class: 'empty', text: 'None.'})));
+  } else {
+    out.push(el('p', {class: 'note', text: 'The warp break benchmark is the median loom-day of this head group, so half the loom-days are on each side of it.'}));
+  }
+  return out;
+}
+function openBm(w, hg, m, opts = {}) {
+  const st = {kind: opts.kind === 'best' ? 'best' : 'pct'};
+  pushView(() => {
+    const b = bench(w, hg); const R = b.runs[m];
+    const seg = BEST_OK[m] ? el('div', {class: 'seg', role: 'group', 'aria-label': 'Benchmark or best'},
+      el('button', {type: 'button', 'aria-pressed': st.kind === 'pct' ? 'true' : 'false', text: `Benchmark · ${pctText(R.pct)}`, onclick: () => { st.kind = 'pct'; drawPanel(); }}),
+      el('button', {type: 'button', 'aria-pressed': st.kind === 'best' ? 'true' : 'false', text: 'Best loom-day', onclick: () => { st.kind = 'best'; drawPanel(); }})) : null;
+    return {title: `${hg} · ${w} cm`, sub: `${opts.view === 'cfm' && m === 'apk' ? 'CFM (from air per 1,000 picks)' : BMETA[m].label}`,
+      body: [el('div', {class: 'toolbar', style: 'margin:0'}, seg, el('button', {class: 'link', type: 'button', text: 'All benchmarks and looms for this quality ›', onclick: () => openHg(hg, w, D.latest)})),
+        ...bmDetail(w, hg, m, st.kind, opts)]};
+  });
+}
+
+// Benchmark, best and target for every metric of one quality, against a day's figures (A = agg of loom-days or null).
+function benchSummary(w, hg, A, nowLabel) {
+  const b = bench(w, hg) || {}, t = tgt(w, hg) || {};
+  const rpm = A && A.rpm;
+  const pk = pkey(b);
+  const btn = (v, m, fmt, o = {}) => ok(v) ? bmBtn(fmt(v), w, hg, m, o) : '—';
+  const worse = (now, ref, hi, tol) => ok(now) && ok(ref) && (hi ? now < ref - tol : now > ref + tol);
+  const nowCell = (v, fmt, bad, hi) => el('span', {style: bad ? 'color:var(--bad);font-weight:700' : null, text: fmt(v) + (bad ? (hi ? ' ▼' : ' ▲') : '')});
+  const rows = [
+    ['RPM', 'picks/min', A && nowCell(A.rpm, f0, worse(A.rpm, b.rpm, true, tolRpm(b.rpm || 0)), true), btn(b.rpm, 'rpm', f0), btn(bestVal(w, hg, 'rpm'), 'rpm', f0, {kind: 'best'}), f0(t.rpm)],
+    ['CFM', 'ft³/min running, at this RPM', A && nowCell(A.cfm, f1, worse(A.cfm, cfmOf(b.apk, w, hg, rpm), false, tolAir(cfmOf(b.apk, w, hg, rpm) || 0))),
+      ok(rpm) ? btn(cfmOf(b.apk, w, hg, rpm), 'apk', f1, {view: 'cfm', rpm}) : '—', ok(rpm) ? btn(cfmOf(bestVal(w, hg, 'apk'), w, hg, rpm), 'apk', f1, {kind: 'best', view: 'cfm', rpm}) : '—', f1(t.cfm)],
+    ['Air', 'ft³/1,000 picks' + (pf(w, hg) === 2 ? ', double panna' : ''), A && nowCell(A.apk, f1, worse(A.apk, b.apk, false, tolAir(b.apk || 0))), btn(b.apk, 'apk', f1), btn(bestVal(w, hg, 'apk'), 'apk', f1, {kind: 'best'}), '—'],
+    ['Main pressure', 'kgf/cm², day max', A && nowCell(A.main_max, f2, worse(A.main_max, b[pk], false, PRESS_TOL)), btn(b[pk], pk, f2), btn(bestVal(w, hg, pk), pk, f2, {kind: 'best'}), f2(t.main)],
+    ['Main pressure', 'kgf/cm², run-weighted avg', A && f2(A.main), btn(b.main, 'main', f2), btn(bestVal(w, hg, 'main'), 'main', f2, {kind: 'best'}), '—'],
+    ['Efficiency', '%', A && nowCell(A.eff, f1, A.eff < EFF_BAD(), true), `line ${f0(EFF_BAD())}`, '—', '—'],
+    ['Warp breaks', 'per 100k picks', A && f2(A.warpRate), btn(b.warp_med, 'warp_rate', f2), '—', '—']];
+  const t2 = el('table');
+  t2.append(el('thead', {}, el('tr', {}, th('Metric'), th(nowLabel || 'This day', null, true), th('Benchmark', null, true), th('Best', 'single loom-day', true), th('Target', null, true))));
+  const tb = el('tbody');
+  for (const r of rows) tb.append(el('tr', {}, el('td', {}, el('b', {text: r[0]}), el('div', {class: 'note', text: r[1]})),
+    el('td', {class: 'num'}, A ? r[2] : '—'), el('td', {class: 'num hl'}, r[3]), el('td', {class: 'num'}, r[4]), el('td', {class: 'num'}, r[5])));
+  t2.append(tb);
+  return el('div', {class: 'tablebox'}, t2);
+}
+
+// Panna switch for a 280 cm head group (default double panna).
+const PANNA_MSG = {};
+function pannaSwitch(w, hg) {
+  if (String(w) !== '280' || !hg || hg === 'Unassigned') return null;
+  const single = SINGLE.has(hg);
+  const set = async (toSingle) => {
+    if (toSingle === SINGLE.has(hg)) return;
+    if (!db) { PANNA_MSG[hg] = ['err', 'Saving is not connected yet.']; refreshAll(); return; }
+    const prev = new Set(SINGLE);
+    if (toSingle) SINGLE.add(hg); else SINGLE.delete(hg);
+    PANNA_MSG[hg] = ['note', 'Saving…']; refreshAll();
+    try {
+      if (toSingle) await api('setTarget', {id: pannaId(w, hg), data: {width: '280', hg}});
+      else await api('deleteTarget', {id: pannaId(w, hg)});
+      PANNA_MSG[hg] = ['saved', `Saved: ${toSingle ? 'single' : 'double'} panna`];
+    } catch (e) { SINGLE = prev; PANNA_MSG[hg] = ['err', 'Could not save: ' + (e && e.message || 'no write access')]; }
+    refreshAll();
+  };
+  const msg = PANNA_MSG[hg];
+  return el('div', {class: 'sw'}, el('div', {class: 'seg', role: 'group', 'aria-label': `Panna for ${hg}`},
+    el('button', {type: 'button', 'aria-pressed': single ? 'false' : 'true', text: 'Double panna', onclick: (e) => { e.stopPropagation(); set(false); }}),
+    el('button', {type: 'button', 'aria-pressed': single ? 'true' : 'false', text: 'Single panna', onclick: (e) => { e.stopPropagation(); set(true); }})),
+    msg ? el('span', {class: msg[0], text: msg[1]}) : null);
+}
+function refreshAll() { applyPanna(D); render(); if (dlg && dlg.open) drawPanel(true); }
+
+// Loom: that day and the two complete days before it, and the benchmark for the quality it ran.
+function openLoom(loom, date) { pushView(() => loomView(loom, date)); }
+function loomView(loom, date) {
+  const mc = (D.machine || {})[loom] || {};
+  const days = (D.complete_days || []).filter((d) => d <= date).slice(-3).reverse();
+  const recs = (D.loomdays || []).filter((x) => x.loom === loom && days.includes(x.date));
+  const rows = [];
+  for (const d of days) {
+    const R = recs.filter((x) => x.date === d).sort((a, b) => b.run - a.run);
+    if (R.length) rows.push(...R);
+    else rows.push({__row: el('tr', {}, el('td', {class: 'd', text: dfmt(d)}), el('td', {colspan: RCOLS.length - 2, class: 'note', text: 'No running record this day (powered down or not in the files).'}))});
+  }
+  const util = (D.util || []).filter((u) => u.loom === loom && days.includes(u.date) && u.off > 0);
+  const dayRecs = recs.filter((x) => x.date === date);
+  const quals = new Map();
+  for (const x of (dayRecs.length ? dayRecs : recs.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 1))) {
+    const k = key(x.width, x.hg); if (!quals.has(k)) quals.set(k, []); quals.get(k).push(x);
+  }
+  const body = [
+    card(`${dfmt(date)} and the 2 days before`, `${recs.length} loom-day record${recs.length === 1 ? '' : 's'}`, runTable(rows, mc.width, null, {hgCol: true, noLoom: true}),
+      util.length ? el('p', {class: 'note', text: 'Powered down: ' + util.map((u) => `${dfmt(u.date)} ${f1(u.off / 60)} h`).join(' · ')}) : null)];
+  for (const L of quals.values()) {
+    const x0 = L[0]; const A = agg(L.filter((x) => x.date === x0.date));
+    body.push(card(`Benchmark for ${x0.hg} · ${x0.width} cm`, x0.hg === 'Unassigned' ? 'assign a head group to get a benchmark' : null,
+      el('div', {class: 'toolbar'}, hgLink(x0.hg, x0.width, date, `${x0.hg}: all looms on ${dfmt(date)} ›`), pannaSwitch(x0.width, x0.hg)),
+      x0.hg === 'Unassigned' ? el('div', {class: 'empty', text: 'No benchmark.'}) : benchSummary(x0.width, x0.hg, A, `Loom ${loom}, ${dfmt(x0.date)}`)));
+  }
+  return {title: `Loom ${loom}`, sub: `${mc.width || '?'} cm ${mc.type || ''} · ${dfmt(date)}`, body};
+}
+
+// Head group: benchmark, best and target, plus every loom that ran it on the day.
+function openHg(hg, w, date) {
+  if (!w) {
+    const ws = [...new Set([...(D.loomdays || []).filter((x) => x.hg === hg && x.date === date).map((x) => String(x.width)), ...(D.benchmarks || []).filter((b) => b.hg === hg).map((b) => String(b.width))])];
+    w = ws.includes(W) ? W : ws[0] || '190';
+  }
+  pushView(() => hgView(hg, String(w), date));
+}
+function hgView(hg, w, date) {
+  const L = (D.loomdays || []).filter((x) => x.date === date && String(x.width) === w && x.hg === hg && x.run > 0);
+  const L60 = L.filter((x) => x.run >= 60);
+  const A = agg(L60);
+  const other = (D.benchmarks || []).filter((b) => b.hg === hg && String(b.width) !== w).map((b) => String(b.width));
+  return {title: hg, sub: `${w} cm · ${dfmt(date)}`, body: [
+    el('div', {class: 'toolbar', style: 'margin:0'}, benchTag(bench(w, hg)), pannaSwitch(w, hg),
+      other.map((ow) => el('button', {class: 'ghost', type: 'button', text: `Same quality on ${ow} cm`, onclick: () => openHg(hg, ow, date)})),
+      el('button', {class: 'link', type: 'button', text: 'Open in Benchmarks tab ›', onclick: () => { BQ = key(w, hg); closePanel(); setTab('benchmarks'); }})),
+    card('Benchmark, best and target', `Day figures from looms that ran at least 60 min on ${dfmt(date)}`, benchSummary(w, hg, A, `${dfmt(date)}, all looms`)),
+    card(`Looms running ${hg} on ${dfmt(date)} · ${new Set(L.map((x) => x.loom)).size}`, 'Each loom against the head group benchmark and target',
+      L.length ? loomTable(L) : el('div', {class: 'empty', text: 'No loom ran this quality on this day.'}))]};
+}
+
+function openGuide() {
+  pushView(() => ({title: 'Guide', sub: 'How the figures on this app are worked out', body: [el('div', {class: 'card guide'},
+    el('h3', {text: 'Benchmark and best'}),
+    el('p', {text: 'Every head group has a benchmark per loom width from all its history: the 90th percentile for RPM and the 10th percentile for air per 1,000 picks and main pressure. Best is the single best loom-day behind it (fastest RPM, lowest air, lowest pressure). Click any bm or best figure to see the loom-days behind it.'}),
+    el('h3', {text: 'CFM'}),
+    el('p', {text: 'Benchmark CFM is the benchmark air per 1,000 picks at the RPM the loom actually ran, so a loom is not rewarded for running slow. CFM itself is what the loom reads, on every width.'}),
+    el('h3', {text: 'Double panna (280 cm)'}),
+    el('p', {text: '280 cm looms weave two panels, so each machine pick makes two fabric picks. Picks and air per 1,000 picks count both panels; RPM, CFM, pressure and warp-break rate stay as the loom reads them. A head group that runs single panna can be switched in its head group panel, on the Benchmarks tab or on the Targets tab.'}),
+    el('h3', {text: 'Clicking and searching'}),
+    el('p', {text: 'Click a loom number for that loom on the day shown and the two days before, with its quality\'s benchmark. Click a head group for its benchmark and every loom that ran it that day. Type a loom number or head group in the search bar (press / to jump there) to filter the page or open it directly.'}),
+    el('h3', {text: 'Efficiency'}),
+    el('p', {text: `Efficiency is not benchmarked by quality: below ${f0(EFF_BAD())}% is bad on any loom.`}))]}));
 }
 
 // ---------------------------------------------------------------- KPIs
@@ -483,7 +753,7 @@ function kpiSet(dates) {
   const A = agg(L); if (!A) return null;
   const n = dates.length;
   const off = (D.util || []).filter((u) => dates.includes(u.date) && inW(u.width)).reduce((s, u) => s + u.off, 0);
-  return {picks_l: A.picks / PICK_LAKH / n, eff: A.eff, rpm: A.rpm, apk: A.apk, cfm: A.cfm, floor_cfm: A.air / 1440 / n, air: A.air / n, off_h: off / 60 / n};
+  return {picks_l: A.fpicks / PICK_LAKH / n, eff: A.eff, rpm: A.rpm, apk: A.apk, cfm: A.cfm, floor_cfm: A.air / 1440 / n, air: A.air / n, off_h: off / 60 / n};
 }
 
 // ---------------------------------------------------------------- Actions (latest day only)
@@ -495,7 +765,7 @@ function actionLists() {
     const b = bench(x.width, x.hg) || {};
     const lostMin = Math.max(0, EFF_BAD() / 100 * (x.run + x.stop) - x.run);
     const beam = ok(x.warp_rate) && x.warp_rate > Math.max((S().warp_multiple || 2) * (b.warp_med || 0), S().warp_min_rate || 3);
-    out.eff.push({x, now: x.eff, gap: EFF_BAD() - x.eff, impact: lostMin * x.rpm / PICK_LAKH, lostMin, beam});
+    out.eff.push({x, now: x.eff, gap: EFF_BAD() - x.eff, impact: lostMin * x.rpm * pf(x.width, x.hg) / PICK_LAKH, lostMin, beam});
   }
   const floor = (D.pressure.floor || []).slice(-1)[0];
   for (const x of L) {
@@ -506,10 +776,10 @@ function actionLists() {
     const offRB = ok(rB) && x.rpm < rB - tolRpm(rB), offRT = ok(rT) && x.rpm < rT - tolRpm(rT);
     if (offRB || offRT) {
       const ref = Math.max(offRB ? rB : 0, offRT ? rT : 0);
-      out.rpm.push({x, b, t, now: x.rpm, bm: rB, tg: rT, gap: ref - x.rpm, impact: (ref - x.rpm) * x.run / PICK_LAKH});
+      out.rpm.push({x, b, t, now: x.rpm, bm: rB, tg: rT, gap: ref - x.rpm, impact: (ref - x.rpm) * x.run * pf(x.width, x.hg) / PICK_LAKH});
     }
     // CFM: benchmark CFM = benchmark air per 1,000 picks at this loom's own speed
-    const cB = ok(b.apk) ? b.apk * x.rpm / 1000 : null, cT = ok(t.cfm) ? t.cfm : null;
+    const cB = cfmOf(b.apk, x.width, x.hg, x.rpm), cT = ok(t.cfm) ? t.cfm : null;
     const offCB = ok(cB) && x.cfm > cB + tolAir(cB), offCT = ok(cT) && x.cfm > cT + tolAir(cT);
     if (offCB || offCT) {
       const ref = Math.min(offCB ? cB : Infinity, offCT ? cT : Infinity);
@@ -529,7 +799,7 @@ function actionLists() {
   out.press.sort((a, b) => b.now - a.now || b.gap - a.gap);
   return out;
 }
-function loomCell(x) { return el('div', {}, el('div', {style: 'font-weight:600', text: 'Loom ' + x.loom}), el('div', {class: 'note', text: `${x.hg} · ${x.width} cm ${x.type}`})); }
+function loomCell(x) { return el('div', {}, el('div', {}, loomLink(x.loom, x.date, 'Loom ' + x.loom)), el('div', {class: 'note'}, hgLink(x.hg, x.width, x.date), ` · ${x.width} cm ${x.type}`)); }
 function actionCard(id, title, note, items, cols, row, extra) {
   const lim = SHOWALL[id] ? items.length : 8;
   const body = items.length ? [table(cols, items.slice(0, lim).map(row), cols.map((_, i) => i).filter((i) => i > 0)), moreButton(id, items.length, 8)]
@@ -583,7 +853,7 @@ function pageActions() {
   s.append(keyline('Benchmarks still marked provisional are based on few days; treat their gaps as indicative.'));
 
   const al = (D.alerts || []).filter((a) => a.level === 'Critical');
-  if (al.length) s.append(card('Data and floor flags', null, el('ul', {class: 'alerts'}, al.slice(0, 8).map((a) => el('li', {}, el('span', {class: 'pill bad', text: a.scope}), el('span', {text: a.msg}))))));
+  if (al.length) s.append(card('Data and floor flags', null, el('ul', {class: 'alerts'}, al.slice(0, 8).map((a) => el('li', {}, el('span', {class: 'pill bad', text: a.scope}), el('span', {}, linkify(a.msg)))))));
   return s;
 }
 
@@ -613,7 +883,7 @@ function assignCard(un) {
     });
     box.append(el('div', {class: 'row'},
       el('div', {}, el('div', {class: 'name', text: u.style || '(blank)'}),
-        el('div', {class: 'meta', text: `Loom ${u.looms.join(', ')} · ${dfmt(u.first)}${u.last !== u.first ? '–' + dfmt(u.last) : ''} · ${f1(u.run_h)} h run`})),
+        el('div', {class: 'meta'}, 'Loom ', u.looms.flatMap((l, i) => i ? [', ', loomLink(l, u.last)] : [loomLink(l, u.last)]), ` · ${dfmt(u.first)}${u.last !== u.first ? '–' + dfmt(u.last) : ''} · ${f1(u.run_h)} h run`)),
       el('div', {style: 'display:grid;gap:6px'}, sel, nw), el('div', {}, btn), msg));
   }
   const saved = un.filter((u) => assigned[u.style]).length, left = un.length - saved;
@@ -631,8 +901,8 @@ function assignCard(un) {
 function loomTable(recs) {
   const rows = recs.slice().sort((a, b) => a.loom - b.loom).map((x) => {
     const b = bench(x.width, x.hg) || {}, t = tgt(x.width, x.hg) || {};
-    const cB = ok(b.apk) ? b.apk * x.rpm / 1000 : null;
-    return [el('span', {}, el('b', {text: x.loom}), el('div', {class: 'note', text: x.type})),
+    const cB = cfmOf(b.apk, x.width, x.hg, x.rpm);
+    return [el('span', {}, loomLink(x.loom, x.date), el('div', {class: 'note', text: x.type})),
       mcell(x.rpm, b.rpm, t.rpm, f0, true, tolRpm, tolRpm, {w: x.width, hg: x.hg, m: 'rpm'}), effCell(x.eff),
       mcell(x.cfm, cB, t.cfm, f1, false, tolAir, tolAir, {w: x.width, hg: x.hg, m: 'apk', view: 'cfm', rpm: x.rpm}), mcell(x.apk, b.apk, null, f1, false, tolAir, null, {w: x.width, hg: x.hg, m: 'apk'}),
       mcell(x.main_max, ok(b.main_max) ? b.main_max : b.main, t.main, f2, false, tolP, tolP, {w: x.width, hg: x.hg, m: pkey(b)}),
@@ -655,12 +925,12 @@ function pageQuality() {
   const tb = el('tbody');
   for (const g of groups) {
     const b = bench(g.w, g.hg) || {}, tg = tgt(g.w, g.hg) || {}, A = g.A;
-    const cB = ok(b.apk) ? b.apk * A.rpm / 1000 : null;
+    const cB = cfmOf(b.apk, g.w, g.hg, A.rpm);
     const open = OPEN.has(g.k);
     const btn = el('button', {class: 'drill', type: 'button', 'aria-expanded': open ? 'true' : 'false', text: open ? 'Hide looms' : 'Looms ▸',
       onclick: () => { open ? OPEN.delete(g.k) : OPEN.add(g.k); render(); }});
     tb.append(el('tr', {},
-      el('td', {}, el('b', {text: g.hg}), el('div', {class: 'note', text: g.w + ' cm · ' + [...new Set(g.recs.map((x) => x.type))].join(', ')})),
+      el('td', {}, hgLink(g.hg, g.w, D.latest), el('div', {class: 'note', text: g.w + ' cm · ' + [...new Set(g.recs.map((x) => x.type))].join(', ')}), String(g.w) === '280' && g.hg !== 'Unassigned' ? el('div', {class: 'note', text: pf(g.w, g.hg) === 2 ? 'double panna' : 'single panna'}) : null),
       el('td', {class: 'num', text: A.looms}),
       el('td', {class: 'mvc'}, mcell(A.rpm, b.rpm, tg.rpm, f0, true, tolRpm, tolRpm, {w: g.w, hg: g.hg, m: 'rpm'})),
       el('td', {class: 'mvc'}, effCell(A.eff)),
@@ -708,7 +978,7 @@ function pressureChart(rows, floorNow, floorNew) {
   const ax = svgEl('text', {x: m.l + (Wd - m.l - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: muted}); ax.textContent = 'Main nozzle pressure, kgf/cm² (highest the loom ran at in the day)'; svg.append(ax);
   rows.forEach((r, i) => {
     const y = m.t + i * rowH;
-    const lt = svgEl('text', {x: m.l - 10, y: y + 15, 'text-anchor': 'end', 'font-size': 12, fill: ink}); lt.textContent = `${r.loom} · ${r.hg} · ${r.width}`; svg.append(lt);
+    const lt = svgEl('text', {x: m.l - 10, y: y + 15, 'text-anchor': 'end', 'font-size': 12, fill: ink, class: 'lkt', 'data-loom': r.loom}); lt.textContent = `${r.loom} · ${r.hg} · ${r.width}`; lt.addEventListener('click', () => openLoom(r.loom, D.latest)); svg.append(lt);
     svg.append(svgEl('rect', {x: x(0), y: y + 5, width: Math.max(1, x(r.main) - x(0)), height: 13, rx: 2, fill: bar}));
     if (ok(r.bm)) svg.append(svgEl('rect', {x: x(r.bm) - 1.5, y: y + 1, width: 3, height: 21, fill: ink}));
     if (ok(r.tg)) { const cx = x(r.tg), cy = y + 11.5; svg.append(svgEl('path', {d: `M${cx} ${cy - 7}L${cx + 7} ${cy}L${cx} ${cy + 7}L${cx - 7} ${cy}Z`, fill: css('--panel'), stroke: ink, 'stroke-width': 2})); }
@@ -777,7 +1047,7 @@ function pagePressure() {
     body = table(['Loom', 'Head group', ['Now', 'kgf/cm²'], ['Benchmark', 'kgf/cm²'], ['Target', 'kgf/cm²'], ['Excess', 'kgf/cm² over reference'], 'Status'],
       sorted.map((l) => {
         const ex = ok(l.ref) ? l.main - l.ref : null;
-        return [el('b', {text: l.loom}), el('span', {}, l.hg, el('div', {class: 'note', text: `${l.width} cm ${l.type}`})), f2(l.main), ok(l.bm) ? bmBtn(f2(l.bm), l.width, l.hg, pkey(bench(l.width, l.hg))) : '—', f2(l.tg), ok(ex) ? (ex > 0 ? '+' : '') + f2(ex) : '—',
+        return [loomLink(l.loom, D.latest), el('span', {}, hgLink(l.hg, l.width, D.latest), el('div', {class: 'note', text: `${l.width} cm ${l.type}`})), f2(l.main), ok(l.bm) ? bmBtn(f2(l.bm), l.width, l.hg, pkey(bench(l.width, l.hg))) : '—', f2(l.tg), ok(ex) ? (ex > 0 ? '+' : '') + f2(ex) : '—',
           Math.abs(l.main - floorNow) < 1e-9 ? el('span', {class: 'pill bad', text: 'sets floor'}) : ok(ex) && ex > PRESS_TOL ? el('span', {class: 'pill warn', text: 'above reference'}) : ''];
       }), [2, 3, 4, 5]);
   } else {
@@ -791,7 +1061,7 @@ function pagePressure() {
       return {l0, L, hi, avg, only, r1, r2};
     }).sort((a, b) => b.hi - a.hi);
     body = table(['Head group', ['Looms', 'ran'], ['Highest now', 'kgf/cm²'], ['Average now', 'kgf/cm²'], ['Benchmark', 'kgf/cm²'], ['Target', 'kgf/cm²'], ['Floor if only this quality is fixed', 'kgf/cm²'], ['Energy saved', '% of compressor']],
-      rows.map((r) => [el('span', {}, el('b', {text: r.l0.hg}), el('div', {class: 'note', text: r.l0.width + ' cm'})), r.L.length, f2(r.hi), f2(r.avg), ok(r.l0.bm) ? bmBtn(f2(r.l0.bm), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg))) : '—', f2(r.l0.tg),
+      rows.map((r) => [el('span', {}, hgLink(r.l0.hg, r.l0.width, D.latest), el('div', {class: 'note', text: r.l0.width + ' cm'})), r.L.length, f2(r.hi), f2(r.avg), ok(r.l0.bm) ? bmBtn(f2(r.l0.bm), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg))) : '—', f2(r.l0.tg),
         r.only < floorNow - 1e-9 ? el('b', {text: f2(r.only)}) : f2(r.only), r.r2 > 0 ? `${f1(r.r1 * 100)}–${f1(r.r2 * 100)}` : '0']), [1, 2, 3, 4, 5, 6, 7]);
   }
   s.append(card('Benchmark and target vs running pressure', PVIEW === 'quality' ? 'The floor only drops when every quality at the top comes down, so most single-quality rows show no saving on their own.' : 'Highest pressure each loom ran at in the day',
@@ -799,10 +1069,10 @@ function pagePressure() {
 
   s.append(el('div', {class: 'split'},
     card('Floor by day', 'Highest main pressure per day and shift, kgf/cm²',
-      table(['Date', ['Floor', 'kgf/cm²'], ['Shift A', 'kgf/cm²'], ['Shift B', 'kgf/cm²'], 'Set by'], (P.floor || []).slice().reverse().slice(0, 14).map((f) => [dfmt(f.date), f2(f.floor), f2(f.A), f2(f.B), `Loom ${f.loom} · ${f.hg}`]), [1, 2, 3])),
+      table(['Date', ['Floor', 'kgf/cm²'], ['Shift A', 'kgf/cm²'], ['Shift B', 'kgf/cm²'], 'Set by'], (P.floor || []).slice().reverse().slice(0, 14).map((f) => [dfmt(f.date), f2(f.floor), f2(f.A), f2(f.B), el('span', {}, loomLink(f.loom, f.date, 'Loom ' + f.loom), ' · ', hgLink(f.hg, (D.machine[f.loom] || {}).width, f.date))]), [1, 2, 3])),
     card('Head groups holding the floor up', 'At the top on at least half of the last 14 days. Drop decisions are yours.',
       (P.setters || []).length ? table(['Head group', 'Days at top', ['Floor → without it', 'kgf/cm²'], ['Saving', '% of compressor'], ['Share of picks', '%'], 'Recommendation'],
-        P.setters.map((x) => [x.hg, `${x.days}/${x.of}`, `${f2(x.floor)} → ${f2(x.without)}`, `${f1(x.rule * 100)}–${f1(x.adia * 100)}`, f1(x.share),
+        P.setters.map((x) => [el('span', {}, hgLink(x.hg, null, D.latest), el('div', {class: 'note'}, 'Looms ', (x.looms || []).flatMap((l, i) => [i ? ', ' : '', loomLink(l.loom, D.latest)]))), `${x.days}/${x.of}`, `${f2(x.floor)} → ${f2(x.without)}`, `${f1(x.rule * 100)}–${f1(x.adia * 100)}`, f1(x.share),
           el('div', {}, el('span', {class: 'pill warn', text: x.rec}), el('p', {class: 'why', text: x.why}))]), [3, 4])
         : el('div', {class: 'empty', text: 'None yet.'}))));
   return s;
@@ -813,7 +1083,7 @@ function pagePressure() {
 // Reference CFM for a loom-day = head group benchmark air per 1,000 picks × that loom's RPM ÷ 1,000, or your target CFM in target mode.
 function cfmRefs(x) {
   const b = bench(x.width, x.hg) || {}, t = tgt(x.width, x.hg) || {};
-  const bm = x.hg !== 'Unassigned' && ok(b.apk) && x.rpm > 0 ? b.apk * x.rpm / 1000 : null;
+  const bm = x.hg !== 'Unassigned' ? cfmOf(b.apk, x.width, x.hg, x.rpm) : null;
   const tg = x.hg !== 'Unassigned' && ok(t.cfm) ? t.cfm : null;
   const ref = CMODE === 'tgt' ? (ok(tg) ? tg : bm) : bm;
   const after = ok(ref) ? Math.min(x.cfm, ref) : x.cfm;
@@ -841,7 +1111,7 @@ function cfmChart(rows) {
   const ax = svgEl('text', {x: m.l + (Wd - m.l - m.r) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 12, fill: muted}); ax.textContent = 'CFM, ft³/min while running'; svg.append(ax);
   rows.forEach((r, i) => {
     const y = m.t + i * rowH;
-    const lt = svgEl('text', {x: m.l - 10, y: y + 15, 'text-anchor': 'end', 'font-size': 12, fill: ink}); lt.textContent = `${r.x.loom} · ${r.x.hg} · ${r.x.width}`; svg.append(lt);
+    const lt = svgEl('text', {x: m.l - 10, y: y + 15, 'text-anchor': 'end', 'font-size': 12, fill: ink, class: 'lkt', 'data-loom': r.x.loom}); lt.textContent = `${r.x.loom} · ${r.x.hg} · ${r.x.width}`; lt.addEventListener('click', () => openLoom(r.x.loom, r.x.date)); svg.append(lt);
     svg.append(svgEl('rect', {x: x(0), y: y + 5, width: Math.max(1, x(r.x.cfm) - x(0)), height: 13, rx: 2, fill: bar}));
     if (ok(r.bm)) svg.append(svgEl('rect', {x: x(r.bm) - 1.5, y: y + 1, width: 3, height: 21, fill: ink}));
     if (ok(r.tg)) { const cx = x(r.tg), cy = y + 11.5; svg.append(svgEl('path', {d: `M${cx} ${cy - 7}L${cx + 7} ${cy}L${cx} ${cy + 7}L${cx - 7} ${cy}Z`, fill: css('--panel'), stroke: ink, 'stroke-width': 2})); }
@@ -889,7 +1159,7 @@ function pageCfm() {
     body = table(['Loom', 'Head group', ['RPM', 'picks/min'], ['Now', 'CFM'], ['Benchmark', 'CFM at this RPM'], ['Target', 'CFM'], ['Excess', 'CFM over reference'], ['Air', 'ft³/1,000 picks'], ['Excess air', 'ft³ in the day'], 'Status'],
       sorted.map((r) => {
         const st = ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref) ? el('span', {class: 'pill warn', text: 'above reference'}) : !ok(r.ref) ? el('span', {class: 'pill muted', text: 'no reference'}) : '';
-        return [el('b', {text: r.x.loom}), el('span', {}, r.x.hg, el('div', {class: 'note', text: `${r.x.width} cm ${r.x.type}`})), f0(r.x.rpm), f1(r.x.cfm),
+        return [loomLink(r.x.loom, r.x.date), el('span', {}, hgLink(r.x.hg, r.x.width, r.x.date), el('div', {class: 'note', text: `${r.x.width} cm ${r.x.type}`})), f0(r.x.rpm), f1(r.x.cfm),
           ok(r.bm) ? bmBtn(f1(r.bm), r.x.width, r.x.hg, 'apk', {view: 'cfm', rpm: r.x.rpm}) : '—', f1(r.tg), r.ex > 0.05 ? '+' + f1(r.ex) : '0', f1(r.x.apk), r.ex > 0.05 ? f0(r.ex * r.x.run) : '0', st];
       }), [2, 3, 4, 5, 6, 7, 8]);
   } else {
@@ -899,10 +1169,10 @@ function pageCfm() {
     const rows = [...by.values()].map((R) => {
       const x0 = R[0].x, A = agg(R.map((r) => r.x)), b = bench(x0.width, x0.hg) || {}, t = tgt(x0.width, x0.hg) || {};
       const exAir = R.reduce((a, r) => a + r.ex * r.x.run, 0);
-      return {x0, R, A, b, t, bm: x0.hg !== 'Unassigned' && ok(b.apk) ? b.apk * A.rpm / 1000 : null, exAir, over: R.filter((r) => ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref)).length};
+      return {x0, R, A, b, t, bm: x0.hg !== 'Unassigned' ? cfmOf(b.apk, x0.width, x0.hg, A.rpm) : null, exAir, over: R.filter((r) => ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref)).length};
     }).sort((a, b) => b.exAir - a.exAir);
     body = table(['Head group', ['Looms', 'ran'], ['RPM', 'picks/min'], ['CFM now', 'ft³/min running'], ['Benchmark', 'CFM at this RPM'], ['Target', 'CFM'], ['Air now', 'ft³/1,000 picks'], ['Air benchmark', 'ft³/1,000 picks'], ['Looms above', 'reference'], ['Saved if fixed', 'CFM, 24-h draw'], ['Share of saving', '%']],
-      rows.map((r) => [el('span', {}, el('b', {text: r.x0.hg}), el('div', {class: 'note', text: r.x0.width + ' cm'})), r.A.looms, f0(r.A.rpm), f1(r.A.cfm),
+      rows.map((r) => [el('span', {}, hgLink(r.x0.hg, r.x0.width, D.latest), el('div', {class: 'note', text: r.x0.width + ' cm'})), r.A.looms, f0(r.A.rpm), f1(r.A.cfm),
         ok(r.bm) ? bmBtn(f1(r.bm), r.x0.width, r.x0.hg, 'apk', {view: 'cfm', rpm: r.A.rpm}) : '—', f1(r.t.cfm), f1(r.A.apk),
         ok(r.b.apk) && r.x0.hg !== 'Unassigned' ? bmBtn(f1(r.b.apk), r.x0.width, r.x0.hg, 'apk') : '—', r.over, f1(r.exAir / 1440), tot > 0 ? f0(100 * r.exAir / tot) : '0']), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   }
@@ -929,7 +1199,7 @@ function pageUtil() {
     offLong.length ? table(['Loom', 'Head group', ['Powered down', 'h'], ['Run', 'h'], ['Stopped', 'h'], 'Off on earlier days'],
       offLong.map((u) => {
         const prev = (D.util || []).filter((v) => v.loom === u.loom && v.date < D.latest && v.off >= OFF_LONG).length;
-        return [el('span', {}, el('b', {text: u.loom}), el('div', {class: 'note', text: `${u.width} cm ${u.type}`})), hgOf(u.loom), f1(u.off / 60), f1(u.run / 60), f1(u.stop / 60), prev ? `${prev} earlier day${prev > 1 ? 's' : ''} ≥ ${OFF_LONG / 60} h` : '—'];
+        return [el('span', {}, loomLink(u.loom, u.date), el('div', {class: 'note', text: `${u.width} cm ${u.type}`})), hgLink(hgOf(u.loom), u.width, u.date), f1(u.off / 60), f1(u.run / 60), f1(u.stop / 60), prev ? `${prev} earlier day${prev > 1 ? 's' : ''} ≥ ${OFF_LONG / 60} h` : '—'];
       }), [2, 3, 4]) : el('div', {class: 'empty', text: `No loom was powered down for ${OFF_LONG / 60} hours or more.`})));
 
   // consistently low efficiency
@@ -952,7 +1222,7 @@ function pageUtil() {
   bad.sort((a, b) => b.gap - a.gap);
   s.append(card(`Consistently low efficiency · ${bad.length} loom${bad.length === 1 ? '' : 's'}`, `${(D.complete_days || []).length} days of history so far; the window fills to ${LOW_EFF_WINDOW} days as uploads come in.`,
     bad.length ? table(['Loom', 'Head group', ['Days low', `of last ${LOW_EFF_WINDOW}`], ['Average efficiency', '%'], ['Below line', 'points'], ['Latest day', '%'], ['Warp breaks', 'avg /100k picks']],
-      bad.map((r) => [el('span', {}, el('b', {text: r.loom}), el('div', {class: 'note', text: `${r.cur.width} cm ${r.cur.type}`})), el('span', {}, r.cur.hg, r.beam ? el('div', {}, el('span', {class: 'pill info', text: 'likely beam'})) : null),
+      bad.map((r) => [el('span', {}, loomLink(r.loom, r.cur.date), el('div', {class: 'note', text: `${r.cur.width} cm ${r.cur.type}`})), el('span', {}, hgLink(r.cur.hg, r.cur.width, r.cur.date), r.beam ? el('div', {}, el('span', {class: 'pill info', text: 'likely beam'})) : null),
         `${r.low.length}/${r.win.length}`, f1(r.avg), f1(r.gap), r.win[r.win.length - 1].date === D.latest ? f1(r.win[r.win.length - 1].eff) : `ran ${dfmt(r.cur.date)}`, f1(r.warp)]), [2, 3, 4, 5, 6])
       : el('div', {class: 'empty', text: `No loom has been below ${f0(EFF_BAD())}% on most of its recent days.`})));
   return s;
@@ -986,7 +1256,7 @@ function pageWarp() {
   for (const q of qs) {
     const b = bench(q.w, q.hg);
     tb.append(el('tr', {class: 'pick' + (q.k === WQ ? ' sel' : ''), tabindex: '0', onclick: () => { WQ = q.k; render(); }, onkeydown: (e) => { if (e.key === 'Enter') { WQ = q.k; render(); } }},
-      el('td', {}, el('b', {text: q.hg}), el('div', {class: 'note', text: q.w + ' cm'})), el('td', {class: 'num', text: q.A.looms}), el('td', {class: 'num', text: f0(q.A.warp)}),
+      el('td', {}, hgLink(q.hg, q.w, D.latest), el('div', {class: 'note', text: q.w + ' cm'})), el('td', {class: 'num', text: q.A.looms}), el('td', {class: 'num', text: f0(q.A.warp)}),
       el('td', {class: 'num', text: f2(q.A.warpRate)}), el('td', {class: 'num', text: f1(q.A.eff)}), el('td', {class: 'num'}, b ? bmBtn(f2(b.warp_med), q.w, q.hg, 'warp_rate') : '—')));
   }
   t.append(tb);
@@ -1001,15 +1271,15 @@ function pageWarp() {
     s.append(card(`Loom-wise: ${q.hg}, ${q.w} cm`, WPER === 'day' ? dfmt(D.latest) : 'Last 7 days',
       el('div', {class: 'toolbar'}, el('label', {for: 'warp-q', text: 'Quality'}), sel),
       table(['Loom', ['Warp breaks', 'total'], ['Rate', 'per 100k picks'], ['vs head group', '× median'], ['Efficiency', '%'], ['Days', 'ran'], 'Beam'],
-        rows.map((r) => [el('span', {}, el('b', {text: r.loom}), el('div', {class: 'note', text: r.recs[0].type})), f0(r.A.warp), f2(r.A.warpRate), ok(med) && med > 0 ? f1(r.A.warpRate / med) + '×' : '—', f1(r.A.eff), new Set(r.recs.map((x) => x.date)).size, r.beams.join(', ') || '—']), [1, 2, 3, 4, 5])));
+        rows.map((r) => [el('span', {}, loomLink(r.loom, r.recs[r.recs.length - 1].date), el('div', {class: 'note', text: r.recs[0].type})), f0(r.A.warp), f2(r.A.warpRate), ok(med) && med > 0 ? f1(r.A.warpRate / med) + '×' : '—', f1(r.A.eff), new Set(r.recs.map((x) => x.date)).size, r.beams.join(', ') || '—']), [1, 2, 3, 4, 5])));
   }
   const wl = (D.warp || []).filter((x) => inW(x.width)), wq = (D.warp_quality || []).filter((x) => inW(x.width));
   s.append(el('div', {class: 'split'},
     card('Flagged looms', `Over ${S().warp_multiple}× head group median and over ${S().warp_min_rate} per 100k picks on ${S().warp_days} of the last 5 running days`,
-      wl.length ? table(['Loom', 'Head group', ['Rate', '/100k picks'], ['Group median', '/100k picks'], 'Days', 'Beams'], wl.map((w) => [w.loom, `${w.hg} · ${w.width} cm`, f2(w.rate), f2(w.median), `${w.days}/${w.of}`, w.beams.join(', ')]), [2, 3])
+      wl.length ? table(['Loom', 'Head group', ['Rate', '/100k picks'], ['Group median', '/100k picks'], 'Days', 'Beams'], wl.map((w) => [loomLink(w.loom, D.latest), el('span', {}, hgLink(w.hg, w.width, D.latest), ` · ${w.width} cm`), f2(w.rate), f2(w.median), `${w.days}/${w.of}`, w.beams.join(', ')]), [2, 3])
         : el('div', {class: 'empty', text: 'No single loom stands out from its head group yet.'})),
     card('Qualities breaking at over twice the width median', 'Last 14 days, breaks per 100k picks',
-      wq.length ? table(['Head group', ['Median rate', '/100k picks'], ['Width median', '/100k picks']], wq.map((x) => [`${x.hg} · ${x.width} cm`, f2(x.median), f2(x.width_median)]), [1, 2]) : el('div', {class: 'empty', text: 'None.'}))));
+      wq.length ? table(['Head group', ['Median rate', '/100k picks'], ['Width median', '/100k picks']], wq.map((x) => [el('span', {}, hgLink(x.hg, x.width, D.latest), ` · ${x.width} cm`), f2(x.median), f2(x.width_median)]), [1, 2]) : el('div', {class: 'empty', text: 'None.'}))));
   return s;
 }
 
@@ -1066,7 +1336,7 @@ function pageTrends() {
   });
   s.append(card('Daily trend', unit, el('div', {class: 'toolbar'}, seg, el('label', {for: 'trend-hl', text: 'Highlight'}), hl), el('div', {class: 'tablebox'}, lineChart(series, dates, 'Daily ' + TREND_METRIC + ' by head group', unit))));
   const dr = (D.alerts || []).filter((a) => a.scope === 'Quality' && (W === 'all' || a.msg.includes(W + ' cm')));
-  s.append(card('Drift alerts', 'Latest day vs the 7 days before, and week on week once 14 days exist', dr.length ? el('ul', {class: 'alerts'}, dr.map((a) => el('li', {}, el('span', {class: 'pill warn', text: a.level}), el('span', {text: a.msg})))) : el('div', {class: 'empty', text: 'No drift on this width.'})));
+  s.append(card('Drift alerts', 'Latest day vs the 7 days before, and week on week once 14 days exist', dr.length ? el('ul', {class: 'alerts'}, dr.map((a) => el('li', {}, el('span', {class: 'pill warn', text: a.level}), el('span', {}, linkify(a.msg))))) : el('div', {class: 'empty', text: 'No drift on this width.'})));
   return s;
 }
 
@@ -1074,11 +1344,12 @@ function pageTrends() {
 function pageTargets() {
   const s = el('section', {class: 'page', id: 'targets'});
   s.append(el('div', {}, el('h2', {text: `Targets, ${wLabel()}`}),
-    el('p', {class: 'lead', text: 'Set any or all of target CFM, RPM and main pressure for a head group on each width. Leave a box empty for no target. Every page compares against these alongside the benchmark; they apply as soon as you save.'})));
+    el('p', {class: 'lead', text: 'Set any or all of target CFM, RPM and main pressure for a head group on each width. Leave a box empty for no target. Every page compares against these alongside the benchmark; they apply as soon as you save. 280 cm head groups count double panna (picks ×2, air per 1,000 picks halved) unless you switch them to single panna here; that applies straight away too.'})));
   const ks = new Map();
   for (const b of D.benchmarks || []) if (inW(b.width)) ks.set(key(b.width, b.hg), {w: b.width, hg: b.hg});
   for (const x of D.loomdays || []) if (inW(x.width) && x.hg !== 'Unassigned') ks.set(key(x.width, x.hg), {w: x.width, hg: x.hg});
   for (const k of Object.keys(TG)) { const t = TG[k]; if (inW(t.width)) ks.set(k, {w: t.width, hg: t.hg}); }
+  for (const hg of SINGLE) if (inW('280')) ks.set(key('280', hg), {w: '280', hg});
   const list = [...ks.values()].sort((a, b) => a.w.localeCompare(b.w) || a.hg.localeCompare(b.hg));
   const cur = new Map();
   for (const x of latestRecs()) { const k = key(x.width, x.hg); if (!cur.has(k)) cur.set(k, []); cur.get(k).push(x); }
@@ -1102,12 +1373,12 @@ function pageTargets() {
       } catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access'); }
       btn.disabled = false;
     });
-    const cB = ok(b.apk) && A ? b.apk * A.rpm / 1000 : null;
-    return [el('span', {}, el('b', {text: hg}), el('div', {class: 'note', text: w + ' cm'})),
+    const cB = A ? cfmOf(b.apk, w, hg, A.rpm) : null;
+    return [el('span', {}, hgLink(hg, w, D.latest), el('div', {class: 'note', text: w + ' cm'})),
       inp('cfm', '0.1', A && A.cfm, cB, f1, {m: 'apk', view: 'cfm', rpm: A && A.rpm}), inp('rpm', '1', A && A.rpm, b.rpm, f0, {m: 'rpm'}), inp('main', '0.05', A && A.main_max, ok(b.main_max) ? b.main_max : b.main, f2, {m: pkey(b)}),
-      el('div', {}, btn, msg)];
+      String(w) === '280' ? pannaSwitch(w, hg) : el('span', {class: 'note', text: 'single panna'}), el('div', {}, btn, msg)];
   });
-  const tb = table(['Head group', ['Target CFM', 'ft³/min while running'], ['Target RPM', 'picks/min'], ['Target main pressure', 'kgf/cm²'], ''], rows);
+  const tb = table(['Head group', ['Target CFM', 'ft³/min while running'], ['Target RPM', 'picks/min'], ['Target main pressure', 'kgf/cm²'], ['Panna', '280 cm: double unless switched'], ''], rows);
   tb.classList.add('tg');
   s.append(card('Targets by head group', targetsLoaded ? `${Object.keys(TG).length} head group${Object.keys(TG).length === 1 ? '' : 's'} with targets` : 'Loading saved targets…', tb,
     el('p', {class: 'note', text: '"now" is the latest day (pressure: highest the head group ran at). Benchmark CFM is shown at the RPM run on the latest day. Targets are saved to the App targets tab of the Config Sheet.'}),
@@ -1125,7 +1396,7 @@ function pageData() {
     (D.files || []).slice().reverse().map((f) => [f.checked_at, f.folder_date, f.file_name, f.date, f.shift, f.looms,
       el('span', {class: 'pill ' + ({ingested: 'good', quarantined: 'bad', duplicate: 'muted', skipped: 'muted', superseded: 'muted'}[f.status] || 'muted'), text: f.status}), f.reason]), [5])));
   const info = (D.alerts || []).filter((a) => a.level !== 'Critical');
-  s.append(card('Other alerts', 'Warnings and info items from the daily run', info.length ? el('ul', {class: 'alerts'}, info.map((a) => el('li', {}, el('span', {class: 'pill ' + (a.level === 'Warning' ? 'warn' : 'info'), text: a.scope}), el('span', {text: a.msg})))) : el('div', {class: 'empty', text: 'None.'})));
+  s.append(card('Other alerts', 'Warnings and info items from the daily run', info.length ? el('ul', {class: 'alerts'}, info.map((a) => el('li', {}, el('span', {class: 'pill ' + (a.level === 'Warning' ? 'warn' : 'info'), text: a.scope}), el('span', {}, linkify(a.msg))))) : el('div', {class: 'empty', text: 'None.'})));
   const st = S();
   s.append(card('Settings in use', 'Edit these in the Settings tab of the W2 Loom Performance Config sheet',
     table(['Setting', 'Value'], [
@@ -1136,21 +1407,210 @@ function pageData() {
   return s;
 }
 
-const PAGES = {actions: pageActions, quality: pageQuality, pressure: pagePressure, cfm: pageCfm, utilisation: pageUtil, warp: pageWarp, trends: pageTrends, targets: pageTargets, data: pageData};
+// ---------------------------------------------------------------- Benchmarks tab
+let BQ = '', BMET = 'rpm', BQS = '', BKIND = 'pct';
+const BMET_LIST = [['rpm', 'RPM'], ['apk', 'Air & CFM'], ['main_max', 'Main pressure (max)'], ['main', 'Main pressure (avg)'], ['warp_rate', 'Warp breaks']];
+function pageBench() {
+  const s = el('section', {class: 'page', id: 'benchmarks'});
+  s.append(el('div', {}, el('h2', {text: `Benchmarks, ${wLabel()}`}),
+    el('p', {class: 'lead', text: 'Pick a quality to see its benchmark (90th percentile for RPM, 10th for air and pressure, all history) and its single best loom-day, with the loom-days behind each. Click a loom number to open that loom.'})));
+  const list = (D.benchmarks || []).filter((b) => inW(b.width)).slice().sort((a, b) => a.hg.localeCompare(b.hg) || String(a.width).localeCompare(String(b.width)));
+  if (!list.length) { s.append(card('No benchmarks yet', null, el('div', {class: 'empty', text: 'Benchmarks appear once head groups have complete days of running.'}))); return s; }
+  if (!BQ || !list.some((b) => key(b.width, b.hg) === BQ)) BQ = key(list[0].width, list[0].hg);
+  const q = el('input', {type: 'search', placeholder: 'Search quality', value: BQS || null, 'aria-label': 'Search quality', autocomplete: 'off', spellcheck: 'false'});
+  const box = el('div', {role: 'group', 'aria-label': 'Qualities'});
+  const dot = {published: 'var(--good)', 'single-loom': 'var(--info)', provisional: 'var(--warn)'};
+  const draw = () => {
+    const f = BQS.trim().toLowerCase();
+    const rows = list.filter((b) => !f || b.hg.toLowerCase().includes(f) || (b.width + ' cm').includes(f)).map((b) => {
+      const k = key(b.width, b.hg);
+      return el('button', {type: 'button', class: 'qrow', 'aria-pressed': k === BQ ? 'true' : 'false', 'data-hg': b.hg,
+        onclick: () => { BQ = k; render(); if (window.innerWidth < 1180) { const d = $('#bdetail'); if (d) d.scrollIntoView({behavior: 'smooth', block: 'start'}); } }},
+        el('span', {class: 'qdot', style: `background:${dot[b.status] || 'var(--muted)'}`, title: b.status}),
+        el('div', {style: 'min-width:0'}, el('div', {class: 'qn', text: b.hg}), el('div', {class: 'qs', text: `${b.width} cm · ${b.n} loom-days · ${b.looms} loom${b.looms === 1 ? '' : 's'}`})),
+        el('div', {class: 'qv'}, `RPM ${f0(b.rpm)}`, el('br'), `air ${f1(b.apk)}`));
+    });
+    box.replaceChildren(...(rows.length ? rows : [el('div', {class: 'empty', text: 'No quality matches.'})]));
+  };
+  q.addEventListener('input', () => { BQS = q.value; draw(); });
+  draw();
+  const left = el('div', {class: 'card bench-list'}, el('div', {class: 'search'}, icon('search', 18), q), box,
+    el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'qdot', style: 'background:var(--good)'}), 'benchmark'),
+      el('span', {class: 'lg'}, el('span', {class: 'qdot', style: 'background:var(--info)'}), 'single loom'), el('span', {class: 'lg'}, el('span', {class: 'qdot', style: 'background:var(--warn)'}), 'provisional')));
+  const [w, hg] = BQ.split('|'); const b = bench(w, hg);
+  const day = agg((D.loomdays || []).filter((x) => x.date === D.latest && String(x.width) === w && x.hg === hg && x.run >= 60));
+  const met = el('div', {class: 'chips', role: 'group', 'aria-label': 'Metric'}, BMET_LIST.map(([k, l]) => el('button', {type: 'button', class: 'chip', 'aria-pressed': BMET === k ? 'true' : 'false', text: l, onclick: () => { BMET = k; render(); }})));
+  const view = BMET === 'apk' ? {view: 'cfm', rpm: day && day.rpm} : {};
+  const R = b.runs && b.runs[BMET];
+  // Benchmark (percentile) or Best (single best loom-day); warp breaks has no best because its benchmark is a median.
+  const kind = BKIND === 'best' && BEST_OK[BMET] ? 'best' : 'pct';
+  const kindSeg = el('div', {class: 'segmented', role: 'group', 'aria-label': 'Benchmark or best', style: 'min-width:260px'},
+    el('button', {type: 'button', 'aria-pressed': kind === 'pct' ? 'true' : 'false', text: 'Benchmark', onclick: () => { BKIND = 'pct'; render(); }}),
+    el('button', {type: 'button', 'aria-pressed': kind === 'best' ? 'true' : 'false', text: 'Best', disabled: BEST_OK[BMET] ? null : true,
+      title: BEST_OK[BMET] ? 'The single best loom-day' : 'Warp breaks are benchmarked on the median, so there is no best', onclick: () => { BKIND = 'best'; render(); }}));
+  const right = el('div', {id: 'bdetail', style: 'display:grid;gap:16px;min-width:0;scroll-margin-top:12px'},
+    el('div', {class: 'card'},
+      el('div', {class: 'cardhead'}, el('div', {}, el('h2', {}, hgLink(hg, w, D.latest)), el('div', {class: 'note', text: `${w} cm · ${b.n} loom-days on ${b.dates} dates from ${b.looms} looms · click the name for every loom that ran it on ${dfmt(D.latest)}`})),
+        el('div', {class: 'sw'}, el('span', {class: 'pill ' + ({published: 'good', 'single-loom': 'info', provisional: 'warn'}[b.status] || 'muted'), text: b.status === 'published' ? 'benchmark' : b.status}), pannaSwitch(w, hg))),
+      benchSummary(w, hg, day, day ? `Latest day, ${dfmt(D.latest)}` : `Latest day (did not run)`)),
+    el('div', {class: 'toolbar', style: 'margin:0'}, kindSeg, met),
+    kind === 'best'
+      ? el('div', {class: 'card'}, el('div', {class: 'cardhead'}, el('h3', {text: `${BMETA[BMET].label}: best loom-day`})), ...bmDetail(w, hg, BMET, 'best', view))
+      : el('div', {class: 'card'}, el('div', {class: 'cardhead'}, el('h3', {text: `${BMETA[BMET].label}: benchmark${R ? ' · ' + pctText(R.pct) : ''}`})), ...bmDetail(w, hg, BMET, 'pct', view)));
+  s.append(el('div', {class: 'bench-layout'}, left, right));
+  return s;
+}
+
+// ---------------------------------------------------------------- Navigation, search, theme
+const ICONS = {
+  bolt: ['M13 3 4 14h7l-1 7 9-11h-7l1-7z'], layers: ['M12 3 3 8l9 5 9-5-9-5z', 'M3 12.5l9 5 9-5', 'M3 16.5l9 5 9-5'],
+  bars: ['M5 20v-9', 'M12 20V4', 'M19 20v-6', 'M3 20h18'], wind: ['M3 8h10a3 3 0 1 0-3-3', 'M3 12h15a3 3 0 1 1-3 3', 'M3 16h6'],
+  gauge: ['M4.5 17a8.5 8.5 0 1 1 15 0', 'M12 14l4-5', ['circle', {cx: 12, cy: 14, r: 1.3}]], power: ['M12 3v8', 'M7 5.8a8 8 0 1 0 10 0'],
+  warp: ['M6 4v16', 'M12 4v6', 'M12 14v6', 'M18 4v16'], trend: ['M3 17l6-6 4 4 8-8', 'M15 7h6v6'],
+  target: [['circle', {cx: 12, cy: 12, r: 9}], ['circle', {cx: 12, cy: 12, r: 5}], ['circle', {cx: 12, cy: 12, r: 1.2}]],
+  db: ['M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z', 'M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6', 'M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'],
+  help: [['circle', {cx: 12, cy: 12, r: 9}], 'M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6', ['circle', {cx: 12, cy: 17, r: 0.6}]],
+  sun: [['circle', {cx: 12, cy: 12, r: 4}], 'M12 2v2', 'M12 20v2', 'M4.9 4.9l1.4 1.4', 'M17.7 17.7l1.4 1.4', 'M2 12h2', 'M20 12h2', 'M4.9 19.1l1.4-1.4', 'M17.7 6.3l1.4-1.4'],
+  moon: ['M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z'], refresh: ['M20 11a8 8 0 0 0-14.6-4.5L4 8', 'M4 4v4h4', 'M4 13a8 8 0 0 0 14.6 4.5L20 16', 'M20 20v-4h-4'],
+  search: [['circle', {cx: 11, cy: 11, r: 7}], 'M20 20l-4-4'], dots: [['circle', {cx: 5, cy: 12, r: 1.4}], ['circle', {cx: 12, cy: 12, r: 1.4}], ['circle', {cx: 19, cy: 12, r: 1.4}]]};
+function icon(name, size = 20) {
+  const s = svgEl('svg', {width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'});
+  for (const d of ICONS[name]) s.append(typeof d === 'string' ? svgEl('path', {d}) : svgEl(d[0], d[1]));
+  return s;
+}
+const NAV = [['actions', 'Actions', 'bolt'], ['quality', 'Quality', 'layers'], ['benchmarks', 'Benchmarks', 'bars'], ['cfm', 'CFM', 'wind'], ['pressure', 'Pressure', 'gauge'],
+  ['utilisation', 'Utilisation', 'power'], ['warp', 'Warp breaks', 'warp'], ['trends', 'Trends', 'trend'], ['targets', 'Targets', 'target']];
+const TITLES = Object.assign(Object.fromEntries(NAV.map((n) => [n[0], n[1]])), {data: 'Data health'});
+const MOB = ['actions', 'quality', 'benchmarks', 'cfm'];
+function buildNav() {
+  const item = (id, label, ic, cls) => el('a', {class: cls, href: '#' + id, 'data-tab': id}, icon(ic, cls === 'sb-item' ? 20 : 24), el('span', {text: label}), el('span', {class: 'sb-count', 'data-count': id}));
+  $('#sbnav').replaceChildren(...NAV.map((n) => item(n[0], n[1], n[2], 'sb-item')));
+  $('#sb-data').replaceChildren(icon('db'), el('span', {text: 'Data health'}));
+  $('#sb-guide').replaceChildren(icon('help'), el('span', {text: 'Guide'}));
+  const tb = $('#tabbar');
+  tb.replaceChildren(...MOB.map((id) => { const n = NAV.find((x) => x[0] === id); return el('a', {href: '#' + id, 'data-tab': id}, icon(n[2], 24), el('span', {text: n[1]}), el('span', {class: 'badge', 'data-badge': id, hidden: true})); }),
+    el('button', {type: 'button', id: 'morebtn', onclick: () => $('#more').showModal()}, icon('dots', 24), el('span', {text: 'More'})));
+  const more = $('#more');
+  more.replaceChildren(...[...NAV.filter((n) => !MOB.includes(n[0])), ['data', 'Data health', 'db']].map((n) => el('a', {href: '#' + n[0], 'data-tab': n[0], onclick: () => more.close()}, icon(n[2], 22), el('span', {text: n[1]}))),
+    el('a', {href: '#', onclick: (e) => { e.preventDefault(); more.close(); openGuide(); }}, icon('help', 22), el('span', {text: 'Guide'})));
+  more.addEventListener('click', (e) => { if (e.target === more) more.close(); });
+  for (const a of document.querySelectorAll('.sb-nav .sb-item[data-tab="actions"]')) a.append(el('span', {class: 'badge', 'data-badge': 'actions', hidden: true}));
+  $('#sb-guide').addEventListener('click', openGuide);
+  $('#help').replaceChildren(icon('help', 22)); $('#help').addEventListener('click', openGuide);
+  $('#refresh').replaceChildren(icon('refresh', 20)); $('#refresh-m').replaceChildren(icon('refresh', 22));
+  $('#gs-icon').replaceChildren(icon('search', 18));
+}
+
+const PAGES = {actions: pageActions, quality: pageQuality, benchmarks: pageBench, pressure: pagePressure, cfm: pageCfm, utilisation: pageUtil, warp: pageWarp, trends: pageTrends, targets: pageTargets, data: pageData};
 function render() {
   if (!D) return;
-  for (const b of document.querySelectorAll('.controls .seg button')) b.setAttribute('aria-pressed', b.dataset.w === W ? 'true' : 'false');
-  for (const a of document.querySelectorAll('nav.tabs a')) { if (a.dataset.tab === TAB) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
+  for (const b of document.querySelectorAll('.segmented[aria-label="Loom width"] button')) b.setAttribute('aria-pressed', b.dataset.w === W ? 'true' : 'false');
+  for (const a of document.querySelectorAll('[data-tab]')) { if (a.dataset.tab === TAB) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
+  const mb = $('#morebtn'); if (mb) { if (!MOB.includes(TAB)) mb.setAttribute('aria-current', 'page'); else mb.removeAttribute('aria-current'); }
   const pendingNames = (D.unassigned || []).filter((u) => !assigned[u.style]).length;
-  const cnt = $('#cnt-assign'); cnt.hidden = !pendingNames; cnt.textContent = pendingNames;
+  for (const bd of document.querySelectorAll('[data-badge="actions"]')) { bd.hidden = !pendingNames; bd.textContent = pendingNames; }
+  const nb = (D.benchmarks || []).filter((b) => inW(b.width)).length;
+  for (const c of document.querySelectorAll('[data-count="benchmarks"]')) c.textContent = nb || '';
+  $('#ptitle').textContent = TITLES[TAB] || 'Loom Performance';
+  document.title = `${TITLES[TAB] || 'Loom Performance'} · W2 Looms`;
   const y = window.scrollY;
   $('#main').replaceChildren(PAGES[TAB]());
+  applyFilter();
   window.scrollTo(0, y);
 }
-function setTab(t) { TAB = PAGES[t] ? t : 'actions'; render(); window.scrollTo(0, 0); }
+function setTab(t) { TAB = PAGES[t] ? t : 'actions'; if (location.hash.slice(1) !== TAB) history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0); }
 function busyEditing(sel) { const a = document.activeElement; return a && a.closest && a.closest(sel); }
 
-for (const b of document.querySelectorAll('.controls .seg button')) b.addEventListener('click', () => { W = b.dataset.w; try { localStorage.setItem('w2-width', W); } catch (e) {} render(); });
+// Search: filters the rows of every table on the page (loom number = exact loom, text = head group or any cell)
+// and suggests looms and head groups to open directly.
+let QF = '', SUG = [], SUGI = -1;
+const qIn = $('#q'), sugBox = $('#sugg');
+function rowMatches(node, q) {
+  const n = q.replace(/^loom\s*/, '').trim();
+  const looms = [...node.querySelectorAll('[data-loom]')].map((e) => e.dataset.loom);
+  if (/^\d+$/.test(n)) return looms.length ? looms.includes(String(+n)) : new RegExp('(^|\\D)' + n + '(\\D|$)').test(node.textContent);
+  if ([...node.querySelectorAll('[data-hg]')].some((e) => e.dataset.hg.toLowerCase().includes(q)) || (node.dataset.hg || '').toLowerCase().includes(q)) return true;
+  return node.textContent.toLowerCase().includes(q);
+}
+function applyFilter() {
+  const q = QF.trim().toLowerCase(); const main = $('#main');
+  let shown = 0, total = 0;
+  for (const tr of main.querySelectorAll('tbody > tr')) {
+    if (tr.classList.contains('drillrow') || tr.classList.contains('mark') || tr.parentElement.closest('tr.drillrow')) continue;
+    total++;
+    const hit = !q || rowMatches(tr, q);
+    tr.hidden = !hit; if (hit) shown++;
+    const nx = tr.nextElementSibling; if (nx && nx.classList.contains('drillrow')) nx.hidden = !hit;
+  }
+  for (const b of main.querySelectorAll('.qrow')) { const hit = !q || rowMatches(b, q); b.hidden = !hit; }
+  const fn = $('#fnote');
+  fn.replaceChildren(...(q ? ['Filtering tables on this page: ', el('b', {text: `${shown} of ${total}`}), ` rows match “${QF.trim()}” `, el('button', {class: 'ghost', type: 'button', text: 'Clear', onclick: clearSearch})] : []));
+}
+function suggestions(raw) {
+  const q = raw.trim().toLowerCase(); if (!q || !D) return [];
+  const out = []; const n = q.replace(/^loom\s*/, '');
+  const hgNow = D.loom_hg || {};
+  if (/^\d+$/.test(n)) {
+    for (const l of Object.keys(D.machine || {}).map(Number).sort((a, b) => a - b)) {
+      if (!String(l).startsWith(String(+n))) continue;
+      const mc = D.machine[l] || {};
+      out.push({k: 'Loom', label: `Loom ${l}`, sub: `${mc.width} cm ${mc.type || ''} · ${hgNow[l] || 'no run'}`, go: () => openLoom(l, D.latest)});
+      if (out.length >= 8) break;
+    }
+  }
+  const seen = new Map();
+  for (const b of D.benchmarks || []) seen.set(key(b.width, b.hg), {w: String(b.width), hg: b.hg});
+  for (const x of D.loomdays || []) if (x.hg !== 'Unassigned') seen.set(key(x.width, x.hg), {w: String(x.width), hg: x.hg});
+  const hits = [...seen.values()].filter((v) => v.hg.toLowerCase().includes(q)).sort((a, b) => (W !== 'all' && (a.w === W) !== (b.w === W) ? (a.w === W ? -1 : 1) : 0) || a.hg.localeCompare(b.hg) || a.w.localeCompare(b.w));
+  for (const v of hits.slice(0, 10)) {
+    const nl = new Set((D.loomdays || []).filter((x) => x.date === D.latest && x.hg === v.hg && String(x.width) === v.w).map((x) => x.loom)).size;
+    out.push({k: 'Head group', label: v.hg, sub: `${v.w} cm · ${nl} loom${nl === 1 ? '' : 's'} on ${dfmt(D.latest)}`,
+      go: () => { if (TAB === 'benchmarks' && bench(v.w, v.hg)) { BQ = key(v.w, v.hg); render(); } else openHg(v.hg, v.w, D.latest); }});
+  }
+  return out;
+}
+function drawSugg() {
+  if (!SUG.length && !QF.trim()) { sugBox.hidden = true; return; }
+  sugBox.replaceChildren(...(SUG.length ? SUG.map((s, i) => el('button', {type: 'button', role: 'option', class: i === SUGI ? 'on' : null, 'aria-selected': i === SUGI ? 'true' : 'false',
+    onmousedown: (e) => e.preventDefault(), onclick: () => pick(i)}, el('span', {class: 'k', text: s.k}), el('span', {text: s.label}), el('span', {class: 's', text: s.sub})))
+    : [el('div', {class: 'none', text: 'No loom or head group matches. Tables below are filtered by this text.'})]));
+  sugBox.hidden = false;
+}
+function pick(i) { const s = SUG[i]; if (!s) return; sugBox.hidden = true; qIn.blur(); s.go(); }
+function clearSearch() { qIn.value = ''; QF = ''; SUG = []; SUGI = -1; sugBox.hidden = true; $('#q-clear').hidden = true; $('#q-kbd').hidden = false; applyFilter(); }
+qIn.addEventListener('input', () => {
+  QF = qIn.value; $('#q-clear').hidden = !QF; $('#q-kbd').hidden = !!QF;
+  SUG = suggestions(QF); SUGI = SUG.length ? 0 : -1; drawSugg(); applyFilter();
+});
+qIn.addEventListener('focus', () => { if (QF) { SUG = suggestions(QF); drawSugg(); } });
+qIn.addEventListener('blur', () => setTimeout(() => { sugBox.hidden = true; }, 120));
+qIn.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown' && SUG.length) { e.preventDefault(); SUGI = (SUGI + 1) % SUG.length; drawSugg(); }
+  else if (e.key === 'ArrowUp' && SUG.length) { e.preventDefault(); SUGI = (SUGI - 1 + SUG.length) % SUG.length; drawSugg(); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (SUG.length) pick(SUGI < 0 ? 0 : SUGI); }
+  else if (e.key === 'Escape') { if (qIn.value) clearSearch(); else qIn.blur(); }
+});
+$('#q-clear').addEventListener('click', () => { clearSearch(); qIn.focus(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+  const a = document.activeElement; if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)) return;
+  if (dlg && dlg.open) return;
+  e.preventDefault(); qIn.focus(); qIn.select();
+});
+
+// Light / dark (follows the phone or laptop until switched here)
+const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+function setTheme(t, save) {
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  if (save) { try { localStorage.setItem('w2-theme', t || ''); } catch (e) {} }
+  $('#theme').replaceChildren(icon(isDark() ? 'moon' : 'sun', 22));
+  if (D) render();
+}
+$('#theme').addEventListener('click', () => setTheme(isDark() ? 'light' : 'dark', true));
+try { setTheme(localStorage.getItem('w2-theme') || '', false); } catch (e) { setTheme('', false); }
+
+buildNav();
+for (const b of document.querySelectorAll('.segmented[aria-label="Loom width"] button')) b.addEventListener('click', () => { W = b.dataset.w; try { localStorage.setItem('w2-width', W); } catch (e) {} render(); });
 window.addEventListener('hashchange', () => setTab(location.hash.slice(1)));
 try { const w = localStorage.getItem('w2-width'); if (w === '190' || w === '280' || w === 'all') W = w; } catch (e) {}
 TAB = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'actions';
@@ -1190,9 +1650,13 @@ async function api(action, body) {
 }
 function applyState(st) {
   if (st.targets) {
-    TG = {};
-    for (const v of st.targets) if (v && v.width && v.hg) TG[key(String(v.width), v.hg)] = v;
-    targetsLoaded = true;
+    TG = {}; SINGLE = new Set();
+    for (const v of st.targets) {
+      if (!v || !v.width || !v.hg) continue;
+      if (String(v.id || '').startsWith('panna__')) SINGLE.add(v.hg);   // a 280 cm head group switched to single panna
+      else TG[key(String(v.width), v.hg)] = v;
+    }
+    targetsLoaded = true; pannaLoaded = true;
   }
   if (st.assignments) {
     assigned = {};
@@ -1217,11 +1681,13 @@ async function loadState() {
   } catch (e) {
     targetsLoaded = true;
   }
-  if (D && !busyEditing('.tg') && !busyEditing('.assign')) render();
+  if (D) applyPanna(D);
+  if (D && !busyEditing('.tg') && !busyEditing('.assign') && !busyEditing('#gsearch')) { render(); if (dlg && dlg.open) drawPanel(true); }
 }
 
 function showGate(msg) {
   $('#asof').textContent = 'Locked';
+  $('.filters').hidden = true;
   const inp = el('input', {type: 'text', id: 'pass', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: 'XXXX-XXXX-XXXX-XXXX', 'aria-label': 'Passcode'});
   const go = el('button', {type: 'submit', text: 'Open'});
   const form = el('form', {class: 'gate'}, el('img', {class: 'gate-logo', src: 'logo.svg', alt: 'Hanuman', width: '72', height: '72'}), el('h2', {text: 'Enter the app passcode'}),
@@ -1249,8 +1715,12 @@ function fillDays() {
 
 function show(data) {
   D = data;
+  $('.filters').hidden = false;
+  if (!pannaLoaded) SINGLE = new Set((D.panna && D.panna.single) || []);   // until the saved switches load
+  applyPanna(D);
   BM.clear();
   for (const b of D.benchmarks || []) BM.set(key(b.width, b.hg), b);
+  closePanel();
   const done = (D.days || []).filter((d) => d.status === 'complete').length;
   if (VIEW) {
     $('#asof').replaceChildren(el('span', {class: 'past', text: `Viewing ${dfmt(D.latest)}`}),
@@ -1259,6 +1729,8 @@ function show(data) {
   } else {
     $('#asof').replaceChildren('Latest complete day ', el('b', {text: dfmt(D.latest)}), ` · ${done} day${done === 1 ? '' : 's'} of history · updated ${D.generated_at} IST`);
   }
+  $('#sync1').textContent = VIEW ? `Viewing ${dfmt(D.latest)}` : `Latest ${dfmt(D.latest)}`;
+  $('#sync2').textContent = LATEST && LATEST.generated_at ? `Updated ${String(LATEST.generated_at).slice(5)} IST` : '';
   fillDays();
   render();
 }
@@ -1313,6 +1785,7 @@ PAGES.data = () => {
 };
 
 $('#refresh').addEventListener('click', () => load(true));
+$('#refresh-m').addEventListener('click', () => load(true));
 // The home-screen app stays in memory on iPhone; refetch when it comes back after a while.
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !VIEW && Date.now() - lastLoad > 15 * 60e3) load(true); });
 load();

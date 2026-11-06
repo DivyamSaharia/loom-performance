@@ -238,7 +238,8 @@ def mad_filter(vals):
 
 
 RUN_FIELDS = ('date', 'loom', 'type', 'beam', 'run', 'stop', 'rpm', 'eff', 'cfm', 'apk', 'main', 'main_max',
-              'picks', 'air', 'warp', 'warp_rate', 'styles')
+              'picks', 'fpicks', 'panna', 'air', 'warp', 'warp_rate', 'styles')
+TOP_MAX = 40   # loom-days at or better than a benchmark kept with it
 
 
 def run_rec(x):
@@ -249,13 +250,13 @@ def bench_runs(L, S):
     """For each benchmarked metric: the loom-days either side of the percentile, the weight of each,
     and which loom-days the outlier filter dropped. Stored so they survive after the loom-days leave
     the 60-day window the dashboard keeps."""
-    spec = [('rpm', S['benchmark_pct_high'], False, lambda x: True),
-            ('apk', S['benchmark_pct_low'], False, lambda x: bool(x['apk'])),
-            ('main_max', S['benchmark_pct_low'], False, lambda x: x['main_max'] > 0),
-            ('main', S['benchmark_pct_low'], False, lambda x: True),
-            ('warp_rate', 50, False, lambda x: x['warp_rate'] is not None)]
+    spec = [('rpm', S['benchmark_pct_high'], False, lambda x: True, True),
+            ('apk', S['benchmark_pct_low'], False, lambda x: bool(x['apk']), False),
+            ('main_max', S['benchmark_pct_low'], False, lambda x: x['main_max'] > 0, False),
+            ('main', S['benchmark_pct_low'], False, lambda x: True, False),
+            ('warp_rate', 50, False, lambda x: x['warp_rate'] is not None, False)]
     out = {}
-    for m, p, use_mad, keep in spec:
+    for m, p, use_mad, keep, high in spec:
         pool = [x for x in L if keep(x)]
         if not pool:
             continue
@@ -275,6 +276,13 @@ def bench_runs(L, S):
         if f != c:
             r.update(hi=run_rec(hi), hi_w=frac)
         r['dropped'] = [[x['date'], x['loom']] for x in dropped]
+        # the single best loom-day, and the loom-days at or better than the benchmark (best first)
+        r['best'] = run_rec(s[-1] if high else s[0])
+        better = [x for x in s if (x[m] >= val - 1e-9 if high else x[m] <= val + 1e-9)]
+        better.sort(key=lambda x: (-x[m] if high else x[m], x['date'], x['loom']))
+        r['n_better'] = len(better)
+        if p != 50:
+            r['top'] = [run_rec(x) for x in better[:TOP_MAX]]
         out[m] = r
     return out
 
@@ -290,6 +298,35 @@ def saving(p_now, p_new, drop_kgf):
     rule = 0.07 * (p_now - p_new) * KGF
     adia = 1 - comp_work(p_new + drop_kgf) / comp_work(p_now + drop_kgf)
     return rule, adia
+
+
+def load_targets(a):
+    """Targets saved in the app, keyed (width, hg), and the 280 cm head groups switched to single panna."""
+    targets, single = {}, set()
+    if getattr(a, 'targets', None) and os.path.exists(a.targets):
+        try:
+            raw = json.load(open(a.targets))
+        except Exception:
+            raw = []
+        if isinstance(raw, dict):
+            raw = raw.get('documents') or raw.get('docs') or list(raw.values())
+        for t in raw or []:
+            if isinstance(t, dict) and isinstance(t.get('data'), dict):
+                t = t['data']
+            if not (isinstance(t, dict) and t.get('width') is not None and t.get('hg')):
+                continue
+            if t.get('single_panna'):
+                single.add(t['hg'])
+            else:
+                targets[(str(t['width']), t['hg'])] = t
+    return targets, single
+
+
+def panna_of(width, hg, single):
+    """280 cm looms weave two panels (double panna) unless the head group is switched to single panna.
+    Each machine pick then makes two fabric picks: picks and air per 1,000 picks use fabric picks;
+    RPM, CFM and warp-break rate stay on machine picks."""
+    return 2 if str(width) == '280' and hg not in single else 1
 
 
 def r1(x, n=1):
@@ -335,6 +372,7 @@ def build(a, as_of=None):
                 style_map[decode_style(x['style'])] = x['head_group']
     machine = {int(k): v for k, v in cfg['machine'].items()}
     groups = cfg['head_groups']
+    targets, single = load_targets(a)
 
     log = read_csv(os.path.join(a.store, 'shift_log.csv'), LOG_COLS)
     reg = read_csv(os.path.join(a.store, 'file_register.csv'), REG_COLS)
@@ -382,7 +420,9 @@ def build(a, as_of=None):
         x['eff'] = 100 * run / (run + x['stop']) if run + x['stop'] else 0
         x['cfm'] = x['af1'] / x['af2'] if x['af2'] else 0
         x['air'] = x['af1'] / 60.0
-        x['apk'] = 1000 * x['air'] / x['picks'] if x['picks'] else None
+        x['panna'] = panna_of(x['width'], x['hg'], single)
+        x['fpicks'] = x['picks'] * x['panna']
+        x['apk'] = 1000 * x['air'] / x['fpicks'] if x['fpicks'] else None
         x['main'] = x['mainw'] / run if run else 0
         x['warp_rate'] = x['warp'] / x['picks'] * 1e5 if x['picks'] else None
         x['beam'] = x['beams'].most_common(1)[0][0] if x['beams'] else ''
@@ -419,7 +459,9 @@ def build(a, as_of=None):
                  main_max=pct([x['main_max'] for x in L if x['main_max'] > 0] or [0], S['benchmark_pct_low']),
                  warp_med=st.median([x['warp_rate'] for x in L if x['warp_rate'] is not None] or [0]),
                  best_rpm=max(x['rpm'] for x in L), best_eff=max(x['eff'] for x in L),
-                 best_apk=min(x['apk'] for x in L if x['apk']))
+                 best_apk=min((x['apk'] for x in L if x['apk']), default=None),
+                 best_main_max=min([x['main_max'] for x in L if x['main_max'] > 0] or [0]) or None,
+                 best_main=min(x['main'] for x in L), panna=panna_of(k[0], k[1], single))
         recent = [x for x in L if x['date'] in complete[-30:]]
         b['cur_rpm'] = st.median([x['rpm'] for x in recent]) if recent else None
         b['cur_eff'] = st.median([x['eff'] for x in recent]) if recent else None
@@ -436,15 +478,15 @@ def build(a, as_of=None):
 
     # ---- quality table (latest complete day + 7-day)
     def agg(L):
-        R = sum(x['run'] for x in L); P = sum(x['picks'] for x in L)
+        R = sum(x['run'] for x in L); P = sum(x['picks'] for x in L); FP = sum(x['fpicks'] for x in L)
         if not R or not P:
             return None
         return dict(looms=len({x['loom'] for x in L}), rpm=P / R,
                     eff=100 * R / sum(x['run'] + x['stop'] for x in L),
                     cfm=sum(x['cfm'] * x['run'] for x in L) / R,
-                    apk=1000 * sum(x['air'] for x in L) / P,
+                    apk=1000 * sum(x['air'] for x in L) / FP,
                     main_lo=min(x['main'] for x in L), main_hi=max(x['main'] for x in L),
-                    warp=sum(x['warp'] for x in L) / P * 1e5, picks=P)
+                    warp=sum(x['warp'] for x in L) / P * 1e5, picks=FP)
     qual = []
     grp = defaultdict(list); grp7 = defaultdict(list)
     for x in recs:
@@ -466,10 +508,10 @@ def build(a, as_of=None):
         L = [x for x in recs if x['date'] in ds and x['width'] == w and x['run'] > 0]
         if not L:
             return None
-        R = sum(x['run'] for x in L); P = sum(x['picks'] for x in L)
+        R = sum(x['run'] for x in L); P = sum(x['picks'] for x in L); FP = sum(x['fpicks'] for x in L)
         U = [u for u in util if u['date'] in ds and u['width'] == w]
-        return dict(picks_m=P / 1e6 / len(ds), eff=100 * R / sum(x['run'] + x['stop'] for x in L),
-                    apk=1000 * sum(x['air'] for x in L) / P, rpm=P / R,
+        return dict(picks_m=FP / 1e6 / len(ds), eff=100 * R / sum(x['run'] + x['stop'] for x in L),
+                    apk=1000 * sum(x['air'] for x in L) / FP, rpm=P / R,
                     off_h=sum(u['off'] for u in U) / 60 / len(ds))
     kpis = {}
     for w in ('190', '280'):
@@ -514,7 +556,7 @@ def build(a, as_of=None):
     picks_hg = Counter(); picks_tot = 0
     for x in recs:
         if x['date'] in last14:
-            picks_hg[x['hg']] += x['picks']; picks_tot += x['picks']
+            picks_hg[x['hg']] += x['fpicks']; picks_tot += x['fpicks']
     held = defaultdict(list)
     for d in last14:
         m = day_loom_main.get(d, {})
@@ -811,11 +853,11 @@ def build(a, as_of=None):
         trends=trends, alerts=alerts, unassigned=unassigned, stop_air=slope,
         loomdays=[dict(date=x['date'], loom=x['loom'], hg=x['hg'], width=x['width'], type=x['type'],
                        run=x['run'], stop=x['stop'], rpm=x['rpm'], eff=x['eff'], cfm=x['cfm'], apk=x['apk'],
-                       main=x['main'], main_max=x['main_max'], picks=x['picks'], air=x['air'],
+                       main=x['main'], main_max=x['main_max'], picks=x['picks'], fpicks=x['fpicks'], panna=x['panna'], air=x['air'],
                        warp=x['warp'], warp_rate=x['warp_rate'], beam=x['beam'],
                        styles=x['styles'], eligible=x['eligible']) for x in sorted(recs, key=lambda x: (x['date'], x['loom']))
                   if x['date'] in complete[-60:]],
-        files=reg[-60:], as_of=as_of,
+        files=reg[-60:], as_of=as_of, panna=dict(single=sorted(single), default_280=2),
     )
     data = clean(data)
     if as_of:
@@ -824,19 +866,6 @@ def build(a, as_of=None):
     json.dump(data, open(a.out, 'w'), ensure_ascii=False, separators=(',', ':'))
 
     # ---- notification text (latest day only; RPM, efficiency, CFM, pressure vs benchmark and target)
-    targets = {}
-    if getattr(a, 'targets', None) and os.path.exists(a.targets):
-        try:
-            raw = json.load(open(a.targets))
-        except Exception:
-            raw = []
-        if isinstance(raw, dict):
-            raw = raw.get('documents') or raw.get('docs') or list(raw.values())
-        for t in raw or []:
-            if isinstance(t, dict) and isinstance(t.get('data'), dict):
-                t = t['data']
-            if isinstance(t, dict) and t.get('width') is not None and t.get('hg'):
-                targets[(str(t['width']), t['hg'])] = t
     def num(v):
         try:
             return float(v) if v not in (None, '') else None
@@ -860,7 +889,7 @@ def build(a, as_of=None):
             if refs:
                 ref = max(refs)
                 act['rpm'].append(((ref - x['rpm']) * x['run'], f"{x['loom']} {x['rpm']:.0f} vs {ref:.0f}"))
-            cb = b['apk'] * x['rpm'] / 1000 if b['apk'] else None
+            cb = b['apk'] * x['panna'] * x['rpm'] / 1000 if b['apk'] else None   # benchmark air is per fabric pick
             refs = [r for r in (cb, tc) if r and x['cfm'] > r * (1 + S['tol_air_pct'] / 100)]
             if refs:
                 ref = min(refs)
