@@ -267,7 +267,16 @@ td.d{white-space:nowrap}
 :root[data-theme="dark"]{--series:#7ea6ff;--warn-dot:#ffb547}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--series:#7ea6ff;--warn-dot:#ffb547}}
 .trendcard .toolbar{margin-bottom:8px}
-.trendcard .trsel{width:auto;min-width:200px;max-width:100%}
+.trsearch{position:relative;display:flex;align-items:center;gap:6px;height:32px;background:var(--fill);border-radius:9px;padding:0 10px;min-width:min(100%,260px);color:var(--muted)}
+.trsearch .ic{display:inline-flex}
+.trsearch input.trq{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:15px;color:var(--ink);padding:0;width:auto}
+.trsearch input.trq::-webkit-search-cancel-button{-webkit-appearance:none}
+.trsugg{position:absolute;top:36px;left:0;width:max(100%,320px);max-width:calc(100vw - 48px);background:var(--panel);border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.22);z-index:45;padding:6px;max-height:min(55vh,380px);overflow:auto;color:var(--ink)}
+.trsugg button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px}
+.trsugg button:hover,.trsugg button.on{background:var(--accent-soft)}
+.trsugg .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);width:76px;flex:none}
+.trsugg .s{color:var(--muted);font-size:12.5px;margin-left:auto;white-space:nowrap}
+.trsugg .none{padding:10px;color:var(--muted)}
 .trchart .tablebox{overflow-x:auto}
 .trsvg{margin:0!important}
 .trpt{cursor:pointer;outline:none}
@@ -1855,6 +1864,46 @@ function validSubj(s, allW) {
   if (s.kind === 'loom') return loomChoices(allW).includes(s.loom);
   return hgChoices(allW).some((c) => c.w === String(s.w) && c.hg === s.hg);
 }
+// Search inside a trend: a loom number or any part of a head-group name, across both kinds. Focused while empty it lists
+// the current kind, so it also works as a dropdown to browse.
+function trSearch(cur, allW, onPick) {
+  const hgNow = D.loom_hg || {};
+  const both = allW || W === 'all';
+  const opts = () => [
+    ...loomChoices(allW).map((l) => ({kind: 'loom', s: {kind: 'loom', loom: l}, label: `Loom ${l}`, sub: `${hgNow[l] || 'no run'}${both ? ` · ${D.machine[l].width} cm` : ''}`})),
+    ...hgChoices(allW).map((v) => ({kind: 'hg', s: {kind: 'hg', w: v.w, hg: v.hg}, label: v.hg, sub: `${v.w} cm`}))];
+  const match = (q) => {
+    const all = opts(); q = q.trim().toLowerCase();
+    if (!q) return all.filter((o) => o.kind === cur.kind);
+    const n = q.replace(/^loom\s*/, '');
+    if (/^\d+$/.test(n)) return all.filter((o) => o.kind === 'loom' && String(o.s.loom).startsWith(String(+n)));
+    return all.filter((o) => o.label.toLowerCase().includes(q) || (o.kind === 'loom' && o.sub.toLowerCase().includes(q)))
+      .sort((a, b) => (a.kind === 'hg' ? 0 : 1) - (b.kind === 'hg' ? 0 : 1));
+  };
+  const curText = subjName(cur);
+  const inp = el('input', {type: 'search', class: 'trq', value: curText, placeholder: 'Search loom or head group', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Search a loom or head group for this trend', role: 'combobox', 'aria-autocomplete': 'list'});
+  const list = el('div', {class: 'trsugg', role: 'listbox', hidden: true});
+  let items = [], idx = -1;
+  const draw = () => {
+    list.replaceChildren(...(items.length ? items.slice(0, 60).map((o, i) => el('button', {type: 'button', role: 'option', class: i === idx ? 'on' : null, 'aria-selected': i === idx ? 'true' : 'false',
+      onmousedown: (e) => e.preventDefault(), onclick: () => go(i)}, el('span', {class: 'k', text: o.kind === 'loom' ? 'Loom' : 'Head group'}), el('span', {text: o.label}), el('span', {class: 's', text: o.sub})))
+      : [el('div', {class: 'none', text: 'No loom or head group matches.'})]));
+    list.hidden = false;
+  };
+  const go = (i) => { const o = items[i]; if (!o) return; list.hidden = true; inp.blur(); onPick(o.s); };
+  const update = () => { items = match(inp.value === curText ? '' : inp.value); idx = items.length ? 0 : -1; draw(); };
+  inp.addEventListener('focus', () => { inp.select(); update(); });
+  inp.addEventListener('input', update);
+  inp.addEventListener('blur', () => setTimeout(() => { list.hidden = true; if (!inp.value.trim()) inp.value = curText; }, 150));
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); idx = (idx + 1) % Math.min(items.length, 60); draw(); }
+    else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); idx = (idx - 1 + Math.min(items.length, 60)) % Math.min(items.length, 60); draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); go(idx < 0 ? 0 : idx); }
+    else if (e.key === 'Escape') { inp.value = curText; list.hidden = true; inp.blur(); }
+    e.stopPropagation();
+  });
+  return el('div', {class: 'trsearch'}, el('span', {class: 'ic', 'aria-hidden': 'true'}, icon('search', 16)), inp, list);
+}
 // The tab's worst offender: the top loom of its loom-wise table, or the head group with the most at stake in quality-wise view.
 function trDefault(items, view, top) {
   if (view === 'quality') {
@@ -1878,16 +1927,7 @@ function trendCard(tab, def) {
   const kindSeg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Trend of'},
     el('button', {type: 'button', 'aria-pressed': s.kind === 'hg' ? 'true' : 'false', text: 'Head group', onclick: () => { if (s.kind === 'hg') return; const h = hgChoices(allW); const l = mainRec((loomRecs(s.loom).get(D.latest)) || []); const pickH = l && h.find((c2) => c2.hg === l.hg && c2.w === String(l.width)); st.subj = pickH ? {kind: 'hg', w: pickH.w, hg: pickH.hg} : h[0] ? Object.assign({kind: 'hg'}, h[0]) : s; render(); }}),
     el('button', {type: 'button', 'aria-pressed': s.kind === 'loom' ? 'true' : 'false', text: 'Loom', onclick: () => { if (s.kind === 'loom') return; const L = (D.loomdays || []).filter((x) => x.date === D.latest && x.hg === s.hg && String(x.width) === String(s.w)).sort((a, b) => a.loom - b.loom); const ls = loomChoices(allW); st.subj = {kind: 'loom', loom: L[0] ? L[0].loom : ls[0]}; render(); }}));
-  let sel;
-  if (s.kind === 'hg') {
-    const ch = hgChoices(allW);
-    sel = el('select', {'aria-label': 'Head group', class: 'trsel'}, ch.map((v) => el('option', {value: key(v.w, v.hg), text: allW || W === 'all' ? `${v.hg} · ${v.w} cm` : v.hg, selected: v.w === String(s.w) && v.hg === s.hg ? true : null})));
-    sel.addEventListener('change', () => { const [w, ...h] = sel.value.split('|'); st.subj = {kind: 'hg', w, hg: h.join('|')}; render(); });
-  } else {
-    const hgNow = D.loom_hg || {};
-    sel = el('select', {'aria-label': 'Loom', class: 'trsel'}, loomChoices(allW).map((l) => el('option', {value: l, text: `Loom ${l} · ${hgNow[l] || 'no run'}${allW || W === 'all' ? ` · ${D.machine[l].width} cm` : ''}`, selected: l === s.loom ? true : null})));
-    sel.addEventListener('change', () => { st.subj = {kind: 'loom', loom: +sel.value}; render(); });
-  }
+  const sel = trSearch(s, allW, (ns) => { st.subj = ns; render(); const c2 = $('#trend-card'); if (c2) c2.scrollIntoView({block: 'nearest'}); });
   const per = perSeg(s, () => render());
   c.append(el('div', {class: 'toolbar'}, kindSeg, sel, per));
   if (cfg.metrics.length > 1) c.append(el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Metric'},
@@ -1989,7 +2029,8 @@ function trendsView(s, st) {
           r.days, f0(r.A.rpm), f1(r.A.eff), f0(r.A.erpm), f1(r.A.cfm), f1(r.A.apk), f2(Math.max(...r.R.map((x) => x.main_max || 0)) || null), f2(r.A.warpRate)]), [1, 2, 3, 4, 5, 6, 7, 8]));
   }
   return {title: `${subjName(s)} · all trends`, sub,
-    body: [el('div', {class: 'toolbar', style: 'margin:0'}, per, mseg, s.kind === 'hg' ? benchTag(b) : null,
+    body: [el('div', {class: 'toolbar', style: 'margin:0'}, trSearch(s, true, (ns) => { STACK[STACK.length - 1] = () => trendsView(ns, st); drawPanel(); })),
+      el('div', {class: 'toolbar', style: 'margin:0'}, per, mseg, s.kind === 'hg' ? benchTag(b) : null,
         s.kind === 'loom' ? el('button', {class: 'link', type: 'button', text: `Loom ${s.loom} on ${dfmt(D.latest)} ›`, onclick: () => openLoom(s.loom, D.latest)}) : el('button', {class: 'link', type: 'button', text: `Looms on ${dfmt(D.latest)} ›`, onclick: () => openHg(s.hg, s.w, D.latest)})),
       el('p', {class: 'note', style: 'margin:0', text: notes.join(' ')}),
       tiles, charts, recs]};
@@ -2006,7 +2047,7 @@ function panelTrend(s) {
 let trResizeW = window.innerWidth;
 window.addEventListener('resize', () => {
   const w = window.innerWidth; if (Math.abs(w - trResizeW) < 60) return; trResizeW = w;
-  clearTimeout(window.__trT); window.__trT = setTimeout(() => { if (D && TRTABS[TAB] && !busyEditing('#gsearch')) render(); if (dlg && dlg.open) drawPanel(true); }, 200);
+  clearTimeout(window.__trT); window.__trT = setTimeout(() => { if (D && TRTABS[TAB] && !busyEditing('#gsearch') && !busyEditing('.trsearch')) render(); if (dlg && dlg.open) drawPanel(true); }, 200);
 });
 
 // ---------------------------------------------------------------- Targets
@@ -2358,7 +2399,7 @@ async function loadState() {
     targetsLoaded = true;
   }
   if (D) applyPanna(D);
-  if (D && !busyEditing('.tg') && !busyEditing('.assign') && !busyEditing('#gsearch')) { render(); if (dlg && dlg.open) drawPanel(true); }
+  if (D && !busyEditing('.tg') && !busyEditing('.assign') && !busyEditing('#gsearch') && !busyEditing('.trsearch')) { render(); if (dlg && dlg.open) drawPanel(true); }
 }
 
 function showGate(msg) {
