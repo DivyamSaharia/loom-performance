@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hanuman Weavelon 2 · Loom Performance</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="W2 Looms">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#f3f5f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex,nofollow">
+<script src="pick-manifest.js"></script>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="app/style.css?v=8571a85ddc">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" aria-label="Navigation">
+    <div class="sb-brand">
+      <img class="sb-logo" src="logo.svg" alt="Hanuman" width="46" height="46">
+      <div><div class="sb-top">Hanuman</div><div class="sb-main">Weavelon 2 Looms</div></div>
+    </div>
+    <nav class="sb-nav" id="sbnav" aria-label="Pages"></nav>
+    <div class="sb-foot">
+      <button type="button" class="sb-item" id="sb-guide"></button>
+      <div class="sb-sync"><div class="sb-sync-text"><div id="sync1">Loom data</div><div class="sb-sync-sub" id="sync2">Loading…</div></div>
+        <button type="button" class="icon-btn" id="refresh" title="Reload the latest data" aria-label="Reload the latest data"></button></div>
+    </div>
+  </aside>
+  <div class="app">
+    <div class="topbar">
+      <div class="side">
+        <div class="mbrand"><img src="logo.svg" alt="Hanuman" width="36" height="36"><div><div class="t1">Hanuman</div><div class="t2">Weavelon 2 Looms</div></div></div>
+        <button type="button" class="icon-btn" id="theme" title="Light or dark" aria-label="Switch light or dark"></button>
+        <button type="button" class="icon-btn" id="help" title="Guide" aria-label="Guide"></button>
+      </div>
+      <div class="side">
+        <button type="button" class="icon-btn m-only" id="refresh-m" title="Reload the latest data" aria-label="Reload the latest data"></button>
+      </div>
+    </div>
+    <h1 class="large-title" id="ptitle">Loom Performance</h1>
+    <div class="asof" id="asof">Loading the latest day…</div>
+    <div class="filters">
+      <div class="search" id="gsearch" role="search"><span id="gs-icon" aria-hidden="true"></span>
+        <input type="search" id="q" placeholder="Search loom or head group" autocomplete="off" spellcheck="false" aria-label="Search loom number or head group" aria-autocomplete="list" aria-controls="sugg">
+        <button type="button" class="clear" id="q-clear" aria-label="Clear search" hidden>×</button><span class="kbd" id="q-kbd" aria-hidden="true">/</span>
+        <div class="sugg" id="sugg" role="listbox" hidden></div></div>
+      <div class="segmented" role="group" aria-label="Loom width">
+        <button type="button" data-w="190" aria-pressed="true">190 cm</button>
+        <button type="button" data-w="280" aria-pressed="false">280 cm</button>
+        <button type="button" data-w="all" aria-pressed="false">Both widths</button>
+      </div>
+      <div class="frow"><select class="chip day" id="day" aria-label="View date" title="Show the app as it stood on an earlier day"></select><span class="filternote" id="fnote"></span></div>
+    </div>
+    <main id="main"><div class="loading">Loading loom data…</div></main>
+  </div>
+</div>
+<nav class="tabbar" id="tabbar" aria-label="Pages"></nav>
+<dialog class="more" id="more" aria-label="More pages"></dialog>
+<script src="app/core.js?v=f6142539f2"></script>
+<script src="app/model.js?v=7c1fabcb39"></script>
+<script src="app/calc.js?v=23edb613e2"></script>
+<script src="app/panel.js?v=bede53239c"></script>
+<script src="app/pages-looms.js?v=b8107be6bb"></script>
+<script src="app/trends.js?v=dd112beebc"></script>
+<script src="app/pages-config.js?v=599fa13f5e"></script>
+<script src="app/charts.js?v=6030b3e248"></script>
+<script src="app/visuals.js?v=25f8cb3bbc"></script>
+<script src="app/costing.js?v=ba2cb14a98"></script>
+<script src="app/guide.js?v=bae4f11214"></script>
+<script src="app/db.js?v=e51a5e4b61"></script>
+<script src="app/fabric_calc.js?v=4345d8a87d"></script>
+<script src="app/fabric.js?v=55910eed10"></script>
+<script src="app/nav.js?v=8985cd0d65"></script>
+<script src="app/loader.js?v=5bb614fa39"></script>
+
+</body></html>
