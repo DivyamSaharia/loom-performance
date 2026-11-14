@@ -329,6 +329,9 @@ function pageCosting() {
     kpiC('Month to date', pn(cur.mtd.cpp, 2), 'paise', `folded ${pn(cur.mtd.fcpp, 2)}`),
     kpiC('Same day last month', cur.ly ? pn(cur.ly.cpp, 2) : NA, cur.ly ? 'paise' : '', cur.ly ? `${dfmt(cur.ly.date)} · ${sg(cur.cpp - cur.ly.cpp)} paise now` : (cur.date.slice(0, 7) === COST_FROM.slice(0, 7) ? 'no data until 1 Dec: this tab starts on 1 Nov' : 'no costing day for that date'))));
 
+  // ---- Sheet checks (owner only, 14 Nov 2026): the CPP task's checks of the plant's file, plant vs corrected, month to date
+  if (!isPlant() && typeof fxIsOwner === 'function' && fxIsOwner()) s.append(...sheetCheckCards(cur));
+
   // ---- 1. daily drivers
   if (b) {
     const top = b.lines.filter((l) => Math.abs(l.e) >= 0.005).slice(0, 5), rest = b.lines.filter((l) => !top.includes(l));
@@ -517,6 +520,74 @@ function pageCosting() {
     (COST.skipped || []).length ? el('p', {class: 'scopenote', text: 'Not logged: ' + COST.skipped.map((d) => `${dfmt(d)} (${(COST.skipped_why[d] || []).join(', ')} not found)`).join('; ') + '. The tab keeps the last logged day until it is fixed.'}) : null,
     el('p', {class: 'note', text: `Data generated ${COST.generated_at} IST. The B-grade register comes from the plant's own costing.xlsx; labour detail by person, beam changes and the planning sheet are not on this tab yet.`})));
   return s;
+}
+
+// ---------------------------------------------------------------- Sheet checks (Divyam, 14 Nov 2026; owner only)
+// Three cards for the costing day picked. The database returns app_data 'cost_checks' to the owner only (0015); the plant view
+// and every other role never get here. Arithmetic: calc.js sheetChecks / sheetPlantVs / sheetMtd. Gaps show "—", never 0.
+// Names on screen: "Plant file" (costing.xlsx as uploaded) and "Recomputed" (the corrected costing, COST.days_entered, which the
+// "As entered" view shows). Realisation uses Recomputed + the power fix (COST.days), named in a footnote.
+const scRecomputed = () => (cHasFix() ? COST.days_entered : COST.days) || [];
+const rs2 = (x) => !ok(x) ? '—' : (x < 0 ? '−₹' : '₹') + Math.abs(x).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const scFmt = (v, unit) => !ok(v) ? '—' : unit === 'rs' ? rs2(v) : unit === 'picks' ? f0(v) : v.toFixed(3);
+const scDiffCell = (r, unit) => r.state === 'gap' ? el('span', {class: 'pill muted', text: '—'})
+  : r.state === 'agree' ? el('span', {class: 'pill good', text: 'agrees'})
+  : el('b', {class: 'diffcell', 'data-sort': String(r.d), text: (r.d > 0 ? '+' : '−') + scFmt(Math.abs(r.d), unit).replace('−', '')});
+const SC_UNIT = {rs: '₹', picks: 'picks', paise: 'paise'};
+function sheetCheckCards(cur) {
+  const d = cur.date;
+  if (!CCHK) return [card('Sheet checks', `${dfmt(d)} · owner only`, el('p', {class: 'empty', text: `${NA} yet: the sheet checks arrive with the next costing run.`}))];
+  const day = (CCHK.days || {})[d] || null;
+  const fileNote = !day || !day.plant_read ? `the plant's costing.xlsx for ${dfmt(d)} has not been read yet` : !day.plant ? `no cost statement could be read from the plant's costing.xlsx for ${dfmt(d)}` : '';
+  const out = [];
+  // (a) the CPP task's checks of the file
+  const C = sheetChecks(day && day.checks);
+  if (!C) out.push(card('Sheet checks', `${dfmt(d)} · the costing run's checks of the plant's costing.xlsx · owner only`,
+    el('p', {class: 'empty', text: `— Not checked: the costing run has not validated the plant's file for ${dfmt(d)} yet.`})));
+  else {
+    const k = C.counts, sev = {ERROR: ['bad', 'Error'], WARN: ['warn', 'Warning']};
+    out.push(card('Sheet checks', `${dfmt(d)} · the costing run's checks of the plant's costing.xlsx · owner only`,
+      k ? el('div', {class: 'kpis sc'}, kpiC('New errors', String(k.errors_new), '', `${k.errors - k.errors_new} standing`), kpiC('New warnings', String(k.warnings_new), '', `${k.warnings - k.warnings_new} standing`))
+        : el('p', {class: 'err', text: 'The counts could not be read from the checks\' summary; the list below is what the log holds.'}),
+      C.rows.length ? table(['Line', 'Where', 'What the file shows'], C.rows.map((f) => [
+        el('div', {}, el('b', {text: f.label || '—'}), el('div', {style: 'margin-top:4px;display:flex;gap:4px;flex-wrap:wrap'},
+          el('span', {class: 'pill ' + sev[f.sev][0], text: sev[f.sev][1]}), f.status === 'new' ? el('span', {class: 'pill info', text: 'New'}) : el('span', {class: 'pill muted', text: 'Standing'}))),
+        [f.sheet, f.cell].filter(Boolean).join(' ') || '—', f.msg]))
+        : el('p', {class: 'empty', text: 'No errors or warnings in the plant\'s file for this day.'}),
+      C.unlisted ? el('p', {class: 'note', text: `${C.unlisted} more are not listed here; they are in the Validation tab of the month's cost-per-pick log.`}) : null,
+      el('p', {class: 'note', text: 'New = first seen in this day\'s file; standing = also in the previous day\'s file. The checks report and never change the plant\'s file.'})));
+  }
+  // (b) plant vs corrected, line by line
+  const rec = scRecomputed().find((x) => x.date === d) || null;
+  const V = day && day.plant ? sheetPlantVs(day.plant, rec) : null;
+  const fix = COST.pfix && ok(COST.pfix.paise) ? `${pn(COST.pfix.paise, 0)} paise a pick off the POWER line` : 'the POWER correction';
+  out.push(card('Plant vs corrected', `${dfmt(d)} · Plant file = costing.xlsx as uploaded · Recomputed = the corrected costing ("As entered" view)`,
+    !V ? el('p', {class: 'empty', text: `— ${fileNote || `no recomputed costing for ${dfmt(d)}`}.`})
+      : el('div', {}, el('div', {class: 'toolbar'}, el('span', {class: 'pill ' + (V.differ ? 'warn' : 'good'), text: V.differ ? `${V.differ} figure${V.differ === 1 ? '' : 's'} differ` : 'Every figure agrees'}),
+          V.gap ? el('span', {class: 'pill muted', text: `${V.gap} not in one of the two`}) : null, el('span', {class: 'note', text: `${V.agree} agree`})),
+        table(['Line', 'Figure', 'Plant file', 'Recomputed', 'Difference'], V.rows.map((r) => [r.line === 'COST PER PICK' ? 'COST PER PICK (sheet row, excl. cut piece loss)' : r.line, `${r.fig}${r.unit === 'rs' ? '' : ', ' + SC_UNIT[r.unit]}`, scFmt(r.plant, r.unit), scFmt(r.corr, r.unit), scDiffCell(r, r.unit)]), [2, 3, 4])),
+    el('p', {class: 'note', text: `Difference = plant file − recomputed. Day = AMOUNT, Progressive = PROGRESSIVE, Month = TOTAL column. Lines with the same name are added together. COST PER PICK here is the sheet's own row (TOTAL AMOUNT ÷ PICK), without the cut piece loss that the tab's headline cost per pick adds. Realisation and profit use Recomputed with ${fix}, which this card does not compare.`})));
+  // (c) month to date, file vs correct
+  const M = day && day.plant ? sheetMtd(day.plant, scRecomputed(), d) : null;
+  const ttl = 'Month to date: file vs correct', sub = `1–${dfmt(d)} · the plant file's TOTAL column against the sum of the recomputed day amounts`;
+  if (!M) out.push(card(ttl, sub, el('p', {class: 'empty', text: `— ${fileNote || 'no plant file for this day'}.`})));
+  else {
+    const T = M.total;
+    const rows = [...M.lines.map((r) => [r.line, rs2(r.file), rs2(r.correct), scDiffCell(r, 'rs')]),
+      ...M.gaps.map((r) => [r.line, rs2(r.file), rs2(r.correct), scDiffCell(r, 'rs')]),
+      ok(M.rest) && M.rest !== 0 ? [el('i', {text: 'TOTAL AMOUNT itself (not from a line)'}), '', '', scDiffCell({state: 'differ', d: M.rest}, 'rs')] : null,
+      el('tr', {}, el('td', {}, el('b', {text: 'Total (TOTAL AMOUNT)'})), el('td', {class: 'num', text: rs2(T.file)}), el('td', {class: 'num', text: rs2(T.correct)}), el('td', {class: 'num'}, scDiffCell(T, 'rs')))].filter(Boolean);
+    out.push(card(ttl, sub,
+      el('div', {class: 'kpis sc sc4'}, kpiC('File, month total', rs(T.file), '', 'TOTAL AMOUNT, TOTAL column'), kpiC('Correct', rs(T.correct), '', M.missing.length ? 'days missing' : `${M.days} day${M.days === 1 ? '' : 's'} added`),
+        kpiC('File minus correct', T.state === 'gap' ? '—' : T.state === 'agree' ? 'agrees' : (T.d > 0 ? '+' : '−') + rs(Math.abs(T.d)).replace('−', ''), '', T.state === 'differ' ? (T.d > 0 ? 'the file shows more' : 'the file shows less') : ''),
+        kpiC('Cost per pick, month', pn(M.cpp.file, 2), 'paise', ok(M.cpp.correct) ? `correct ${pn(M.cpp.correct, 2)} · excl. cut piece loss` : 'correct —')),
+      M.missing.length ? el('p', {class: 'err', text: `— Correct month to date not worked out: no recomputed costing for ${M.missing.map(dfmt).join(', ')}. A missing day is never counted as zero.`}) : null,
+      M.missing.length ? null : (M.lines.length || M.gaps.length || (ok(M.rest) && M.rest !== 0) || T.state === 'differ')
+        ? table(['Line', ['File', '₹'], ['Correct', '₹'], 'Difference'], rows, [1, 2, 3])
+        : el('p', {class: 'empty', text: 'Every line\'s month total in the file matches the sum of its day amounts.'}),
+      el('p', {class: 'note', text: 'Lines responsible: lines whose month total in the file differs from the sum of their day amounts, biggest first. "TOTAL AMOUNT itself" is the part of the difference no line explains: the file\'s TOTAL column does not add up its own lines. A line missing from a day\'s statement counts nothing for that day.'})));
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- Compressor power: money on the CFM and Pressure tabs

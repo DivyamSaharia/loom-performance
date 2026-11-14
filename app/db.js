@@ -94,7 +94,7 @@ async function prefsLoad(c) {
     if (typeof render === 'function' && TAB === 'realisation') render();
   } catch (e) {}
 }
-async function signOut() { otpSet(''); try { const c = await sbClient(); await c.auth.signOut(); } catch (e) {} ME = null; D = null; LATEST = null; COST = null; location.hash = '#actions'; load(); }
+async function signOut() { otpSet(''); try { const c = await sbClient(); await c.auth.signOut(); } catch (e) {} ME = null; D = null; LATEST = null; COST = null; CCHK = null; location.hash = '#actions'; load(); }
 
 function showSignIn(msg) {
   $('#asof').textContent = 'Signed out';
@@ -191,11 +191,13 @@ async function loadStateDb() {
 }
 async function loadDataDb() {
   // Plant view (0005): the loom data and the plant-view copy of the costing (the plant's own figures), never the full costing row.
-  const ck = isPlant() ? 'costing_plant' : 'costing';
-  const rows = await sbRows('app_data', (q) => q.select('key, data, generated_at').in('key', ['loom', ck]));
-  const loom = rows.find((r) => r.key === 'loom'), cost = rows.find((r) => r.key === ck);
+  // The owner also asks for the Sheet checks (0015: the database returns that row to the owner only).
+  const ck = isPlant() ? 'costing_plant' : 'costing', own = !isPlant() && typeof fxIsOwner === 'function' && fxIsOwner();
+  const rows = await sbRows('app_data', (q) => q.select('key, data, generated_at').in('key', ['loom', ck].concat(own ? ['cost_checks'] : [])));
+  const loom = rows.find((r) => r.key === 'loom'), cost = rows.find((r) => r.key === ck), chk = own ? rows.find((r) => r.key === 'cost_checks') : null;
   if (!loom) throw new Error('The database holds no loom data yet. The next daily run fills it.');
   COST = cost ? trimCost(cost.data) : null; COST_ERR = cost ? '' : 'The database holds no costing data yet.';
+  CCHK = chk && chk.data && chk.data.days ? chk.data : null;
   return loom.data;
 }
 async function loadDayDb(d) {

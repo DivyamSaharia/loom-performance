@@ -193,3 +193,101 @@ function floorPaise(rupees, picks) {
   const tot = rupees.filter(ok).reduce((a, r) => a + r, 0);
   return {each, total: picks > 0 && rupees.some(ok) ? 100 * tot / picks : null};
 }
+
+// ---- Sheet checks on the Costing tab (Divyam, 14 Nov 2026; owner only). Three sources, three names on screen:
+//   "Plant file"  = the plant's costing.xlsx as uploaded (app_data 'cost_checks', days[d].plant);
+//   "Recomputed"  = the CPP task's corrected tab (the plant's own entries with per-pick, progressives, totals and cost per pick
+//                   worked out again), which the Costing tab's "As entered" view shows (COST.days_entered);
+//   Realisation and profit use "Recomputed + power fix" (COST.days), which these cards do not compare.
+// A missing figure is a gap: its difference is null (shown "—"), never 0.
+// Under these the two sides agree: rupees, the files' 2-decimal rounding; picks, the app data's lakh to 4 decimals (±5 picks);
+// paise per pick, the files' 5-decimal rupees.
+const SC_TOL = {rs: 0.5, picks: 10, paise: 0.001};
+const scDiff = (p, c, unit) => !ok(p) || !ok(c) ? {d: null, state: 'gap'} : (Math.abs(p - c) < SC_TOL[unit] ? {d: p - c, state: 'agree'} : {d: p - c, state: 'differ'});
+
+// The plant's lines, same-named lines added together (OPERATOR appears twice), as the pipeline's line_map does for the
+// recomputed side. lines: [[name, amount, progressive, month total]]. A null in any copy of a line keeps that figure null.
+function scPlantLines(lines) {
+  const out = new Map();
+  for (const [n, a, prog, mt] of lines || []) {
+    const o = out.get(n);
+    if (!o) { out.set(n, {n, a: ok(a) ? a : null, prog: ok(prog) ? prog : null, mt: ok(mt) ? mt : null}); continue; }
+    o.a = ok(o.a) && ok(a) ? o.a + a : null; o.prog = ok(o.prog) && ok(prog) ? o.prog + prog : null; o.mt = ok(o.mt) && ok(mt) ? o.mt + mt : null;
+  }
+  return out;
+}
+
+// Plant vs corrected for one day. plant = cost_checks days[d].plant ({lines, total, prog_total, month_total, picks, prog_picks,
+// month_picks, cpp, fcpp}: rupees, picks, rupees per pick); day = the Recomputed day (COST.days_entered: lines {n, a, prog, mt},
+// total, prog_total, mtd.amount, picks and mtd.picks in lakh, cpp_ex and fcpp in paise). One row per figure:
+// {line, fig: 'Day' | 'Progressive' | 'Month', unit, plant, corr, d, state}; the statement's totals first, then the lines.
+// Order: differing rows (totals, then the biggest difference), then gaps, then the rows that agree in statement order.
+function sheetPlantVs(plant, day) {
+  if (!plant || !day) return null;
+  const rows = [], add = (line, fig, unit, p, c, total) => rows.push({line, fig, unit, plant: ok(p) ? p : null, corr: ok(c) ? c : null, total: !!total, ...scDiff(p, c, unit)});
+  const lk = (x) => ok(x) ? x * 1e5 : null, pz = (x) => ok(x) ? x * 100 : null;
+  const m = day.mtd || {};
+  add('TOTAL AMOUNT', 'Day', 'rs', plant.total, day.total, true);
+  add('TOTAL AMOUNT', 'Progressive', 'rs', plant.prog_total, day.prog_total, true);
+  add('TOTAL AMOUNT', 'Month', 'rs', plant.month_total, m.amount, true);
+  add('PICK', 'Day', 'picks', plant.picks, lk(day.picks), true);
+  add('PICK', 'Month', 'picks', plant.month_picks, lk(m.picks), true);
+  add('COST PER PICK', 'Day', 'paise', pz(plant.cpp), day.cpp_ex, true);
+  add('COST PER PICK (FOLDED)', 'Day', 'paise', pz(plant.fcpp), day.fcpp, true);
+  const P = scPlantLines(plant.lines), C = new Map((day.lines || []).map((l) => [l.n, l]));
+  const names = [...P.keys(), ...[...C.keys()].filter((n) => !P.has(n))];
+  for (const n of names) {
+    const p = P.get(n) || {}, c = C.get(n) || {};
+    add(n, 'Day', 'rs', p.a, c.a); add(n, 'Progressive', 'rs', p.prog, c.prog); add(n, 'Month', 'rs', p.mt, c.mt);
+  }
+  const rank = {differ: 0, gap: 1, agree: 2};
+  const idx = new Map(rows.map((r, i) => [r, i]));
+  rows.sort((a, b) => rank[a.state] - rank[b.state] || (a.state === 'differ' ? (b.total - a.total) || Math.abs(b.d) - Math.abs(a.d) : 0) || idx.get(a) - idx.get(b));
+  const n = (s) => rows.filter((r) => r.state === s).length;
+  return {rows, differ: n('differ'), gap: n('gap'), agree: n('agree')};
+}
+
+// Month to date, file vs correct, on day `date`. plant = that day's plant file (its TOTAL column is the file's month to date);
+// days = the Recomputed days (any order). Correct = the sum of the recomputed day amounts from the 1st to `date`. When a day of
+// the month up to `date` is not in `days`, every correct figure is a gap (missing lists those days): it is never filled with 0.
+// A line that is not in a day's statement counts 0 for that day (the day is there; the line had no amount).
+// lines: the lines whose month total differs, biggest first; rest: what the TOTAL AMOUNT difference has that the lines' don't
+// (the file's TOTAL column not adding up its own lines). cpp: month cost per pick (excl. cut piece loss), paise.
+function sheetMtd(plant, days, date) {
+  if (!plant || !date) return null;
+  const by = new Map((days || []).map((d) => [d.date, d]));
+  const month = [];
+  for (let k = 1; k <= +date.slice(8, 10); k++) month.push(date.slice(0, 8) + String(k).padStart(2, '0'));
+  const missing = month.filter((d) => !by.has(d) || !ok(by.get(d).total));
+  const have = !missing.length;
+  const corr = new Map();
+  if (have) for (const d of month) for (const l of by.get(d).lines || []) corr.set(l.n, (corr.get(l.n) || 0) + (ok(l.a) ? l.a : 0));
+  const P = scPlantLines(plant.lines);
+  const all = [];
+  for (const n of [...P.keys(), ...[...corr.keys()].filter((x) => !P.has(x))]) {
+    const file = (P.get(n) || {}).mt, correct = have ? (corr.get(n) || 0) : null;
+    all.push({line: n, file: ok(file) ? file : null, correct, ...scDiff(file, correct, 'rs')});
+  }
+  const tc = have ? month.reduce((a, d) => a + by.get(d).total, 0) : null;
+  const tp = have ? month.reduce((a, d) => a + (ok(by.get(d).picks) ? by.get(d).picks * 1e5 : NaN), 0) : null;
+  const total = {line: 'TOTAL AMOUNT', file: ok(plant.month_total) ? plant.month_total : null, correct: tc, ...scDiff(plant.month_total, tc, 'rs')};
+  const lines = all.filter((r) => r.state === 'differ').sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+  const gaps = all.filter((r) => r.state === 'gap' && have);
+  const sumL = lines.reduce((a, r) => a + r.d, 0);
+  const rest = ok(total.d) ? total.d - sumL : null;
+  const cppC = have && ok(tp) && tp > 0 ? 100 * tc / tp : null, cppF = ok(plant.cpp_month) ? plant.cpp_month * 100 : null;
+  return {days: month.length, missing, total, lines, gaps, rest: ok(rest) && Math.abs(rest) >= SC_TOL.rs ? rest : (ok(rest) ? 0 : null),
+          cpp: {file: cppF, correct: cppC, ...scDiff(cppF, cppC, 'paise')}};
+}
+
+// The CPP task's checks of the plant's file for one day (cost_checks days[d].checks: {headline, counts, findings, more}).
+// null = the day was not validated (a gap). Errors and warnings only, new first, errors before warnings; the counts come from
+// the validator's headline and cover every finding, also those past the 40 the Validation tab lists.
+function sheetChecks(c) {
+  if (!c) return null;
+  const sev = {ERROR: 0, WARN: 1};
+  const rows = (c.findings || []).filter((f) => f.sev in sev).map((f, i) => ({...f, i}))
+    .sort((a, b) => (a.status === 'new' ? 0 : 1) - (b.status === 'new' ? 0 : 1) || sev[a.sev] - sev[b.sev] || a.i - b.i);
+  const k = c.counts;
+  return {rows, counts: k || null, unlisted: k ? Math.max(0, k.errors + k.warnings - rows.length) : null, headline: c.headline || ''};
+}

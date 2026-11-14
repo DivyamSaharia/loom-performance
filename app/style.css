@@ -489,3 +489,6 @@ tr.tot td{border-top:1px solid var(--line)}
 .swbar span{flex:1;min-width:0}
 .swbar .swx{width:32px;height:32px;font-size:20px;color:var(--muted)}
 @media (min-width:1024px){.swbar{left:50%;right:auto;transform:translateX(-50%);bottom:20px;max-width:460px}}
+/* Sheet checks (Costing, owner only): tiles two to a row on a phone; the 2-tile card stays two to a row on a laptop too */
+.kpis.sc{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (min-width:720px){.kpis.sc.sc4{grid-template-columns:repeat(4,minmax(0,1fr))}}

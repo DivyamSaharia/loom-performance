@@ -193,6 +193,9 @@ function pageBench() {
 // Toyota loom data, and the loom tabs never read it. Power (Compressor) is deliberately absent from the Costing tab:
 // it sits in the loom data (D.power) and is used on the CFM and Pressure tabs.
 let COST = null, COST_LOADING = false, COST_ERR = '';
+// Sheet checks (14 Nov 2026, owner only): app_data 'cost_checks', which the database lets only the owner read (0015). null when
+// not loaded (any other role, or no row yet).
+let CCHK = null;
 // The Costing tab shows November 2026 onward only: earlier days, comparisons with them (the bridge from the day before,
 // same day last month) and style names last seen before then are dropped when the data loads.
 const COST_FROM = '2026-11-01';
