@@ -10,7 +10,7 @@ const SB_KEY = 'sb_publishable_tpS9HRGmgqnAzvhjrvAWkg_NYOdvDgz';   // the publis
 const SB_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4';   // the package's UMD build (dist/umd/supabase.js)
 let SB = null, ME = null;   // the client, and {email, role, status} of the signed-in person (role null until approved)
 const AUTH_HASH = location.hash || '';   // read before supabase-js or the router touch it: a failed email link lands with #error=...
-const canEdit = () => MODE !== 'db' || (ME && (ME.role === 'edit' || ME.role === 'admin'));
+const canEdit = () => !!(ME && (ME.role === 'edit' || ME.role === 'admin'));
 // Plant view: every loom tab (read-only) and the Costing tab in the plant's own figures; no Data health, no Access (0005).
 const isPlant = () => MODE === 'db' && !!ME && ME.role === 'plant';
 const isAdmin = () => MODE === 'db' && !!ME && ME.role === 'admin';

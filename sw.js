@@ -4,12 +4,12 @@
 // with no connection the app opens and says it cannot reach the database. The sealed data files left from the passcode view
 // (switchover, 14 Nov 2026) are deleted from the device on activate. BUILD is stamped by pipeline/publish_site.py.
 'use strict';
-const BUILD = '0e5761a8530e';
+const BUILD = 'adc4dfd8523a';
 const SHELL = 'w2-shell-' + BUILD;
 const NET_WAIT = 4000;   // ms to wait for the network before using the saved copy
 const OLD_DATA = 'w2-data';   // the passcode view's sealed data copies: removed
 const SHELL_FILES = ['./', 'index.html', 'app/style.css', 'app/core.js', 'app/model.js', 'app/calc.js', 'app/panel.js', 'app/pages-looms.js', 'app/trends.js',
-  'app/pages-config.js', 'app/charts.js', 'app/visuals.js', 'app/costing.js', 'app/guide.js', 'app/db.js', 'app/fabric_calc.js', 'app/fabric.js', 'app/nav.js', 'app/loader.js', 'manifest-db.webmanifest', 'pick-manifest.js', 'manifest-db.webmanifest', 'pick-manifest.js', 'logo.svg', 'icon.svg',
+  'app/pages-config.js', 'app/charts.js', 'app/visuals.js', 'app/costing.js', 'app/guide.js', 'app/db.js', 'app/fabric_calc.js', 'app/fabric.js', 'app/nav.js', 'app/loader.js', 'manifest-db.webmanifest', 'pick-manifest.js', 'logo.svg', 'icon.svg',
   'icon-192.png', 'apple-touch-icon.png'];
 
 const scopeUrl = new URL(self.registration.scope);
