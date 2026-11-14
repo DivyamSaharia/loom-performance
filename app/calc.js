@@ -222,29 +222,133 @@ function scPlantLines(lines) {
 // total, prog_total, mtd.amount, picks and mtd.picks in lakh, cpp_ex and fcpp in paise). One row per figure:
 // {line, fig: 'Day' | 'Progressive' | 'Month', unit, plant, corr, d, state}; the statement's totals first, then the lines.
 // Order: differing rows (totals, then the biggest difference), then gaps, then the rows that agree in statement order.
-function sheetPlantVs(plant, day) {
+// adj (optional) = sheetAdjust(...) for that day: the expected part of the file's Progressive and Month figures under the day
+// rules; with it, and with the plant's POWER (COMPRESSOR) counted again in TOTAL AMOUNT (scCompPart), each row carries exp
+// (expected part, null when it cannot be worked out) and left (difference − expected), and a difference that is all expected
+// gets state 'expected' instead of 'differ'.
+function sheetPlantVs(plant, day, adj) {
   if (!plant || !day) return null;
-  const rows = [], add = (line, fig, unit, p, c, total) => rows.push({line, fig, unit, plant: ok(p) ? p : null, corr: ok(c) ? c : null, total: !!total, ...scDiff(p, c, unit)});
+  const rows = [], add = (line, fig, unit, p, c, total, e) => {
+    const r = {line, fig, unit, plant: ok(p) ? p : null, corr: ok(c) ? c : null, total: !!total, ...scDiff(p, c, unit)};
+    rows.push(scExpect(r, e === undefined ? 0 : e, unit));
+  };
   const lk = (x) => ok(x) ? x * 1e5 : null, pz = (x) => ok(x) ? x * 100 : null;
   const m = day.mtd || {};
-  add('TOTAL AMOUNT', 'Day', 'rs', plant.total, day.total, true);
-  add('TOTAL AMOUNT', 'Progressive', 'rs', plant.prog_total, day.prog_total, true);
-  add('TOTAL AMOUNT', 'Month', 'rs', plant.month_total, m.amount, true);
+  const at = adj ? adj.total : 0, al = (n) => !adj ? 0 : !ok(adj.total) ? null : ((adj.lines[n] || {}).total || 0);
+  const plus = (a, b) => ok(a) && ok(b) ? a + b : null;
+  add('TOTAL AMOUNT', 'Day', 'rs', plant.total, day.total, true, scCompPart(plant, 'a'));
+  add('TOTAL AMOUNT', 'Progressive', 'rs', plant.prog_total, day.prog_total, true, plus(at, scCompPart(plant, 'prog')));
+  add('TOTAL AMOUNT', 'Month', 'rs', plant.month_total, m.amount, true, plus(at, scCompPart(plant, 'mt')));
   add('PICK', 'Day', 'picks', plant.picks, lk(day.picks), true);
-  add('PICK', 'Month', 'picks', plant.month_picks, lk(m.picks), true);
+  add('PICK', 'Month', 'picks', plant.month_picks, lk(m.picks), true, adj ? adj.picks : 0);
   add('COST PER PICK', 'Day', 'paise', pz(plant.cpp), day.cpp_ex, true);
   add('COST PER PICK (FOLDED)', 'Day', 'paise', pz(plant.fcpp), day.fcpp, true);
   const P = scPlantLines(plant.lines), C = new Map((day.lines || []).map((l) => [l.n, l]));
   const names = [...P.keys(), ...[...C.keys()].filter((n) => !P.has(n))];
   for (const n of names) {
     const p = P.get(n) || {}, c = C.get(n) || {};
-    add(n, 'Day', 'rs', p.a, c.a); add(n, 'Progressive', 'rs', p.prog, c.prog); add(n, 'Month', 'rs', p.mt, c.mt);
+    add(n, 'Day', 'rs', p.a, c.a); add(n, 'Progressive', 'rs', p.prog, c.prog, false, al(n)); add(n, 'Month', 'rs', p.mt, c.mt, false, al(n));
   }
-  const rank = {differ: 0, gap: 1, agree: 2};
+  const rank = {differ: 0, gap: 1, expected: 2, agree: 3};
   const idx = new Map(rows.map((r, i) => [r, i]));
-  rows.sort((a, b) => rank[a.state] - rank[b.state] || (a.state === 'differ' ? (b.total - a.total) || Math.abs(b.d) - Math.abs(a.d) : 0) || idx.get(a) - idx.get(b));
+  const big = (r) => Math.abs(ok(r.left) ? r.left : r.d);
+  rows.sort((a, b) => rank[a.state] - rank[b.state] || (a.state === 'differ' ? (b.total - a.total) || big(b) - big(a) : 0) || idx.get(a) - idx.get(b));
   const n = (s) => rows.filter((r) => r.state === s).length;
-  return {rows, differ: n('differ'), gap: n('gap'), agree: n('agree')};
+  return {rows, differ: n('differ'), gap: n('gap'), agree: n('agree'), expected: n('expected')};
+}
+
+// A row's expected part: exp (0 = none, null = cannot be worked out) and left = difference − exp. A differing row whose
+// difference is all expected becomes 'expected'. Gaps and agreeing rows keep their state.
+function scExpect(r, e, unit) {
+  r.exp = ok(e) ? e : (e === null ? null : 0);
+  r.left = ok(r.d) && ok(r.exp) ? r.d - r.exp : (ok(r.d) && r.exp === null ? null : r.d);
+  if (r.state === 'differ' && ok(r.exp) && Math.abs(r.exp) >= SC_TOL[unit] && Math.abs(r.left) < SC_TOL[unit]) r.state = 'expected';
+  return r;
+}
+
+// ---- Day rules (Config Sheet Settings tab; Diwali break, Divyam 14 Nov 2026). rules = cost_checks.json `rules`:
+// {excluded, reason, double, double_except, double_extra}. Excluded days are left out of costing; the plant still carries their
+// amounts in its month totals. Double-pay days are costed single; the plant books the double (the day's single amount on every
+// line above the salary TOTAL except double_except, plus double_extra) into the next day's PROGRESSIVE. Both are an expected
+// part of the file's month totals, not errors; a double-pay line the plant booked differently is a reconciliation issue.
+// Mirrors pipeline/day_rules.py and costing.py mtd_expected (the notification); cpp.py's validator checks the same carry.
+const drKey = (n) => String(n == null ? '' : n).replace(/\s+/g, '').toUpperCase();
+function drIsDouble(name, above, R) {
+  const k = drKey(name);
+  return (above && !(R.double_except || []).includes(k)) || (R.double_extra || []).includes(k);
+}
+
+// The expected part of the plant file's PROGRESSIVE and TOTAL columns on day d (both carry it): the plant's day amounts on the
+// excluded days of the month before d, and the correct double for the double-pay days of the month before d. cc = cost_checks
+// days ({date: {plant}}). null when no rule touches the month before d. A day the rules need whose plant file is not read
+// (or whose salary TOTAL could not be placed) is listed in missing, and every figure is then null: never guessed.
+function sheetAdjust(cc, R, d) {
+  if (!R || !d || !cc) return null;
+  const ym = d.slice(0, 7), exs = R.excluded || [];
+  const ex = exs.filter((x) => x.slice(0, 7) === ym && x < d).sort();
+  const db = (R.double || []).filter((x) => x.slice(0, 7) === ym && x < d && !exs.includes(x)).sort();
+  if (!ex.length && !db.length) return null;
+  const lines = {}, missing = [];
+  const add = (n, k, v) => { const o = lines[n] || (lines[n] = {line: n, excl: 0, dbl: 0, total: 0}); o[k] += v; o.total += v; };
+  let picks = 0;
+  for (const x of ex) {
+    const p = (cc[x] || {}).plant;
+    if (!p) { missing.push(x); continue; }
+    for (const [n, a] of p.lines || []) if (ok(a) && a) add(n, 'excl', a);
+    picks = ok(picks) && ok(p.picks) ? picks + p.picks : null;   // the plant's PICK month figure carries them too
+  }
+  for (const x of db) {
+    const p = (cc[x] || {}).plant;
+    if (!p || !ok(p.above)) { missing.push(x); continue; }
+    (p.lines || []).forEach(([n, a], i) => { if (ok(a) && a && drIsDouble(n, i < p.above, R)) add(n, 'dbl', a); });
+  }
+  const known = !missing.length, sum = (k) => Object.values(lines).reduce((t, o) => t + o[k], 0);
+  return {excluded: ex, doubled: db, reason: R.reason || '', missing: missing.sort(), lines: known ? lines : {},
+          excl: known ? sum('excl') : null, dbl: known ? sum('dbl') : null, total: known ? sum('total') : null, picks: known ? picks : null};
+}
+
+// The plant's POWER (COMPRESSOR) counted again in its TOTAL AMOUNT for one figure ('a' day, 'prog', 'mt' month): the part of
+// TOTAL AMOUNT its own lines do not explain, when that equals the compressor line's amount, progressive or month total (within
+// ₹1). Expected: the compressor is inside POWER and never a cost (8 Nov 2026), but the plant's TOTAL AMOUNT counted it (in the
+// day figure before 10 Nov, in the progressive since). 0 otherwise.
+function scCompPart(plant, fig) {
+  const c = plant && plant.comp, col = {a: 1, prog: 2, mt: 3}[fig];
+  const tot = plant ? {a: plant.total, prog: plant.prog_total, mt: plant.month_total}[fig] : null;
+  if (!c || !ok(tot)) return 0;
+  let sum = 0;
+  for (const l of plant.lines || []) { if (!ok(l[col])) return 0; sum += l[col]; }
+  const rest = tot - sum;
+  return [c.a, c.prog, c.mt].some((v) => ok(v) && Math.abs(v) >= SC_TOL.rs && Math.abs(rest - v) <= 1) ? rest : 0;
+}
+
+// The previous day's double pay in day d's PROGRESSIVE, line by line (rows of the statement, the 2nd OPERATOR as its own row):
+// expected = the previous plant day's single amount on a double-pay line (else 0), added = d's PROGRESSIVE − the previous
+// day's TOTAL column, gap = added − expected. The previous plant day is the latest one read before d (an excluded day too);
+// null unless it is a double-pay day. rows null (with why) when either file or the salary TOTAL's place is missing.
+// Rows: the misses (gap of ₹0.50 or more) biggest first, then the lines that carry the double as they should.
+function sheetDoublePay(cc, R, d) {
+  if (!R || !(R.double || []).length || !cc || !d) return null;
+  const p = Object.keys(cc).filter((x) => x < d && x.slice(0, 7) === d.slice(0, 7) && cc[x] && cc[x].plant).sort().pop();
+  if (!p || !R.double.includes(p)) return null;
+  const P = cc[p].plant, T = (cc[d] || {}).plant;
+  if (!T) return {from: p, rows: null, why: 'the plant file for this day has not been read'};
+  if (!ok(P.above)) return {from: p, rows: null, why: `the salary TOTAL could not be placed in the ${p} file`};
+  const occ = (L) => { const c = {}; return (L || []).map(([n, a, prog, mt], i) => ({n, a, prog, mt, i, k: (c[n] = (c[n] || 0) + 1)})); };
+  const PR = occ(P.lines), TR = occ(T.lines);
+  const rows = [];
+  for (const t of TR) {
+    const q = PR.find((x) => x.n === t.n && x.k === t.k);
+    const exp = q && ok(q.a) && q.a && drIsDouble(t.n, q.i < P.above, R) ? q.a : 0;
+    const added = q && ok(t.prog) && ok(q.mt) ? t.prog - q.mt : null;
+    const gap = ok(added) ? added - exp : null;
+    if (exp || !ok(gap) || Math.abs(gap) >= SC_TOL.rs)
+      rows.push({line: t.n, nth: t.k, expected: exp, added, gap, state: !ok(gap) ? 'gap' : Math.abs(gap) < SC_TOL.rs ? 'agree' : 'differ', i: t.i});
+  }
+  const misses = rows.filter((r) => r.state === 'differ').sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap) || a.i - b.i);
+  const rest = rows.filter((r) => r.state !== 'differ');
+  const s = (L, f) => L.reduce((t, r) => t + (ok(r[f]) ? r[f] : 0), 0);
+  return {from: p, rows: [...misses, ...rest], misses: misses.length, expected: s(rows, 'expected'), added: s(rows, 'added'),
+          short: s(misses.filter((r) => r.gap < 0), 'gap'), over: s(misses.filter((r) => r.gap > 0), 'gap'), net: s(misses, 'gap')};
 }
 
 // Month to date, file vs correct, on day `date`. plant = that day's plant file (its TOTAL column is the file's month to date);
@@ -253,11 +357,14 @@ function sheetPlantVs(plant, day) {
 // A line that is not in a day's statement counts 0 for that day (the day is there; the line had no amount).
 // lines: the lines whose month total differs, biggest first; rest: what the TOTAL AMOUNT difference has that the lines' don't
 // (the file's TOTAL column not adding up its own lines). cpp: month cost per pick (excl. cut piece loss), paise.
-function sheetMtd(plant, days, date) {
+// With the day rules (R, adj = sheetAdjust for `date`): the excluded days are left out of the month (not missing), each line's
+// row and the total carry the expected part (exp, left, state 'expected' as in sheetPlantVs), comp is the plant's POWER
+// (COMPRESSOR) counted again in its TOTAL AMOUNT, and rest is what is left after it.
+function sheetMtd(plant, days, date, adj, R) {
   if (!plant || !date) return null;
   const by = new Map((days || []).map((d) => [d.date, d]));
-  const month = [];
-  for (let k = 1; k <= +date.slice(8, 10); k++) month.push(date.slice(0, 8) + String(k).padStart(2, '0'));
+  const month = [], skip = new Set((R && R.excluded) || []);
+  for (let k = 1; k <= +date.slice(8, 10); k++) { const x = date.slice(0, 8) + String(k).padStart(2, '0'); if (!skip.has(x)) month.push(x); }
   const missing = month.filter((d) => !by.has(d) || !ok(by.get(d).total));
   const have = !missing.length;
   const corr = new Map();
@@ -266,17 +373,23 @@ function sheetMtd(plant, days, date) {
   const all = [];
   for (const n of [...P.keys(), ...[...corr.keys()].filter((x) => !P.has(x))]) {
     const file = (P.get(n) || {}).mt, correct = have ? (corr.get(n) || 0) : null;
-    all.push({line: n, file: ok(file) ? file : null, correct, ...scDiff(file, correct, 'rs')});
+    const e = !adj ? 0 : !ok(adj.total) ? null : ((adj.lines[n] || {}).total || 0);
+    all.push(scExpect({line: n, file: ok(file) ? file : null, correct, ...scDiff(file, correct, 'rs')}, e, 'rs'));
   }
   const tc = have ? month.reduce((a, d) => a + by.get(d).total, 0) : null;
   const tp = have ? month.reduce((a, d) => a + (ok(by.get(d).picks) ? by.get(d).picks * 1e5 : NaN), 0) : null;
-  const total = {line: 'TOTAL AMOUNT', file: ok(plant.month_total) ? plant.month_total : null, correct: tc, ...scDiff(plant.month_total, tc, 'rs')};
-  const lines = all.filter((r) => r.state === 'differ').sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+  const comp = scCompPart(plant, 'mt');
+  const te = !adj ? comp : ok(adj.total) ? adj.total + comp : null;
+  const total = scExpect({line: 'TOTAL AMOUNT', file: ok(plant.month_total) ? plant.month_total : null, correct: tc, ...scDiff(plant.month_total, tc, 'rs')}, te, 'rs');
+  const big = (r) => Math.abs(ok(r.left) ? r.left : r.d);
+  const lines = all.filter((r) => r.state === 'differ').sort((a, b) => big(b) - big(a));
+  const expected = all.filter((r) => r.state === 'expected').sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
   const gaps = all.filter((r) => r.state === 'gap' && have);
-  const sumL = lines.reduce((a, r) => a + r.d, 0);
-  const rest = ok(total.d) ? total.d - sumL : null;
+  const sumL = [...lines, ...expected].reduce((a, r) => a + r.d, 0);
+  const rest0 = ok(total.d) ? total.d - sumL - comp : null;
   const cppC = have && ok(tp) && tp > 0 ? 100 * tc / tp : null, cppF = ok(plant.cpp_month) ? plant.cpp_month * 100 : null;
-  return {days: month.length, missing, total, lines, gaps, rest: ok(rest) && Math.abs(rest) >= SC_TOL.rs ? rest : (ok(rest) ? 0 : null),
+  return {days: month.length, missing, total, lines, expected, gaps, comp, adj: adj || null,
+          rest: ok(rest0) && Math.abs(rest0) >= SC_TOL.rs ? rest0 : (ok(rest0) ? 0 : null),
           cpp: {file: cppF, correct: cppC, ...scDiff(cppF, cppC, 'paise')}};
 }
 
