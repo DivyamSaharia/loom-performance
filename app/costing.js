@@ -567,6 +567,9 @@ const scLeftCell = (r, unit) => r.state === 'expected' ? el('span', {class: 'pil
   : r.state !== 'differ' ? '' : !ok(r.left) ? el('span', {class: 'pill muted', text: '—'})
   : el('b', {class: 'diffcell', 'data-sort': String(r.left), text: scSigned(r.left, unit)});
 const SC_UNIT = {rs: '₹', picks: 'picks', paise: 'paise'};
+// The Sheet checks card's New / Standing / All switch (Divyam, 16 Nov 2026): opens on New on every load, not saved per email.
+let SCMODE = 'new';
+const SCMODES = [['new', 'New'], ['standing', 'Standing'], ['all', 'All']];
 function sheetCheckCards(cur) {
   const d = cur.date;
   if (!CCHK) return [card('Sheet checks', `${dfmt(d)} · owner only`, el('p', {class: 'empty', text: `${NA} yet: the sheet checks arrive with the next costing run.`}))];
@@ -574,22 +577,32 @@ function sheetCheckCards(cur) {
   const R = CCHK.rules || null, adj = sheetAdjust(CCHK.days || {}, R, d), dp = sheetDoublePay(CCHK.days || {}, R, d);
   const fileNote = !day || !day.plant_read ? `the plant's costing.xlsx for ${dfmt(d)} has not been read yet` : !day.plant ? `no cost statement could be read from the plant's costing.xlsx for ${dfmt(d)}` : '';
   const out = [];
-  // (a) the CPP task's checks of the file
-  const C = sheetChecks(day && day.checks);
+  // (a) the CPP task's checks of the file: only findings that can change a figure the app shows (16 Nov 2026), New first
+  const C = sheetChecks(day && day.checks, SCMODE);
   if (!C) out.push(card('Sheet checks', `${dfmt(d)} · the costing run's checks of the plant's costing.xlsx · owner only`,
     el('p', {class: 'empty', text: `— Not checked: the costing run has not validated the plant's file for ${dfmt(d)} yet.`})));
   else {
-    const k = C.counts, sev = {ERROR: ['bad', 'Error'], WARN: ['warn', 'Warning']};
+    const k = C.counts, sev = {ERROR: ['bad', 'Error'], WARN: ['warn', 'Warning']}, T = C.tabs;
+    const seg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Findings shown'}, SCMODES.map(([v, t]) =>
+      el('button', {type: 'button', 'aria-pressed': C.mode === v ? 'true' : 'false', text: `${t} (${T[v]})`, onclick: () => { SCMODE = v; render(); }})));
+    const none = C.mode === 'new' ? (T.standing ? `Nothing new that can change a figure. ${T.standing} standing: pick Standing to see ${T.standing === 1 ? 'it' : 'them'}.` : 'Nothing new or standing that can change a figure: nothing to act on for this day.')
+      : C.mode === 'standing' ? (T.new ? `Nothing standing that can change a figure. ${T.new} new: pick New to see ${T.new === 1 ? 'it' : 'them'}.` : 'Nothing standing or new that can change a figure: nothing to act on for this day.')
+      : 'No errors or warnings that can change a figure in the plant\'s file for this day: nothing to act on.';
     out.push(card('Sheet checks', `${dfmt(d)} · the costing run's checks of the plant's costing.xlsx · owner only`,
       k ? el('div', {class: 'kpis sc'}, kpiC('New errors', String(k.errors_new), '', `${k.errors - k.errors_new} standing`), kpiC('New warnings', String(k.warnings_new), '', `${k.warnings - k.warnings_new} standing`))
         : el('p', {class: 'err', text: 'The counts could not be read from the checks\' summary; the list below is what the log holds.'}),
+      el('div', {class: 'toolbar'}, seg),
       C.rows.length ? table(['Line', 'Where', 'What the file shows'], C.rows.map((f) => [
         el('div', {}, el('b', {text: f.label || '—'}), el('div', {style: 'margin-top:4px;display:flex;gap:4px;flex-wrap:wrap'},
-          el('span', {class: 'pill ' + sev[f.sev][0], text: sev[f.sev][1]}), f.status === 'new' ? el('span', {class: 'pill info', text: 'New'}) : el('span', {class: 'pill muted', text: 'Standing'}))),
-        [f.sheet, f.cell].filter(Boolean).join(' ') || '—', f.msg]))
-        : el('p', {class: 'empty', text: 'No errors or warnings in the plant\'s file for this day.'}),
+          el('span', {class: 'pill ' + sev[f.sev][0], text: sev[f.sev][1]}), scNotChecked(f) ? el('span', {class: 'pill muted', title: 'this check could not run on the file; it counts as a warning', text: 'Not checked'}) : null,
+          f.status === 'new' ? el('span', {class: 'pill info', text: 'New'}) : el('span', {class: 'pill muted', text: 'Standing'}))),
+        [f.sheet, f.cell].filter(Boolean).join(' ') || '—',
+        el('div', {}, el('div', {text: f.msg}), scFigText(f.fig) ? el('div', {class: 'note', style: 'margin:4px 0 0', text: `Can change: ${scFigText(f.fig)}.`}) : null)]))
+        : el('p', {class: 'empty', text: none}),
       C.unlisted ? el('p', {class: 'note', text: `${C.unlisted} more are not listed here; they are in the Validation tab of the month's cost-per-pick log.`}) : null,
-      el('p', {class: 'note', text: 'New = first seen in this day\'s file; standing = also in the previous day\'s file. The checks report and never change the plant\'s file.'})));
+      C.hidden ? el('p', {class: 'note', text: `${C.hidden} more finding${C.hidden === 1 ? '' : 's'} cannot change the app's figures; ${C.hidden === 1 ? 'it is' : 'they are'} in the Validation tab of the month's cost-per-pick log.`}) : null,
+      !C.classified ? el('p', {class: 'note', text: 'Checked before 16 Nov 2026: every finding is listed, also those that cannot change a figure, and the counts cover them all. The list is narrowed once this day is checked again (Daily run with validate_days, RUNBOOK 3b3); nothing to do here.'}) : null,
+      el('p', {class: 'note', text: 'New = first seen in this day\'s file; Standing = the previous day\'s file had the same finding on the same line, with the same figures. The counts above are the findings that can change a figure and do not follow the New / Standing / All switch. The checks report and never change the plant\'s file.'})));
   }
   // (a2) day rules: the expected adjustment in the plant's month totals, and the previous day's double pay line by line
   if (adj || dp) out.push(dayRulesCard(d, adj, dp, R));

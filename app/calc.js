@@ -393,17 +393,43 @@ function sheetMtd(plant, days, date, adj, R) {
           cpp: {file: cppF, correct: cppC, ...scDiff(cppF, cppC, 'paise')}};
 }
 
-// The CPP task's checks of the plant's file for one day (cost_checks days[d].checks: {headline, counts, findings, more}).
-// null = the day was not validated (a gap). Errors and warnings only, new first, errors before warnings; the counts come from
-// the validator's headline and cover every finding, also those past the 40 the Validation tab lists.
-function sheetChecks(c) {
+// The CPP task's checks of the plant's file for one day (cost_checks days[d].checks: {headline, counts, counts_fig, findings,
+// more}). null = the day was not validated (a gap). Errors and warnings only, new first, errors before warnings.
+// 16 Nov 2026 (Divyam): a finding carries `fig`, the app figure it can change ('' = none, hidden here and counted in `hidden`).
+// A day checked before then has counts_fig null and fig null on every finding: classified = false, nothing is hidden.
+// mode 'new' (the card opens on it) | 'standing' | 'all' filters the rows; tabs = each button's count. The counts (KPI tiles)
+// are the findings that can change a figure (counts_fig; on an older day every finding) and never follow the mode. Counts come
+// from the validator's headline and cover every finding, also those past the 40 the Validation tab lists (unlisted).
+function sheetChecks(c, mode) {
   if (!c) return null;
+  mode = ['new', 'standing', 'all'].includes(mode) ? mode : 'new';
   const sev = {ERROR: 0, WARN: 1};
-  const rows = (c.findings || []).filter((f) => f.sev in sev).map((f, i) => ({...f, i}))
+  const classified = !!c.counts_fig;
+  const all = (c.findings || []).filter((f) => f.sev in sev).map((f, i) => ({...f, i}))
     .sort((a, b) => (a.status === 'new' ? 0 : 1) - (b.status === 'new' ? 0 : 1) || sev[a.sev] - sev[b.sev] || a.i - b.i);
-  const k = c.counts;
-  return {rows, counts: k || null, unlisted: k ? Math.max(0, k.errors + k.warnings - rows.length) : null, headline: c.headline || ''};
+  const shown = classified ? all.filter((f) => f.fig !== '' && f.fig !== null && f.fig !== undefined) : all;
+  const isNew = (f) => f.status === 'new';
+  const pick = {new: shown.filter(isNew), standing: shown.filter((f) => !isNew(f)), all: shown};
+  const k = classified ? c.counts_fig : (c.counts || null), kAll = c.counts || null;
+  const kn = k ? {new: k.errors_new + k.warnings_new, all: k.errors + k.warnings} : null;
+  if (kn) kn.standing = kn.all - kn.new;
+  const tabs = kn ? {new: Math.max(kn.new, pick.new.length), standing: Math.max(kn.standing, pick.standing.length), all: Math.max(kn.all, pick.all.length)}
+    : {new: pick.new.length, standing: pick.standing.length, all: pick.all.length};
+  const hidden = !classified ? 0 : (kAll && k) ? Math.max(0, kAll.errors + kAll.warnings - k.errors - k.warnings) : all.length - shown.length;
+  return {rows: pick[mode], mode, classified, counts: k, tabs, hidden,
+    unlisted: kn ? Math.max(0, kn[mode] - pick[mode].length) : null, headline: c.headline || ''};
 }
+// What a Sheet checks finding can change, as the card names it under the message (fig: the validator's labels, ", "-joined).
+const SC_FIG = {'cost chain': 'cost per pick, folded cost and profit', 'file side': 'the Plant file figures in Plant vs corrected and Month to date',
+  'production': 'production by quality, looms and picks', 'B grade': 'B grade % and rupee impact', 'stock': 'the Stock card',
+  'whole day': 'every figure of this day', 'day rules': 'the Day rules card',
+  'not classified': 'possibly any figure: this check is new and not yet sorted, so treat it as one that can'};
+function scFigText(fig) {
+  if (!fig) return '';
+  const parts = String(fig).split(', ').filter((x) => x && x !== 'not checked').map((x) => SC_FIG[x] || x);
+  return parts.join('; ');
+}
+const scNotChecked = (f) => !!f && (f.cat === 'validator' || String(f.fig || '').split(', ').includes('not checked'));
 
 // ---- Why cost per pick moved, against a chosen basis (16 Nov 2026, Divyam). Day records are the Costing tab's days
 // (costing.json days / days_entered): picks in lakh, total and cut in rupees, looms, lines [{n, a}] in rupees.
