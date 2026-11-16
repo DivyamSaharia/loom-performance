@@ -466,6 +466,7 @@ ol.prio p{margin:3px 0 0;line-height:1.45}
 @media (prefers-reduced-motion:reduce){.cardhead.fold>h3::before{transition:none}}
 .seg .sml{display:none}
 @media (max-width:560px){.seg .lgl{display:none}.seg .sml{display:inline}.perbar .seg button{padding:0 10px}}
+@media (max-width:560px){.seg.bseg{flex-wrap:wrap;overflow:visible}.seg.bseg button{padding:0 10px}}   /* Why cost per pick moved: the 4 choices wrap rather than clip on a phone (16 Nov 2026) */
 /* sorting (12 Nov 2026) */
 .sortbar{margin:2px 0 8px;gap:8px}
 .trsearch.pick{min-width:min(100%,240px);padding-left:10px}

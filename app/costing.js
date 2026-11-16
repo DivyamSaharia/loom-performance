@@ -107,25 +107,59 @@ function dayChart(g, P, pre, o, specs, defaults) {
 // The days just before a period (for 7-day averages), from the same day list.
 const preOf = (L, P) => { if (!P.length) return []; const i = L.findIndex((d) => d.date === P[0].date); return i > 0 ? L.slice(Math.max(0, i - 6), i) : []; };
 
-// Why cost per pick moved over the month: the month's first costing day against the day shown, by the same method as the
-// daily bridge (costing.py bridge(): volume, then each line's change in rupees ÷ the day's picks), so the effects add up
-// exactly to the change. "All other" is the change less the bars shown, so the chart closes on the day's figure exactly.
-function mtdBridgeCard(cur) {
-  const m = cur.bridge_mtd, ttl = 'Why cost per pick moved this month';
-  if (!m) return card(ttl, `${monthName(cur.date)} · paise per pick`, el('p', {class: 'scopenote', text: cDays().some((d) => d.bridge_mtd) ? `${dfmt(cur.date)} is the month's first costing day, so there is nothing to compare it with yet.` : 'The month-to-date bridge arrives with the next costing run.'}));
+// Why cost per pick moved, against a basis picked on the card (16 Nov 2026, Divyam): V yesterday, V yesterday avg (the month's
+// average day up to the day before, the default), V running avg (the month's average day, every costing day so far) or a
+// selected date. calc.js bridgeBasis picks the reference and cppBridge works the bridge (costing.py bridge(), so against
+// yesterday it is the pipeline's own daily bridge). Averages are picks-weighted. "All other" is the change less the bars
+// shown, so the chart closes on the day's figure exactly. Same card in plant view, on its own as-entered figures.
+let BMODE = 'mtd', BPICK = '';
+// Divyam's names on a laptop; plain words on a phone, where a "V" shorthand is easy to misread (fresh-eyes review, 16 Nov).
+const BMODES = [['prev', 'V yesterday', 'Yesterday'], ['mtd', 'V yesterday avg', 'Avg till yesterday'], ['month', 'V running avg', 'Month avg'], ['date', 'Select date', 'Date']];
+function moveCard(cur) {
+  const D = cDays(), ttl = 'Why cost per pick moved';
+  if (BMODE === 'date' && (!BPICK || BPICK === cur.date || !D.some((d) => d.date === BPICK))) {
+    const i = D.findIndex((d) => d.date === cur.date); BPICK = (D[i - 1] || D[i + 1] || {}).date || '';
+  }
+  const seg = el('div', {class: 'seg bseg', role: 'group', 'aria-label': 'Compare with'}, BMODES.map(([v, t, sh]) => el('button', {type: 'button', 'aria-pressed': BMODE === v ? 'true' : 'false', 'aria-label': t, title: t, onclick: () => { BMODE = v; render(); }},
+    el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh}))));
+  let pickSel = null;
+  const others = D.filter((d) => d.date !== cur.date);
+  if (BMODE === 'date' && others.length) {
+    pickSel = el('select', {id: 'bpick', 'aria-label': 'Compare with the costing day'}, D.filter((d) => d.date !== cur.date).slice().reverse().map((d) => el('option', {value: d.date, text: dfmt(d.date), selected: d.date === BPICK ? true : null})));
+    pickSel.addEventListener('change', () => { BPICK = pickSel.value; render(); });
+  }
+  const bar = el('div', {class: 'toolbar'}, el('span', {class: 'note', text: 'Compare with'}), seg, pickSel);
+  const B = bridgeBasis(D, cur.date, BMODE, BPICK), mon = monthName(cur.date);
+  if (!B.ref) {
+    const why = {first: 'This is the first costing day on record, so there is no previous day to compare with.',
+      'month-first': `${dfmt(cur.date)} is ${mon}'s first costing day, so there is no earlier day this month to average.`,
+      'month-only': `${dfmt(cur.date)} is ${mon}'s only costing day so far, so the running average is this day itself.`,
+      pick: others.length ? 'Pick a costing day to compare with.' : 'There is no other costing day to compare with yet. It will appear here once another day is uploaded.', same: 'Pick a different day to compare with.'}[B.why] || NA + '.';
+    return card(ttl, 'paise per pick', bar, el('p', {class: 'scopenote', text: why}));
+  }
+  const m = cppBridge(B.ref, cur);
+  const avg = BMODE === 'mtd' || BMODE === 'month';
+  const span = avg ? `${shortRange(B.from, B.to)}, ${B.n} costing day${B.n === 1 ? '' : 's'}` : '';
+  const refName = avg ? (BMODE === 'mtd' ? `the average day of ${span}` : `${mon}'s running average (${span})`) : dfmt(B.label);
+  const refShort = avg ? `Avg ${shortRange(B.from, B.to)}` : dfmt(B.label);
   const top = m.lines.filter((l) => Math.abs(l.e) >= 0.005).slice(0, 5), rest = m.lines.filter((l) => !top.includes(l));
   const restE0 = (m.now_cpp - m.prev_cpp) - m.volume - top.reduce((a, l) => a + l.e, 0), restD = rest.reduce((a, l) => a + l.d, 0);
+  // shown to 2 decimals and balanced, so the figures on screen add up to the change shown
   const Rb = balanced([m.volume, ...top.map((l) => l.e), restE0]), volE = Rb[0], topE = Rb.slice(1, -1), restE = Rb.at(-1);
-  const steps = [{label: dfmt(m.prev_date), v: m.prev_cpp, total: true}, {label: 'Volume', v: volE}, ...top.map((l, i) => ({label: l.n, v: topE[i]})), {label: 'All other', v: restE}, {label: dfmt(cur.date), v: m.now_cpp, total: true}];
+  const steps = [{label: refShort, v: m.prev_cpp, total: true}, {label: 'Volume', v: volE}, ...top.map((l, i) => ({label: l.n, v: topE[i]})), {label: 'All other', v: restE}, {label: dfmt(cur.date), v: m.now_cpp, total: true}];
   const typeOf = (n) => { if (n === 'CUT PIECE LOSS') return 'Quality loss'; const l = cur.lines.find((x) => x.n === n); return l ? COST.types[l.t] : '—'; };
   const rows = [[el('b', {text: 'Volume'}), `Picks ${pn(m.picks0, 2)} → ${pn(m.picks1, 2)} lakh (${sg((m.picks1 / m.picks0 - 1) * 100, 1)}%)`, sg(volE), 'Fixed cost spread over more or fewer picks'],
     ...top.map((l, i) => [l.n, (l.d >= 0 ? '+' : '−') + rs(Math.abs(l.d)).replace('−', ''), sg(topE[i]), typeOf(l.n)]),
     ['All other lines', `${rest.length} lines, ${restD >= 0 ? '+' : '−'}${rs(Math.abs(restD)).replace('−', '')}`, sg(restE), ''],
     [el('b', {text: 'Total'}), '', el('b', {text: sg(Rb.reduce((a, v) => a + v, 0))}), `${pn(m.prev_cpp, 2)} → ${pn(m.now_cpp, 2)} paise`]];
-  return card(ttl, `${dfmt(m.prev_date)} → ${dfmt(cur.date)} · paise per pick · the month's first costing day against this one`,
-    waterfall(steps, 'Bridge of cost per pick from the first day of the month to today'),
-    (() => { const t = table(['Driver', [`Change`, `₹ vs ${dfmt(m.prev_date)}`], ['Effect', 'paise per pick'], 'Type'], rows, [2]); t.classList.add('bridge'); return t; })(),
-    el('p', {class: 'note', text: `The effects add up exactly to the change (each is shown to 2 decimals, rounded so the figures shown add up too). The same method as the daily one, with ${dfmt(m.prev_date)} as the starting day: volume is what that day's total cost would have been per pick at today's picks; each line is its change in rupees since then divided by today's picks. It compares the two days, not the month's totals: the month-to-date cost per pick is ${pn(cur.mtd.cpp, 2)} paise.`}));
+  const vs = m.vol_split, who = avg ? 'the average day' : dfmt(B.label);
+  const sw = (c, t, o) => el('span', {class: 'lg'}, el('i', {style: `display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:${c}${o ? ';opacity:.75' : ''}`}), t);
+  return card(ttl, `${refName} → ${dfmt(cur.date)} · paise per pick`, bar,
+    waterfall(steps, `Bridge of cost per pick from ${refName} to ${dfmt(cur.date)}`),
+    el('div', {class: 'legend'}, sw('var(--bad)', 'pushed cost per pick up'), sw('var(--good)', 'pulled it down'), sw('var(--muted-2)', avg ? 'average and day totals' : 'day totals', true)),
+    (() => { const t = table(['Driver', ['Change', `₹ vs ${avg ? 'the average day' : dfmt(B.label)}`], ['Effect', 'paise per pick'], 'Type'], rows, [2]); t.classList.add('bridge'); return t; })(),
+    el('p', {class: 'note', text: `The effects add up exactly to the change (each shown to 2 decimals, rounded so the figures shown add up too). Volume is what ${who}'s total cost would have been per pick at ${dfmt(cur.date)}'s picks; each line is its change in rupees divided by ${dfmt(cur.date)}'s picks.${avg ? ` The average day is each line's rupees, the cut piece loss and the picks averaged over ${span}, so its cost per pick is the picks-weighted average: total cost ÷ total picks over those days.${BMODE === 'month' ? ` It includes ${dfmt(cur.date)} and every costing day of ${mon} uploaded so far.` : ''}` : ''}`}),
+    vs ? el('p', {class: 'scopenote', text: `Volume, in two parts: looms running ${pn(vs.looms0, 2)} → ${pn(vs.looms1, 2)} accounts for ${sg(vs.picks_looms, 2)} lakh picks, and picks per running loom ${f0(vs.ppl0)} → ${f0(vs.ppl1)} for ${sg(vs.picks_perloom, 2)} lakh. Together ${sg(vs.picks_change, 2)} lakh${Math.abs(vs.picks_change) > 0.005 ? `, so ${Math.round(Math.abs(vs.picks_looms / vs.picks_change) * 100)}% of the change in picks came from the number of looms running` : ''}.`}) : null);
 }
 // Cost per pick split by cost type, day by day (weekly on request): fixed per day, follows attendance, follows output, lumpy,
 // and the cut-piece loss, as stacked bars that add up to the headline cost per pick (the dashed mark). Legend highlights a type.
@@ -332,32 +366,15 @@ function pageCosting() {
   // ---- Sheet checks (owner only, 14 Nov 2026): the CPP task's checks of the plant's file, plant vs corrected, month to date
   if (!isPlant() && typeof fxIsOwner === 'function' && fxIsOwner()) s.append(...sheetCheckCards(cur));
 
-  // ---- 1. daily drivers
+  // ---- 1. why cost per pick moved, against the basis picked on the card
+  s.append(moveCard(cur));
   if (b) {
-    const top = b.lines.filter((l) => Math.abs(l.e) >= 0.005).slice(0, 5), rest = b.lines.filter((l) => !top.includes(l));
-    const restE0 = rest.reduce((a, l) => a + l.e, 0), restD = rest.reduce((a, l) => a + l.d, 0);
-    // shown to 2 decimals and balanced, so the figures on screen add up to the change shown
-    const Rb = balanced([b.volume, ...top.map((l) => l.e), restE0]), volE = Rb[0], topE = Rb.slice(1, -1), restE = Rb.at(-1);
-    const steps = [{label: dfmt(b.prev_date), v: b.prev_cpp, total: true}, {label: 'Volume', v: volE}, ...top.map((l, i) => ({label: l.n, v: topE[i]})), {label: 'All other', v: restE}, {label: dfmt(cur.date), v: b.now_cpp, total: true}];
-    const typeOf = (n) => { if (n === 'CUT PIECE LOSS') return 'Quality loss'; const l = cur.lines.find((x) => x.n === n); return l ? COST.types[l.t] : '—'; };
-    const rows = [[el('b', {text: 'Volume'}), `Picks ${pn(b.picks0, 2)} → ${pn(b.picks1, 2)} lakh (${sg((b.picks1 / b.picks0 - 1) * 100, 1)}%)`, sg(volE), 'Fixed cost spread over more or fewer picks'],
-      ...top.map((l, i) => [l.n, (l.d >= 0 ? '+' : '−') + rs(Math.abs(l.d)).replace('−', ''), sg(topE[i]), typeOf(l.n)]),
-      ['All other lines', `${rest.length} lines, ${restD >= 0 ? '+' : '−'}${rs(Math.abs(restD)).replace('−', '')}`, sg(restE), ''],
-      [el('b', {text: 'Total'}), '', el('b', {text: sg(Rb.reduce((a, v) => a + v, 0))}), `${pn(b.prev_cpp, 2)} → ${pn(b.now_cpp, 2)} paise`]];
-    const vs = b.vol_split;
-    s.append(card('Why cost per pick moved', `${dfmt(b.prev_date)} → ${dfmt(cur.date)} · paise per pick`, waterfall(steps, 'Bridge of cost per pick from the previous day to today'),
-      el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('i', {style: 'display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:var(--bad)'}), 'pushed cost per pick up'), el('span', {class: 'lg'}, el('i', {style: 'display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:var(--good)'}), 'pulled it down'), el('span', {class: 'lg'}, el('i', {style: 'display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:var(--muted-2);opacity:.75'}), 'day total')),
-      (() => { const t = table(['Driver', 'Change', ['Effect', 'paise per pick'], 'Type'], rows, [2]); t.classList.add('bridge'); return t; })(),
-      el('p', {class: 'note', text: 'The effects add up exactly to the change. Volume is what yesterday\'s total cost would have been per pick at today\'s picks; each line is its change in rupees divided by today\'s picks.'}),
-      vs ? el('p', {class: 'scopenote', text: `Volume, in two parts: looms running ${pn(vs.looms0, 2)} → ${pn(vs.looms1, 2)} accounts for ${sg(vs.picks_looms, 2)} lakh picks, and picks per running loom ${f0(vs.ppl0)} → ${f0(vs.ppl1)} for ${sg(vs.picks_perloom, 2)} lakh. Together ${sg(vs.picks_change, 2)} lakh${Math.abs(vs.picks_change) > 0.005 ? `, so ${Math.round(Math.abs(vs.picks_looms / vs.picks_change) * 100)}% of the change in picks came from the number of looms running` : ''}.`}) : null));
-    s.append(mtdBridgeCard(cur));
     // folded
     const fb = b.folded;
     if (fb) s.append(card('Folded cost per pick', 'Cost of A-grade folded picks: OPEX plus cut-piece loss, over picks folded',
       table(['Step', ['Effect', 'paise per pick']], [[dfmt(b.prev_date), pn(fb.prev, 2)], ['Picks folded (timing of folding)', sg(fb.folding)], ['OPEX', sg(fb.opex)], ['Cut-piece loss', sg(fb.cut)], [dfmt(cur.date), el('b', {text: pn(fb.now, 2)})]], [1]),
       el('p', {class: 'note', text: `${f0(fb.folded_m)} m were folded against ${f0(fb.produced_m)} m produced, so folded cost per pick can move the other way from cost per pick on a day when folding runs ahead of or behind production.`})));
-  } else s.append(el('p', {class: 'scopenote', text: 'This is the first costing day on record, so there is no previous day to compare with.'}));
-  if (!b) s.append(mtdBridgeCard(cur));
+  }
 
   // ---- 2. fixed against variable
   const byT = {};

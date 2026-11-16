@@ -404,3 +404,66 @@ function sheetChecks(c) {
   const k = c.counts;
   return {rows, counts: k || null, unlisted: k ? Math.max(0, k.errors + k.warnings - rows.length) : null, headline: c.headline || ''};
 }
+
+// ---- Why cost per pick moved, against a chosen basis (16 Nov 2026, Divyam). Day records are the Costing tab's days
+// (costing.json days / days_entered): picks in lakh, total and cut in rupees, looms, lines [{n, a}] in rupees.
+// avgDay: the picks-weighted average day of `days`: the mean of picks, total, cut piece loss and each line's rupees (a line
+// missing on a day counts ₹0 that day), so its cost per pick = (Σ total + Σ cut) ÷ Σ picks. Looms are averaged only when
+// every day has them (else null, and the volume split is not shown).
+function avgDay(days) {
+  const L = (days || []).filter((d) => d && ok(d.picks) && d.picks > 0 && ok(d.total));
+  if (!L.length) return null;
+  const n = L.length, mean = (f) => L.reduce((a, d) => a + f(d), 0) / n;
+  const names = [...new Set(L.flatMap((d) => (d.lines || []).map((l) => l.n)))];
+  const lines = names.map((nm) => ({n: nm, a: mean((d) => (d.lines || []).filter((l) => l.n === nm).reduce((a, l) => a + (ok(l.a) ? l.a : 0), 0))}));
+  return {date: null, n, from: L[0].date, to: L[n - 1].date, picks: mean((d) => d.picks), total: mean((d) => d.total), cut: mean((d) => ok(d.cut) ? d.cut : 0),
+    looms: L.every((d) => ok(d.looms) && d.looms > 0) ? mean((d) => d.looms) : null, lines};
+}
+// cppBridge: costing.py bridge() on these records, in paise per pick, so against the day before it gives the pipeline's own
+// daily bridge. Volume = the reference's cost (incl. cut piece loss) over the day's picks less the reference's cost per pick;
+// each line (and CUT PIECE LOSS) = its change in rupees ÷ the day's picks. The effects add up exactly to the change.
+function cppBridge(ref, r) {
+  if (!ref || !r || !(ref.picks > 0) || !(r.picks > 0)) return null;
+  const P = r.picks * 1e5, Pp = ref.picks * 1e5, cut = (d) => ok(d.cut) ? d.cut : 0, Np = ref.total + cut(ref);
+  const amt = (d) => { const m = new Map(); for (const l of d.lines || []) m.set(l.n, (m.get(l.n) || 0) + (ok(l.a) ? l.a : 0)); return m; };
+  const lm = amt(r), pl = amt(ref);
+  const lines = [...new Set([...lm.keys(), ...pl.keys()])].sort().map((n) => { const d = (lm.get(n) || 0) - (pl.get(n) || 0); return {n, d, e: d / P * 100}; });
+  const dc = cut(r) - cut(ref);
+  lines.push({n: 'CUT PIECE LOSS', d: dc, e: dc / P * 100});
+  lines.sort((a, b) => Math.abs(b.e) - Math.abs(a.e) || (a.n < b.n ? -1 : a.n > b.n ? 1 : 0));
+  let vs = null;
+  if (ok(r.looms) && r.looms > 0 && ok(ref.looms) && ref.looms > 0) {
+    const fromL = (r.looms - ref.looms) * (Pp / ref.looms);
+    vs = {looms0: ref.looms, looms1: r.looms, ppl0: Pp / ref.looms, ppl1: P / r.looms, picks_looms: fromL / 1e5, picks_perloom: (P - Pp - fromL) / 1e5, picks_change: (P - Pp) / 1e5};
+  }
+  return {prev_cpp: Np / Pp * 100, now_cpp: (r.total + cut(r)) / P * 100, volume: (Np / P - Np / Pp) * 100, picks0: ref.picks, picks1: r.picks, lines, vol_split: vs};
+}
+// bridgeBasis: what the day `date` is compared with. mode:
+//   'prev'  V yesterday: the last costing day before it (excluded days are not in `days`, so 10 Nov meets 7 Nov);
+//   'mtd'   V yesterday avg: the average day of its month from the 1st costing day up to the day before;
+//   'month' V running avg: the average day of its month, every costing day so far (the whole month once it is over);
+//   'date'  Select date: the costing day `pick`.
+// Returns {ref, label, n} or {ref: null, why} when there is nothing to compare with (a gap, never a zero change).
+function bridgeBasis(days, date, mode, pick) {
+  const D = (days || []).filter((d) => d && d.date), ym = String(date).slice(0, 7);
+  const cur = D.find((d) => d.date === date);
+  if (!cur) return {ref: null, why: 'no costing day'};
+  if (mode === 'prev') {
+    const p = D.filter((d) => d.date < date).at(-1);
+    return p ? {ref: p, label: p.date, n: 1} : {ref: null, why: 'first'};
+  }
+  if (mode === 'mtd' || mode === 'month') {
+    const L = D.filter((d) => d.date.slice(0, 7) === ym && (mode === 'month' || d.date < date));
+    if (!L.length) return {ref: null, why: 'month-first'};
+    if (mode === 'month' && L.length === 1) return {ref: null, why: 'month-only'};
+    const a = avgDay(L);
+    return a ? {ref: a, label: null, n: a.n, from: a.from, to: a.to} : {ref: null, why: 'month-first'};
+  }
+  if (mode === 'date') {
+    const p = D.find((d) => d.date === pick);
+    if (!p) return {ref: null, why: 'pick'};
+    if (p.date === date) return {ref: null, why: 'same'};
+    return {ref: p, label: p.date, n: 1};
+  }
+  return {ref: null, why: 'mode'};
+}
