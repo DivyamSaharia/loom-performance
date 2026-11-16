@@ -131,11 +131,19 @@ function moveCard(cur) {
   const bar = el('div', {class: 'toolbar'}, el('span', {class: 'note', text: 'Compare with'}), seg, pickSel);
   const B = bridgeBasis(D, cur.date, BMODE, BPICK), mon = monthName(cur.date);
   if (!B.ref) {
+    // Every empty state says what to do next (16 Nov, fresh-eyes review). The buttons are named as they read on this screen:
+    // the laptop label, or the phone label below 560 px (.nm in style.css).
+    const nm = (v) => { const b = BMODES.find((x) => x[0] === v); return el('span', {class: 'nm'}, el('b', {class: 'lgl', text: b[1]}), el('b', {class: 'sml', text: b[2]})); };
+    const hasPrev = D.some((d) => d.date < cur.date), opts = [];
+    if (hasPrev && BMODE !== 'prev') opts.push(nm('prev'));
+    if (others.length && BMODE !== 'date') opts.push(nm('date'));
+    const next = opts.length ? ['Pick ', ...opts.flatMap((o, i) => (i ? [' or ', o] : [o])), ' to compare with another costing day, or wait for the next costing day.'] : ['Wait for the next costing day to be uploaded.'];
     const why = {first: 'This is the first costing day on record, so there is no previous day to compare with.',
       'month-first': `${dfmt(cur.date)} is ${mon}'s first costing day, so there is no earlier day this month to average.`,
       'month-only': `${dfmt(cur.date)} is ${mon}'s only costing day so far, so the running average is this day itself.`,
-      pick: others.length ? 'Pick a costing day to compare with.' : 'There is no other costing day to compare with yet. It will appear here once another day is uploaded.', same: 'Pick a different day to compare with.'}[B.why] || NA + '.';
-    return card(ttl, 'paise per pick', bar, el('p', {class: 'scopenote', text: why}));
+      pick: others.length ? 'Pick a costing day to compare with.' : 'There is no other costing day to compare with yet.', same: 'Pick a different day to compare with.'}[B.why] || NA + '.';
+    const more = B.why === 'pick' && others.length || B.why === 'same' ? [] : [' ', ...next];
+    return card(ttl, 'paise per pick', bar, el('p', {class: 'scopenote'}, why, ...more));
   }
   const m = cppBridge(B.ref, cur);
   const avg = BMODE === 'mtd' || BMODE === 'month';
