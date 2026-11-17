@@ -25,7 +25,7 @@ const TITLES = Object.assign(Object.fromEntries(NAV.map((n) => [n[0], n[1]])), {
   approvals: 'Approvals', masters: 'Fabric masters', links: 'Head-group links', realisation: 'Realisation'});
 // The admin's own screens (database mode): Access and the fabric integration's. Realisation shows only once switched on.
 const ADMIN_TABS = ['access', 'fabric', 'approvals', 'masters', 'links', 'realisation'];
-const FAB_NAV = [['approvals', 'Approvals', 'layers', 'approvals'], ['masters', 'Fabric masters', 'layers'], ['links', 'Head-group links', 'layers'], ['realisation', 'Realisation', 'rupee']];
+const FAB_NAV = [['approvals', 'Approvals', 'layers', 'approvals'], ['masters', 'Fabric masters', 'layers'], ['links', 'Head-group links', 'layers'], ['realisation', 'Realisation', 'rupee', 'corrections']];
 // Reading order, not build order (11 Nov 2026): the sidebar and the More sheet are grouped Today / Looms / Money / Setup /
 // Admin. Items keep their ids and classes (sb-data, sb-access, sb-fabric, sb-fx, sb-realisation): the CSS, fxAfterSignIn
 // and tabAllowed hide what a role may not see, and a group whose items are all hidden hides its label (sbGroups).
@@ -42,7 +42,7 @@ function buildNav() {
   $('#sb-guide').replaceChildren(icon('help'), el('span', {text: 'Guide'}));
   const tb = $('#tabbar');
   tb.replaceChildren(...MOB.map((id) => { const n = NAV.find((x) => x[0] === id); return el('a', {href: '#' + id, 'data-tab': id}, icon(n[2], 24), el('span', {text: n[1]}), el('span', {class: 'badge', 'data-badge': id, hidden: true})); }),
-    el('button', {type: 'button', id: 'morebtn', onclick: () => $('#more').showModal()}, icon('dots', 24), el('span', {text: 'More'})));
+    el('button', {type: 'button', id: 'morebtn', onclick: () => $('#more').showModal()}, icon('dots', 24), el('span', {text: 'More'}), el('span', {class: 'badge', 'data-badge': 'corrections', hidden: true})));   // Round B: unread realisation corrections (Realisation sits in More)
   const more = $('#more');
   more.replaceChildren(...GROUPS.flatMap(([name, ids]) => { const its = ids.filter((id) => inMode(id) && !MOB.includes(id)); return its.length ? [el('div', {class: 'more-grp', 'data-grp': name, text: name}), ...its.map((id) => { const a = item(id, 'more-item', 22); a.addEventListener('click', () => more.close()); return a; })] : []; }),
     el('a', {href: '#', onclick: (e) => { e.preventDefault(); more.close(); openGuide(); }}, icon('help', 22), el('span', {text: 'Guide'})));

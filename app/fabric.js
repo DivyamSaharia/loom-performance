@@ -55,7 +55,50 @@ async function fxBadge() {
     setApprovalsBadge(r.length);
   } catch (e) { setApprovalsBadge(0); }
 }
-// After sign-in (admin only): settings for the nav (the Realisation item shows only when switched on) and the badge.
+// Realisation corrections (Round B, 17 Nov 2026; migration 0017): a day already announced in the hourly notification whose
+// realisation or profit later moved by ₹500 or more (a back-dated approval, an undo, a head-group link, a costing re-read).
+// The pipeline (realisation_notice.py) writes fm_corrections; the owner reads them here. The Realisation item carries a badge
+// while one is unread; the Corrections card on Realisation lists them and marks them read (fm_corrections_seen).
+let FXCOR = null, FXCOR_ERR = null;
+const fxCorSeen = () => +(fxSet.corrections_seen || 0);
+function setCorrectionsBadge(n) { for (const b of document.querySelectorAll('[data-badge="corrections"]')) { b.hidden = !n; b.textContent = n ? String(n) : ''; b.title = n ? `${n} corrected day${n === 1 ? '' : 's'} not read yet` : ''; } }
+async function fxCorrLoad() {
+  FXCOR = await sbRows('fm_corrections', (q) => q.select('id, created_at, days').order('id', {ascending: false}).limit(30));
+  FXCOR_ERR = null;
+  setCorrectionsBadge(FXCOR.filter((c) => c.id > fxCorSeen()).reduce((a, c) => a + (c.days || []).length, 0));   // one per corrected day, as the card's rows
+  return FXCOR;
+}
+function fxCorrSeen() {
+  const top = FXCOR && FXCOR.length ? FXCOR[0].id : 0;
+  if (!top || top <= fxCorSeen()) return;
+  fxRpc('fm_corrections_seen', {p_id: top}).then((v) => { fxSet.corrections_seen = v; setCorrectionsBadge(0); }, () => {});
+}
+function fxCorrectionsCard(cors) {
+  const title = 'Corrections', what = 'Days already announced in the hourly notification whose realisation or profit later moved by ₹500 or more, As sold (as in the notification, whatever the basis above).';
+  if (!cors) return card(title, what, el('p', {class: 'err', text: `Could not load the corrections${FXCOR_ERR ? ` (${FXCOR_ERR})` : ''}. Press the Refresh icon (the round arrow) to try again; if it keeps failing, the daily run's notification still carries every correction.`}));
+  if (!cors.length) return card(title, what, el('p', {class: 'note', text: 'No corrections yet. Nothing to do: a day shows here, and in the hourly notification, if its figures move by ₹500 or more after it was announced (the last 31 days are checked every hour the daily run runs, 10:40 to 16:40 IST).'}));
+  const seen = fxCorSeen(), arrow = (o, n, k) => `${fxMoney(o[k])} → ${fxMoney(n[k])}`;
+  const chg = (o, n, k) => ok(o[k]) && ok(n[k]) ? (n[k] - o[k] >= 0 ? '+' : '') + fxMoney(n[k] - o[k]) : '—';
+  const days = cors.flatMap((c) => (c.days || []).map((d) => ({c, d, o: d.old || {}, n: d.new || {}, open: () => openDayAny(d.date)})));
+  const tag = (x) => x.c.id > seen ? el('span', {class: 'pill warn', text: 'new', style: 'margin-left:6px'}) : null;
+  const keys = (x) => ({tabindex: '0', title: 'Open this day', onclick: x.open, onkeydown: (e) => { if (e.key === 'Enter') x.open(); }});
+  // On a phone (below 560 px) one block per day, so the day and the reason stay beside the figures with no sideways scroll.
+  const body = window.matchMedia('(max-width: 560px)').matches
+    ? el('div', {class: 'corrlist'}, days.map((x) => el('div', Object.assign({class: 'pick corr', style: 'padding:10px 0;border-top:1px solid var(--line, #ddd);cursor:pointer'}, keys(x)),
+        el('div', {}, el('strong', {text: dfmt(x.d.date)}), tag(x), el('span', {class: 'note', text: ` · sent ${fxWhen(x.c.created_at)} IST`})),
+        el('div', {class: 'note', text: (x.d.cause || []).join('; ')}),
+        el('div', {text: `Realisation ${chg(x.o, x.n, 'real')} (told → now: ${arrow(x.o, x.n, 'real')})`}),
+        el('div', {text: `Profit ${chg(x.o, x.n, 'profit')} (told → now: ${arrow(x.o, x.n, 'profit')})`}),
+        el('div', {class: 'note', text: `Sale value, told → now: ${arrow(x.o, x.n, 'sale')}`}))))
+    : table(['Day', 'Why', ['Realisation change', '₹'], ['Profit change', '₹'], ['Realisation', 'told → now'], ['Profit', 'told → now'], ['Sale value', 'told → now'], 'Sent'],
+        days.map((x) => el('tr', Object.assign({class: 'pick corr'}, keys(x)), [el('span', {}, dfmt(x.d.date), tag(x)),
+          el('span', {style: 'display:inline-block;min-width:200px', text: (x.d.cause || []).join('; ')}),
+          chg(x.o, x.n, 'real'), chg(x.o, x.n, 'profit'), arrow(x.o, x.n, 'real'), arrow(x.o, x.n, 'profit'), arrow(x.o, x.n, 'sale'),
+          fxWhen(x.c.created_at) + ' IST'].map((v, i) => el('td', {class: i >= 2 && i <= 6 ? 'num' : null}, v)))), [2, 3, 4, 5, 6]);
+  return card(title, `${what} Last sent ${fxWhen(cors[0].created_at)} IST. Tap a day to open it.`, body,
+    el('p', {class: 'note', text: '"new" marks a day not read yet; "—" is a figure that could not be worked out (nothing priced, or no costing day), never a zero. The last 31 days are checked every hour the daily run runs (10:40 to 16:40 IST); the card keeps the last 30 corrections sent. The phone notice for a correction names the days only.'}));
+}
+// After sign-in (admin only): settings for the nav (the Realisation item shows only when switched on) and the badges.
 async function fxAfterSignIn() {
   if (!isAdmin()) return;
   for (const a of document.querySelectorAll('.sb-fx')) if (!fxIsOwner()) a.hidden = true;   // the owner's screens (database: 0008)
@@ -63,6 +106,7 @@ async function fxAfterSignIn() {
   try { await fxSettings(); } catch (e) {}
   fxBadge();
   fxNavRealisation();
+  if (fxAnalysisOn()) fxCorrLoad().catch(() => setCorrectionsBadge(0));
 }
 // The Realisation item (sidebar and More sheet) shows only once the analysis is switched on.
 function fxNavRealisation() { for (const a of document.querySelectorAll('[data-tab="realisation"]')) a.hidden = !fxAnalysisOn(); if (typeof sbGroups === 'function') sbGroups(); }
@@ -546,10 +590,11 @@ function pageRealisation() {
         await fxLoad(true);
         const [pend, hist] = await Promise.all([
           sbRows('fm_requests_now', (q) => q.select('src_id, entity, kind').eq('status', 'pending').eq('cls', 'money')),
-          sbRows('fm_history', (q) => q.select('id, action, field, eff_from, detail').order('id', {ascending: false}).limit(500))]);
+          sbRows('fm_history', (q) => q.select('id, action, field, eff_from, detail').order('id', {ascending: false}).limit(500)),
+          fxCorrLoad().catch((e) => { FXCOR = null; FXCOR_ERR = sbErr(e); })]);
         FXAPP = fcApprovalDays(hist); FXR_PEND = pend; FXR_AT = Date.now();
       }
-      if (box.isConnected) drawRealisation(box, FXR_PEND);
+      if (box.isConnected) { drawRealisation(box, FXR_PEND); fxCorrSeen(); }
     } catch (e) { fxErr(box, e); }
   })();
   return s;
@@ -720,6 +765,7 @@ function drawRealisation0(box, pend) {
   box.replaceChildren(
     bar,
     el('p', {class: 'note', text: `Masters as of ${FX.M.version ? fxWhen(FX.M.version.at) : '—'} · ${FX_BASIS_NOTE[FXBASIS]}`}),
+    fxCorrectionsCard(FXCOR),
     el('div', {class: 'kpis'},
       tile('Sale value at prevailing rate', DT, 'sale', 'sale_pp', 'sale_ld', false, dl('sale'), spv('sale'), `covers ${fxPct(DT.coverage)} of picks`),
       tile('Realisation', DT, 'real', 'real_pp', 'real_ld', false, dl('real'), spv('real')),
