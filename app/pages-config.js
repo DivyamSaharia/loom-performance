@@ -20,18 +20,20 @@ function pageTargets() {
     const id = 'tg-' + tgtId(w, hg);
     // beside each box, a small bar of now, bm, best and the target (as typed), on one scale
     const inp = (f, step, now, bm, best, fmt, bk, extra) => {
-      const box = el('input', {type: 'number', id: `${id}-${f}`, step, min: '0', inputmode: 'decimal', 'aria-label': `Target ${f} for ${hg} ${w} cm`, value: ok(t[f]) ? String(t[f]) : null});
+      const bid = `${id}-${f}`, saved = ok(t[f]) ? String(t[f]) : '';
+      const box = el('input', {type: 'number', id: bid, step, min: '0', inputmode: 'decimal', 'aria-label': `Target ${f} for ${hg} ${w} cm`, value: draftOf(bid, saved) || null});
       const rb = () => { const v = box.value.trim() === '' ? null : Number(box.value); return rangeBar({now, bm, best, tg: ok(v) && v > 0 ? v : null, fmt, aria: `${f.toUpperCase()} for ${hg}, ${w} cm: now, benchmark, best and target`}); };
-      let bar = rb(); box.addEventListener('input', () => { const nb = rb(); bar.replaceWith(nb); bar = nb; });
+      let bar = rb(); box.addEventListener('input', () => { draftKeep(bid, box.value, saved); FLASH.delete(id); const nb = rb(); bar.replaceWith(nb); bar = nb; });
       return el('div', {}, el('div', {class: 'tgin'}, box, bar),
       el('div', {class: 'hint'}, `now ${fmt(now)} · `, ok(bm) && bk ? bmBtn('bm ' + fmt(bm), w, hg, bk.m, bk) : `bm ${fmt(bm)}`,
         ok(best) && bk ? [' · ', bmBtn('best ' + fmt(best), w, hg, bk.m, {...bk, kind: 'best'})] : null, extra || null)); };
-    const msg = el('div', {class: 'meta'});
+    const msg = flashShow(id, el('div', {class: 'meta'}));
     const btn = el('button', {class: 'primary', type: 'button', text: 'Save', disabled: !db});
     const save = async (onlyChanged) => {
-      const num = (f) => { const v = $(`#${id}-${f}`).value.trim(); if (v === '') return null; const n = Number(v); return isFinite(n) && n > 0 ? n : NaN; };
+      // the typed value is read from the draft (or the saved target), not the box: a redraw may have replaced the box
+      const num = (f) => { const v = String(draftOf(`${id}-${f}`, ok(t[f]) ? String(t[f]) : '')).trim(); if (v === '') return null; const n = Number(v); return isFinite(n) && n > 0 ? n : NaN; };
       const vals = {cfm: num('cfm'), rpm: num('rpm'), main: num('main')};
-      if (Object.values(vals).some((v) => Number.isNaN(v))) { msg.className = 'err'; msg.textContent = 'Use positive numbers, or leave the box empty.'; return 'bad'; }
+      if (Object.values(vals).some((v) => Number.isNaN(v))) { msg.className = 'err'; msg.textContent = 'Use positive numbers, or leave the box empty.'; flashSet(id, 'err', msg.textContent); return 'bad'; }
       if (onlyChanged && ['cfm', 'rpm', 'main'].every((f) => (ok(t[f]) ? +t[f] : null) === vals[f])) return 'same';
       btn.disabled = true; msg.className = 'meta'; msg.textContent = 'Saving…';
       let res = 'saved';
@@ -42,8 +44,10 @@ function pageTargets() {
         if (vals.cfm == null && vals.rpm == null && vals.main == null) await ref.delete();
         else await ref.set({width: w, hg: root, ...vals, at: new Date().toISOString()});
         for (const id of stray) { try { await db.collection('targets').doc(id).delete(); STRAY[key(w, hg)].delete(id); } catch (e) {} }
+        for (const f of ['cfm', 'rpm', 'main']) DRAFT.delete(`${id}-${f}`);
         msg.className = 'saved'; msg.textContent = 'Saved';
       } catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access'); res = 'err'; }
+      flashSet(id, msg.className, msg.textContent);
       btn.disabled = false;
       return res;
     };
@@ -59,16 +63,20 @@ function pageTargets() {
   const tb = table(['Head group', ['Target CFM', 'ft³/min while running'], ['Target RPM', 'picks/min'], ['Target main pressure', 'kgf/cm²'], ...(W === '190' ? [] : [['Panna', '280 cm: double unless switched']]), ''], rows);
   tb.classList.add('tg');
   // Save all: saves every head group whose boxes differ from what is saved, one after another, and reports the count.
-  const allMsg = el('span', {class: 'meta'});
+  // The saved targets are reloaded and the page redrawn once, after the last save (17 Nov 2026: a redraw after each save
+  // replaced the boxes, so the rows after the first one or two lost what was typed).
+  const allMsg = flashShow('tg-all', el('span', {class: 'meta'}));
   const allBtns = [];
   const saveAll = async () => {
     for (const x of allBtns) x.disabled = true;
     allMsg.className = 'meta'; allMsg.textContent = 'Saving…';
     const n = {saved: 0, same: 0, bad: 0, err: 0};
-    for (const f of savers) n[await f(true)] += 1;
-    for (const x of allBtns) x.disabled = !db;
-    allMsg.className = n.err || n.bad ? 'err' : 'saved';
-    allMsg.textContent = !n.saved && !n.err && !n.bad ? 'Nothing changed to save.' : [`${n.saved} head group${n.saved === 1 ? '' : 's'} saved`, n.bad ? `${n.bad} with a number to fix` : null, n.err ? `${n.err} could not be saved` : null].filter(Boolean).join(' · ');
+    await holdState(async () => {
+      for (const f of savers) n[await f(true)] += 1;
+      flashSet('tg-all', n.err || n.bad ? 'err' : 'saved', !n.saved && !n.err && !n.bad ? 'Nothing changed to save. Type a target in a box first.' : [`${n.saved} head group${n.saved === 1 ? '' : 's'} saved`, n.bad ? `${n.bad} with a number to fix` : null, n.err ? `${n.err} could not be saved` : null].filter(Boolean).join(' · '));
+      for (const x of allBtns) x.disabled = !db;
+      flashShow('tg-all', allMsg);
+    });
   };
   const allBar = () => { const b = el('button', {class: 'primary', type: 'button', text: 'Save all', disabled: !db, onclick: saveAll}); allBtns.push(b); return el('div', {class: 'toolbar'}, b, allMsg); };
   s.append(card('Targets by head group', targetsLoaded ? `${Object.keys(TG).length} head group${Object.keys(TG).length === 1 ? '' : 's'} with targets` : 'Loading saved targets…', allBar(), tb, el('div', {class: 'toolbar', style: 'margin-top:10px'}, (() => { const b = el('button', {class: 'primary', type: 'button', text: 'Save all', disabled: !db, onclick: saveAll}); allBtns.push(b); return b; })()),
@@ -86,6 +94,8 @@ function pageData() {
   s.append(el('div', {},
     el('p', {class: 'lead', text: 'Every file the daily run looked at, which days are complete, and the checks behind the numbers.'})));
   s.append(dataHealthVisuals());
+  s.append(backupCard());
+  if (typeof reloadBox === 'function' && canEdit()) s.append(card('Reload data', 'Start the daily run now instead of waiting for the next one', reloadBox()));
   s.append(card('Days', null, table(['Date', 'Status'], (D.days || []).slice().reverse().slice(0, 30).map((d) => [dfmt(d.date), el('span', {class: 'pill ' + (d.status === 'complete' ? 'good' : 'bad'), text: d.status})]))));
   s.append(card('Files', 'Most recent first', table(['Checked', 'Folder', 'File', 'Header date', 'Shift', ['Looms', 'count'], 'Status', 'Note'],
     (D.files || []).slice().reverse().map((f) => [f.checked_at, f.folder_date, f.file_name, f.date, f.shift, f.looms,
@@ -100,6 +110,31 @@ function pageData() {
       ['Long power-down (this page)', OFF_LONG / 60 + ' h'], ['Consistently low efficiency', `below ${f0(EFF_BAD())}% on ${LOW_EFF_DAYS} of last ${LOW_EFF_WINDOW} running days`]])));
   s.append(el('p', {class: 'note', text: `Data generated ${D.generated_at} IST. Head groups, machine master and thresholds are edited in the W2 Loom Performance Config sheet; targets on the Targets tab.`}));
   return s;
+}
+
+// Backup age (17 Nov 2026, 0016 job_status): when the nightly database backup last succeeded. Red after 26 hours, so a backup
+// that stopped running gets noticed. A gap (never stamped, or not readable) says so; it is never shown as fine.
+const BACKUP_LATE_H = 26;
+function backupAge(okAt, now) {
+  if (!okAt) return null;
+  const h = (now - new Date(okAt).getTime()) / 3600e3;
+  return isFinite(h) ? {h, late: h > BACKUP_LATE_H} : null;
+}
+function backupCard() {
+  const body = el('div', {class: 'meta', text: 'Checking…'});
+  const c = card('Backup age', 'The nightly database backup, 02:17 IST, newest 14 kept', body);
+  (async () => {
+    try {
+      const rows = await sbRows('job_status', (q) => q.select('job, ok_at, note').eq('job', 'backup'));
+      const r = rows[0], a = backupAge(r && r.ok_at, Date.now());
+      if (!a) { body.replaceChildren(el('span', {class: 'pill muted', text: 'no record yet'}), (isAdmin() ? ' No backup recorded yet. The first nightly backup after 17 Nov records itself; if this stays after a night, look at the DB backup Action in GitHub.' : ' No backup recorded yet. If this stays after a night, tell the owner.')); return; }
+      const ago = a.h < 1 ? 'under an hour ago' : a.h < 48 ? `${Math.floor(a.h)} h ago` : `${Math.floor(a.h / 24)} days ago`;
+      body.replaceChildren(el('span', {class: 'pill ' + (a.late ? 'bad' : 'good'), text: a.late ? 'late' : 'ok'}),
+        ` Newest backup ${new Date(r.ok_at).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata'})} IST, ${ago}.`,
+        a.late ? (isAdmin() ? ' More than a day old: look at the DB backup Action in GitHub.' : ' More than a day old: tell the owner.') : '');
+    } catch (e) { body.replaceChildren(el('span', {class: 'pill muted', text: '—'}), ' Could not read the backup record: ' + sbErr(e) + ' Tap the round-arrow icon (Refresh); if it stays, tell the owner.'); }
+  })();
+  return c;
 }
 
 // A 30-day calendar of complete and missing days (Monday-first weeks) and the files the daily run looked at per day.

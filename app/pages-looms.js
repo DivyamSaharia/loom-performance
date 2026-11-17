@@ -232,6 +232,7 @@ function pageActions() {
 function assignCard(un) {
   const box = el('div', {class: 'assign'});
   const groups = D.head_groups || [];
+  const savers = [];
   for (const u of un) {
     const id = 'as-' + u.style.replace(/[^A-Za-z0-9]/g, '_').slice(0, 60);
     const sel = el('select', {id, 'aria-label': 'Head group for ' + u.style},
@@ -240,34 +241,62 @@ function assignCard(un) {
     const btn = el('button', {class: 'primary', type: 'button', text: 'Save', disabled: true});
     const msg = el('div', {class: 'meta'});
     const prev = assigned[u.style];
-    if (prev) { sel.value = prev.is_new ? '__new' : prev.head_group; if (prev.is_new) { nw.hidden = false; nw.value = prev.head_group; } msg.className = 'saved'; msg.textContent = `Saved as ${prev.head_group}. Applies on the next daily run.`; }
+    const savedSel = prev ? (prev.is_new ? '__new' : prev.head_group) : '', savedNew = prev && prev.is_new ? prev.head_group : '';
+    if (prev) { msg.className = 'saved'; msg.textContent = `Saved as ${prev.head_group}. Applies on the next daily run, or press Reload data.`; }
+    // 17 Nov 2026: a pick not yet saved survives a redraw (another style's save), kept by box id until it is saved
+    sel.value = draftOf(id, savedSel); nw.value = draftOf(id + '-new', savedNew); nw.hidden = sel.value !== '__new';
+    flashShow(id, msg);
+    const changed = () => !!sel.value && (sel.value !== '__new' || !!nw.value.trim()) && !(sel.value === savedSel && (sel.value !== '__new' || nw.value.trim() === savedNew));
     const ready = () => { btn.disabled = !db || !(sel.value && (sel.value !== '__new' || nw.value.trim())); };
-    sel.addEventListener('change', () => { nw.hidden = sel.value !== '__new'; ready(); });
-    nw.addEventListener('input', ready);
-    btn.addEventListener('click', async () => {
+    sel.addEventListener('change', () => { nw.hidden = sel.value !== '__new'; draftKeep(id, sel.value, savedSel); FLASH.delete(id); ready(); });
+    nw.addEventListener('input', () => { draftKeep(id + '-new', nw.value, savedNew); FLASH.delete(id); ready(); });
+    ready();
+    const save = async (onlyChanged) => {
+      if (!sel.value) return 'none';
+      if (sel.value === '__new' && !nw.value.trim()) { msg.className = 'err'; msg.textContent = 'Type the new head group name, or pick one.'; return 'bad'; }
+      if (onlyChanged && !changed()) return 'same';
       const isNew = sel.value === '__new';
       // a head group picked by its fabric name is saved under its Style-map name, on the widths this style's looms have
       const ws = [...new Set((u.looms || []).map((l) => String(((D.machine || {})[l] || {}).width || '')).filter(Boolean))];
       const hg = isNew ? nw.value.trim() : hgRootAny(sel.value, ws);
       btn.disabled = true; msg.className = 'meta'; msg.textContent = 'Saving…';
+      let res = 'saved';
       try {
         await db.collection('assignments').doc(u.style.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120) || 'blank').set(
           {style: u.style, head_group: hg, is_new: isNew, status: 'pending', at: new Date().toISOString()});
-        msg.className = 'saved'; msg.textContent = `Saved as ${hg}. Applies on the next daily run.`;
-      } catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access') + '. Assign it in the Config Sheet instead.'; ready(); }
-    });
+        DRAFT.delete(id); DRAFT.delete(id + '-new');
+        msg.className = 'saved'; msg.textContent = `Saved as ${hg}. Applies on the next daily run, or press Reload data.`;
+      } catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access') + '. Assign it in the Config Sheet instead.'; res = 'err'; ready(); }
+      flashSet(id, msg.className, msg.textContent);
+      return res;
+    };
+    btn.addEventListener('click', () => save(false));
+    savers.push(save);
     box.append(el('div', {class: 'row'},
       el('div', {}, el('div', {class: 'name', text: u.style || '(blank)'}),
-        el('div', {class: 'meta'}, u.costing ? `Costing sheet only, ${dfmt(u.first)}${u.last !== u.first ? '–' + dfmt(u.last) : ''}, not on a loom yet` : ['Loom ', u.looms.flatMap((l, i) => i ? [', ', loomLink(l, u.last)] : [loomLink(l, u.last)]), ` · ${dfmt(u.first)}${u.last !== u.first ? '–' + dfmt(u.last) : ''} · ${f1(u.run_h)} h run`])),
+        el('div', {class: 'meta'}, u.costing ? `Costing sheet only, ${dfmt(u.first)}${u.last !== u.first ? '–' + dfmt(u.last) : ''}, not on a loom yet` : ['Loom ', ...u.looms.flatMap((l, i) => i ? [', ', loomLink(l, u.last)] : [loomLink(l, u.last)]), ` · ${dfmt(u.first)}${u.last !== u.first ? '–' + dfmt(u.last) : ''} · ${f1(u.run_h)} h run`])),
       el('div', {style: 'display:grid;gap:6px'}, sel, nw), el('div', {}, btn), msg));
   }
+  // Save all (17 Nov 2026): saves every style with a pick that differs from what is saved, then reloads and redraws once.
+  const allMsg = flashShow('as-all', el('span', {class: 'meta'}));
+  const allBtn = el('button', {class: 'primary', type: 'button', text: 'Save all', disabled: !db, onclick: async () => {
+    allBtn.disabled = true; allMsg.className = 'meta'; allMsg.textContent = 'Saving…';
+    const n = {saved: 0, same: 0, none: 0, bad: 0, err: 0};
+    await holdState(async () => {
+      for (const f of savers) n[await f(true)] += 1;
+      flashSet('as-all', n.err || n.bad ? 'err' : 'saved', !n.saved && !n.err && !n.bad ? 'Nothing new to save: pick a head group for a style first.'
+        : [`${n.saved} style${n.saved === 1 ? '' : 's'} saved`, n.bad ? `${n.bad} with a new head group name to type` : null, n.err ? `${n.err} could not be saved` : null].filter(Boolean).join(' · ') + (n.saved ? '. They apply on the next daily run, or press Reload data.' : ''));
+      allBtn.disabled = !db; flashShow('as-all', allMsg);
+    });
+  }});
   const saved = un.filter((u) => assigned[u.style]).length, left = un.length - saved;
   const ak = un.some((u) => !u.costing) ? 'loom' : 'cost';
   const open = ASSIGN_OPEN[ak] == null ? left > 0 && ak === 'loom' : ASSIGN_OPEN[ak];
   const c = el('details', {class: 'card collapsible' + (left ? ' attn' : ''), open: open ? true : null},
     el('summary', {}, el('h3', {text: 'Needs a head group'}),
       el('span', {class: 'note', text: left ? `${left} of ${un.length} to assign${saved ? ` · ${saved} saved` : ''}${open ? '' : ' · open to assign'}` : `All ${un.length} saved · applied on the next daily run`})),
-    el('p', {class: 'note', style: 'margin:0 0 6px', text: 'Until assigned, these style names count in totals and pressure but not in benchmarks or actions.'}), box);
+    el('p', {class: 'note', style: 'margin:0 0 6px', text: 'Until assigned, these style names count in totals and pressure but not in benchmarks or actions.'}),
+    db ? el('div', {class: 'toolbar'}, allBtn, allMsg) : null, box, db ? reloadBox() : null);
   c.addEventListener('toggle', () => { ASSIGN_OPEN[ak] = c.open; });
   if (!db) c.append(el('p', {class: 'note', text: 'Saving is not connected yet (the app has no backend address). You can assign these in the Style map tab of the Config Sheet.'}));
   return c;

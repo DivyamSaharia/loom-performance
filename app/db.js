@@ -162,7 +162,10 @@ function showNoAccess() {
     el('button', {type: 'button', class: 'ghost', text: 'Sign out', onclick: signOut})));
 }
 
-// Targets and head-group answers in the database (db.collection(...).doc(id).set / delete).
+// Targets and head-group answers in the database (db.collection(...).doc(id).set / delete). Each write reloads the saved state
+// and redraws, except inside a Save all (STATE_HOLD > 0), which reloads once at the end.
+let STATE_HOLD = 0;
+async function holdState(fn) { STATE_HOLD += 1; try { return await fn(); } finally { STATE_HOLD -= 1; if (!STATE_HOLD) await loadState(); } }
 const supaDb = {
   collection: (name) => ({
     doc: (id) => ({
@@ -173,13 +176,13 @@ const supaDb = {
           : {id, style: String(data.style || ''), head_group: String(data.head_group || ''), is_new: !!data.is_new, status: data.status || 'pending', at: data.at || new Date().toISOString(), updated_by: ME && ME.email};
         const {error} = await c.from(name).upsert(row, {onConflict: 'id'});
         if (error) throw new Error(sbErr(error));
-        await loadState();
+        if (!STATE_HOLD) await loadState();
       },
       delete: async () => {
         const c = await sbClient();
         const {error} = await c.from(name).delete().eq('id', id);
         if (error) throw new Error(sbErr(error));
-        await loadState();
+        if (!STATE_HOLD) await loadState();
       },
     }),
   }),
@@ -381,4 +384,73 @@ function pageFabric() {
   };
   draw();
   return s;
+}
+
+// ---------------------------------------------------------------- Reload data (17 Nov 2026, 0016)
+// The edit targets and admin roles start the Daily run now (reload_request), instead of waiting for the next hourly run, so head
+// groups and targets saved in the app apply at once. While a run is open the button is greyed out and the app asks every 30 s
+// how it is going (reload_status); when it ends, the app fetches the new figures and a bar says so, once, to the person who
+// pressed it (reload_seen), on this device or the next one they open. The run also sends a phone notice.
+let RL = null, RL_T = null, RL_ERR = '';
+const RL_SHOWN = new Set();
+const rlOpen = (r) => !!r && (r.status === 'asked' || r.status === 'running');
+const rlDay = (d) => d.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata'});
+const rlTime = (iso) => {   // "14:05 IST" today, "16 Nov, 14:05 IST" on another day
+  if (!iso) return '—';
+  const d = new Date(iso), t = d.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata'}) + ' IST';
+  return rlDay(d) === rlDay(new Date()) ? t : `${rlDay(d)}, ${t}`;
+};
+const rlNext = (r) => r && r.asked_at ? new Date(new Date(r.asked_at).getTime() + 10 * 60e3) : null;
+function rlState() {
+  const r = RL, now = Date.now(), nx = rlNext(r);
+  if (rlOpen(r) && r.status === 'asked' && !r.dispatched) return {busy: true, text: `Asked at ${rlTime(r.asked_at)}. ${r.note || 'The run could not be started from the app. Tell the owner; the next daily run reloads the data.'} The daily run runs every hour, 10:40 to 16:40 IST.`};
+  if (rlOpen(r)) return {busy: true, text: `Reloading… since ${rlTime(r.asked_at)}${r.status === 'running' ? '' : ' (waiting for the run to start)'}. It takes about 5 to 10 minutes; you get a notice here when it finishes.`};
+  if (r && nx && nx.getTime() > now) return {busy: true, text: `${r.status === 'failed' ? `The last reload did not finish: ${r.note || 'the run failed.'}` : `Data reloaded at ${rlTime(r.done_at)}.`} You can reload again from ${rlTime(nx.toISOString())}.`};
+  if (r && r.status === 'failed') return {busy: false, text: `The last reload, at ${rlTime(r.asked_at)}, did not finish: ${r.note || 'the run failed'}`};
+  if (r && r.status === 'finished') return {busy: false, text: `Last reloaded at ${rlTime(r.done_at)}: loom data to ${dfmt(r.loom_to)}, costing to ${dfmt(r.costing_to)}.`};
+  return {busy: false, text: ''};
+}
+function rlPaint() {
+  const st = rlState();
+  for (const b of document.querySelectorAll('.rlbtn')) { b.disabled = st.busy || !canEdit(); b.textContent = rlOpen(RL) ? 'Reloading…' : 'Reload data'; }
+  for (const m of document.querySelectorAll('.rlmsg')) { m.className = 'rlmsg ' + (RL_ERR ? 'err' : 'meta'); m.textContent = RL_ERR || st.text; }
+}
+function reloadBox() {
+  if (!canEdit()) return null;
+  const btn = el('button', {class: 'primary rlbtn', type: 'button', text: 'Reload data', onclick: rlPress});
+  const box = el('div', {class: 'rlbox'}, el('div', {class: 'toolbar'}, btn, el('span', {class: 'rlmsg meta'})),
+    el('p', {class: 'note', text: 'Reload data starts the daily run now (it otherwise runs every hour, 10:40 to 16:40 IST), so head groups you have saved apply at once. Only saved answers apply: press Save or Save all first.'}));
+  setTimeout(rlPaint, 0);
+  return box;
+}
+async function rlPress() {
+  RL_ERR = '';
+  for (const b of document.querySelectorAll('.rlbtn')) b.disabled = true;
+  try {
+    const c = await sbClient(); const {data, error} = await c.rpc('reload_request'); if (error) throw error;
+    RL = data && data.id ? data : RL;
+  } catch (e) { RL_ERR = 'Could not start the reload: ' + sbErr(e) + ' Try again in a minute; if it keeps failing, tell the owner.'; }
+  rlPaint(); rlWatch();
+}
+function rlWatch() { clearTimeout(RL_T); if (rlOpen(RL) || (RL && rlNext(RL) > Date.now())) RL_T = setTimeout(rlPoll, rlOpen(RL) ? 30e3 : Math.max(5e3, rlNext(RL) - Date.now() + 1e3)); }
+async function rlPoll() {
+  if (MODE !== 'db' || !canEdit()) return;
+  const was = RL;
+  try { const c = await sbClient(); const {data, error} = await c.rpc('reload_status'); if (error) throw error; RL = data && data.id ? data : null; } catch (e) { rlWatch(); return; }
+  rlPaint(); rlWatch();
+  if (RL && RL.mine && RL.done_at && !RL.seen_at && !RL_SHOWN.has(RL.id)) {
+    RL_SHOWN.add(RL.id);
+    if (RL.status === 'finished' && rlOpen(was) && D) await load(true);   // it finished while the app was open: show the new figures
+    rlNotice(RL);
+  }
+}
+function rlNotice(r) {
+  if ($('#rlbar')) $('#rlbar').remove();
+  const ok = r.status === 'finished';
+  const bar = el('div', {class: 'swbar', id: 'rlbar', role: 'status'},
+    el('span', {text: ok ? `Data reloaded at ${rlTime(r.done_at)}. Loom data now to ${dfmt(r.loom_to)}, costing to ${dfmt(r.costing_to)}. The app shows it.`
+      : `Reload data did not finish: ${r.note || 'the run failed'}`}),
+    el('button', {class: 'icon-btn swx', type: 'button', text: '×', 'aria-label': 'Close', title: 'Close', onclick: () => bar.remove()}));
+  document.body.append(bar);
+  sbClient().then((c) => c.rpc('reload_seen', {p_id: r.id})).then(() => { r.seen_at = new Date().toISOString(); }, () => {});
 }

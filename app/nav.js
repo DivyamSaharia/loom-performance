@@ -197,6 +197,14 @@ function jumpNav(page) {
 const tabAllowed = (t) => !!PAGES[t] && (!ADMIN_TABS.includes(t) || isAdmin()) && (!['approvals', 'masters', 'links'].includes(t) || fxIsOwner()) && (t !== 'realisation' || fxAnalysisOn()) && !(t === 'data' && isPlant());
 function setTab(t) { if (t === 'trends') t = 'quality'; TAB = tabAllowed(t) ? t : 'actions'; if (location.hash.slice(1) !== TAB) history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0); }
 function busyEditing(sel) { const a = document.activeElement; return a && a.closest && a.closest(sel); }
+// Unsaved edits (17 Nov 2026): what is typed in a Targets box or picked for a style is kept by box id until it is saved, so a
+// redraw (another row's save, Save all, a data refresh) never wipes it. FLASH keeps a row's last message for 2 minutes across
+// those redraws.
+const DRAFT = new Map(), FLASH = new Map();
+function draftOf(id, saved) { return DRAFT.has(id) ? DRAFT.get(id) : saved; }
+function draftKeep(id, v, saved) { if (v === saved) DRAFT.delete(id); else DRAFT.set(id, v); }
+function flashSet(id, cls, text) { FLASH.set(id, {cls, text, at: Date.now()}); }
+function flashShow(id, node) { const f = FLASH.get(id); if (f && Date.now() - f.at < 120e3) { node.className = f.cls; node.textContent = f.text; } return node; }
 
 // Search: filters the rows of every table on the page (loom number = exact loom, text = head group or any cell)
 // and suggests looms and head groups to open directly.

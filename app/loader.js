@@ -186,6 +186,7 @@ async function load(quiet) {
   if (isPlant() && TAB === 'data') TAB = 'actions';
   db = canEdit() ? supaDb : null;
   loadState();
+  if (canEdit() && !RL_T) rlPoll();   // Reload data: a run still going, or a finished one not yet shown to the person who asked
   if (VIEW) setView(VIEW); else show(LATEST);
 }
 $('#day').addEventListener('change', (ev) => setView(ev.target.value));

@@ -493,3 +493,6 @@ tr.tot td{border-top:1px solid var(--line)}
 /* Sheet checks (Costing, owner only): tiles two to a row on a phone; the 2-tile card stays two to a row on a laptop too */
 .kpis.sc{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media (min-width:720px){.kpis.sc.sc4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.rlbox{margin-top:10px}
+.rlbox .toolbar{flex-wrap:wrap}
+.rlmsg{flex:1 1 220px;min-width:0}
