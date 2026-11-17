@@ -1053,7 +1053,10 @@ function pageWarp() {
   t.append(tb);
   // The period switch governs By quality, Loom-wise and Break rate by beam: it sits above them and stays in view while
   // you scroll through them (sticky, 10 Nov 2026).
-  const grp = el('div', {class: 'stack pergrp'}, el('div', {class: 'toolbar stickper'}, el('span', {class: 'note', text: 'Period'}), per, WPER === 'range' ? rngCtl(days0(), render) : null, WPER === 'range' ? el('span', {class: 'note', text: rngNote(days0())}) : null));
+  const grp = el('div', {class: 'stack pergrp'}, el('div', {class: 'toolbar stickper'}, el('span', {class: 'note', text: 'Period'}), per, WPER === 'range' ? rngCtl(days0(), render) : null, WPER === 'range' ? el('span', {class: 'note', text: rngNote(days0())}) : null,
+    // Round D: the floor's break rate (Σ breaks ÷ Σ picks × 100k, loom-days of 60 min or more, this width), this week vs last week
+    wkPill(wkBy((D.loomdays || []).filter((x) => inW(x.width) && x.run >= 60), D.latest, (x) => x.date, (L) => { const a = agg(L); return a ? a.warpRate : null; }, 'down'),
+      {what: 'Warp breaks', fmt: f2, unit: 'per 100k picks'})));
   s.append(grp);
   grp.append(card('By quality', `${f0(A && A.warp)} breaks in total for this period · select a quality to see its looms`, el('div', {class: 'tablebox'}, t)));
 

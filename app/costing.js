@@ -47,7 +47,27 @@ function perSegC(g) {
 const periodNote = (g) => { const P = cPeriod(g); return P.length ? `${dfmt(P[0].date)} – ${dfmt(P[P.length - 1].date)} · ${P.length} day${P.length === 1 ? '' : 's'}` : ''; };
 // The period switch for one chart or one group of charts: buttons, the date boxes when "Dates" is on, the span shown, and
 // (past LONGP days) a Daily / Weekly switch for that group.
-const perBar = (g) => el('div', {class: 'toolbar perbar stickper'}, perSegC(g), cPer(g) === 'range' ? rngCtl(cDays().map((d) => d.date), render) : null, viewSeg(g, cPeriod(g).length), el('span', {class: 'note', text: periodNote(g)}));
+const perBar = (g) => el('div', {class: 'toolbar perbar stickper'}, perSegC(g), cPer(g) === 'range' ? rngCtl(cDays().map((d) => d.date), render) : null, viewSeg(g, cPeriod(g).length), el('span', {class: 'note', text: periodNote(g)}), cWk(g));
+// This week vs last week on each Costing period bar (Round D, Divyam 17 Nov 2026): the group's own headline figure (D2), the
+// 7 days to the day picked against the 7 before (D1). Per-pick figures are weighted by picks (the week's rupees ÷ its picks);
+// picks, metres and stock are an average a day (D3). An excluded day is not a costing day, so it counts as a missing day.
+// The plant view sees the same comparison in its own figures (D4).
+const cLinePP = (d) => { const l = d.lines.find((x) => x.n === CLINE); return l ? l.pp : null; };
+const cPowPP = (d) => d.power && ok(d.power.amount) && d.picks ? d.power.amount / (d.picks * 1e5) * 100 : null;
+const cHgM = (d) => { const h = d.hg.find((x) => x.hg === CHSEL); return h ? h.tm : null; };
+const C_WK = {
+  cpp: {what: 'Cost per pick', get: (d) => d.cpp, w: (d) => d.picks, unit: 'paise', fmt: (v) => pn(v, 2), better: 'down'},
+  types: {what: 'Cost per pick', get: (d) => d.cpp, w: (d) => d.picks, unit: 'paise', fmt: (v) => pn(v, 2), better: 'down'},
+  trends: {what: 'Picks a day', get: (d) => d.picks, unit: 'lakh picks', fmt: (v) => pn(v, 1), better: 'up'},
+  line: {what: () => `${CLINE}, paise per pick`, get: cLinePP, w: (d) => d.picks, unit: 'paise', fmt: (v) => pn(v, 2), better: 'down'},
+  power: {what: 'Power cost per pick', get: cPowPP, w: (d) => d.picks, unit: 'paise', fmt: (v) => pn(v, 2), better: 'down'},
+  labour: {what: 'Labour cost per pick', get: (d) => d.labour ? d.labour.per_pick : null, w: (d) => d.picks, unit: 'paise', fmt: (v) => pn(v, 2), better: 'down'},
+  hg: {what: () => `${CHSEL}, metres a day`, get: cHgM, unit: 'm', fmt: f0, better: 'up'},
+  stock: {what: 'Closing stock, average a day', get: (d) => d.stock ? d.stock.closing : null, unit: 'm', fmt: f0, better: null}};
+function cWk(g) {
+  const s = C_WK[g], cur = cDay(); if (!s || !cur) return null;
+  return wkPill(wkMean(cDays(), cur.date, s.get, s.w, s.better), {...s, what: typeof s.what === 'function' ? s.what() : s.what});
+}
 
 // ---- long periods on Costing charts. Up to LONGP days a chart draws every day as before. Past that:
 //  · Daily (default): PAN days at a time, scrolling sideways with a fixed Y axis, plus a "7-day average" toggle box.
@@ -219,7 +239,9 @@ function bgradeSection(cur) {
     el('button', {type: 'button', 'aria-pressed': BGPER === v ? 'true' : 'false', text: t, onclick: () => { BGPER = v; render(); }})));
   const span = PB.length ? `${dfmt(PB[0].date)} – ${dfmt(PB[PB.length - 1].date)} · ${PB.length} day${PB.length === 1 ? '' : 's'}` : NA;
   const out = el('div', {class: 'stack'});
-  out.append(el('h3', {class: 'sechead', text: 'B grade and cut pieces'}), el('div', {class: 'toolbar stickper'}, seg, BGPER === 'range' ? rngCtl(bq.days.map((d) => d.date), render) : null, viewSeg('bq', PB.length), el('span', {class: 'note', text: span})));
+  out.append(el('h3', {class: 'sechead', text: 'B grade and cut pieces'}), el('div', {class: 'toolbar stickper'}, seg, BGPER === 'range' ? rngCtl(bq.days.map((d) => d.date), render) : null, viewSeg('bq', PB.length), el('span', {class: 'note', text: span}),
+    wkPill(wkMean(bq.days, cur.date, (d) => ok(d.bgrade_m) && d.folded_m > 0 ? 100 * d.bgrade_m / d.folded_m : null, (d) => d.folded_m, 'down'),
+      {what: 'B grade, share of folded metres', fmt: (v) => v.toFixed(2), unit: '%', dunit: 'points'})));   // Round D: Σ B grade m ÷ Σ folded m, each week
 
   // cut loss should equal cut metres x the flat rate; say so when the file disagrees (guards the reading of CUT PIC. as metres)
   const rate = bq.cut_rate || 60, odd = PB.filter((d) => ok(d.cut_pcs) && ok(d.cut_loss) && Math.abs(d.cut_loss - d.cut_pcs * rate) > Math.max(1, 0.01 * d.cut_loss));
@@ -739,7 +761,9 @@ function compPowerCard() {
   const rows = CPWPER === 'all' ? allRows : inR ? allRows.filter((r) => inR.has(r.d)) : allRows.slice(-(+CPWPER));
   const b = (v, t) => el('button', {type: 'button', 'aria-pressed': CPWPER === v ? 'true' : 'false', text: t, onclick: () => { CPWPER = v; try { localStorage.setItem('w2-comp-period', v); } catch (e) {} render(); }});
   const bar = allRows.length > 1 ? el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days'), b('14', '14 days'), b('30', '30 days'), b('all', 'All days'), b('range', 'Dates')),
-    CPWPER === 'range' ? rngCtl(allRows.map((r) => r.d), render) : null, rows.length ? el('span', {class: 'note', text: `${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} days`}) : null) : null;
+    CPWPER === 'range' ? rngCtl(allRows.map((r) => r.d), render) : null, rows.length ? el('span', {class: 'note', text: `${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} days`}) : null,
+    // Round D: energy per air, the week's kWh ÷ the week's air (each day weighted by its air), to the day shown on the loom tabs
+    wkPill(wkMean(allRows.map((r) => ({date: r.d, v: r.c.kwhKm3, w: r.c.ft3})), D.latest, (r) => r.v, (r) => r.w, 'down'), {what: 'Energy per air', fmt: f1, unit: 'kWh per 1,000 m³'})) : null;
   return card('Compressor power', 'Power (Compressor) from the costing sheet, against the floor\'s air',
     last ? el('div', {class: 'kpis'}, kpiC('Compressor energy', f0(last.c.kwh), 'kWh', dfmt(last.d)), kpiC('Cost', rs(last.c.rupees), '', `₹${f2(last.c.rate)} a unit`), kpiC('Energy per air', f1(last.c.kwhKm3), 'kWh per 1,000 m³', `${f2(last.c.kwhFt3 * 1000)} kWh per 1,000 ft³`), kpiC('Cost per air', rs(last.c.rsFt3 * 1000), 'per 1,000 ft³', null)) : null,
     bar, rows.length > 1 ? lineChart({dates: rows.map((r) => r.d), aria: 'Compressor energy per 1,000 m³ of air', fmt: f1, series: [{name: 'kWh per 1,000 m³', vals: rows.map((r) => r.c.kwhKm3)}]}) : el('p', {class: 'note', text: allRows.length > 1 ? 'Pick a longer period: the line needs two days with a compressor reading.' : 'The trend line starts once a second day with a compressor reading is in.'}));

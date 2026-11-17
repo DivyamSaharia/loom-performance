@@ -497,7 +497,7 @@ function trendCard(tab, def) {
     el('button', {type: 'button', 'aria-pressed': s.kind === 'loom' ? 'true' : 'false', text: 'Loom', onclick: () => { if (s.kind === 'loom') return; const L = (D.loomdays || []).filter((x) => x.date === D.latest && x.hg === s.hg && String(x.width) === String(s.w)).sort((a, b) => a.loom - b.loom); const ls = loomChoices(allW); st.subj = {kind: 'loom', loom: L[0] ? L[0].loom : ls[0]}; render(); }}));
   const sel = trSearch(s, allW, (ns) => { st.subj = ns; render(); const c2 = $('#trend-card'); if (c2) c2.scrollIntoView({block: 'nearest'}); });
   const per = perSeg(s, () => render());
-  c.append(el('div', {class: 'toolbar'}, kindSeg, sel, per));
+  c.append(el('div', {class: 'toolbar'}, kindSeg, sel, per, trWk(s, (cfg.stack || [st.metric === 'hours' && s.kind === 'hg' ? 'looms' : st.metric])[0], cfg.mode())));
   // 12 Nov 2026 (Divyam): the metric is a searchable drop-down
   if (cfg.metrics.length > 1) c.append(el('div', {class: 'toolbar'}, pickSelect({label: 'Metric', aria: 'Metric', placeholder: 'Search a metric', value: st.metric,
     items: cfg.metrics.map((k) => ({v: k, label: k === 'hours' ? (s.kind === 'loom' ? 'Hours run / stopped / off' : 'Looms running') : TM[k].label, sub: TM[k].unit})), onPick: (k) => { st.metric = k; render(); }})));
@@ -515,6 +515,20 @@ function trendCard(tab, def) {
   const sub = [subjName(s), s.kind === 'loom' ? `${(D.machine[s.loom] || {}).width} cm ${(D.machine[s.loom] || {}).type || ''}` : null, `references: latest ${mode === 'tgt' ? 'target (benchmark where unset)' : mode === 'best' ? 'best (benchmark where none)' : 'benchmark'}`, ...notes].filter(Boolean).join(' · ');
   head.insertBefore(el('span', {class: 'note', text: sub}), head.lastChild);
   return c;
+}
+// This week vs last week on a Trend period bar (Round D, Divyam 17 Nov 2026): the subject's period figure for the metric shown,
+// worked by trSeries exactly as the card's period figure (the counted loom-days' totals; looms and hours an average a day;
+// main pressure the average of the day maxima, as D3 compares averages), over the 7 complete days to the day shown and the 7 before.
+// Plain units on the line (the chart units carry shorthand such as "RPM × eff").
+const TR_WK = {erpm: {unit: 'RPM'}, rpm: {unit: 'RPM'}, eff: {unit: '%', dunit: 'points'}, cfm: {unit: 'ft³ a minute'}, apk: {unit: 'ft³ per 1,000 picks'},
+  main_max: {what: 'Main pressure, average of the day maxima', unit: 'kgf/cm²'}, warp: {what: 'Warp breaks', unit: 'per 100k picks'},
+  hours: {what: 'Hours run', unit: 'hours a day'}, looms: {what: 'Looms running', unit: 'a day'}, real_ld: {unit: 'per loom per day'}, real_tot: {unit: 'a day'}};
+function trWk(s, m, mode) {
+  const M = TM[m]; if (!s || !M || !D.latest) return null;
+  const fig = m === 'main_max' ? (L) => { const v = trSeries(s, m, mode, L).pts.map((p) => p.v).filter(ok); return v.length ? v.reduce((a, x) => a + x, 0) / v.length : null; }
+    : (L) => trSeries(s, m, mode, L).per;
+  const o = TR_WK[m] || {};
+  return wkPill(wkBy(days0(), D.latest, (d) => d, fig, M.hi ? 'up' : 'down'), {what: o.what || M.label, fmt: M.fmt, unit: o.unit || M.unit, dunit: o.dunit});
 }
 function perSeg(s, redraw) {
   const b = (v, text) => el('button', {type: 'button', 'aria-pressed': TRP[s.kind] === v ? 'true' : 'false', text, onclick: () => { setPer(s.kind, v); redraw(); }});
@@ -576,7 +590,7 @@ function trendsView(s, st) {
   // charts
   const small = (k, label) => {
     const S2 = T[k];
-    const big = () => pushView(() => ({title: `${subjName(s)} · ${label}`, sub: S2.M.unit, body: [el('div', {class: 'toolbar', style: 'margin:0'}, perSeg(s, () => { STACK.pop(); drawPanel(true); })), el('div', {class: 'card'}, drawTrend(trSeries(s, k, st.mode, trDates(s).dates), {width: trWidth('panel')}))]}));
+    const big = () => pushView(() => ({title: `${subjName(s)} · ${label}`, sub: S2.M.unit, body: [el('div', {class: 'toolbar', style: 'margin:0'}, perSeg(s, () => { STACK.pop(); drawPanel(true); }), trWk(s, k === 'hours' && s.kind === 'hg' ? 'looms' : k, st.mode)), el('div', {class: 'card'}, drawTrend(trSeries(s, k, st.mode, trDates(s).dates), {width: trWidth('panel')}))]}));
     return el('div', {class: 'card', id: 'trc-' + k},
       el('div', {class: 'cardhead'}, el('h3', {text: label}), el('span', {class: 'note', text: S2.M.unit})),
       drawTrend(S2, {compact: true, width: trWidth('panel-small'), onPoint: () => big()}),
@@ -601,7 +615,7 @@ function trendsView(s, st) {
   return {title: `${subjName(s)} · all trends`, sub,
     body: [el('div', {class: 'toolbar', style: 'margin:0'}, trSearch(s, true, (ns) => { STACK[STACK.length - 1] = () => trendsView(ns, st); drawPanel(); })),
       el('div', {class: 'toolbar', style: 'margin:0'}, per, mseg, s.kind === 'hg' ? benchTag(b) : null,
-        s.kind === 'loom' ? el('button', {class: 'link', type: 'button', text: `Loom ${s.loom} on ${dfmt(D.latest)} ›`, onclick: () => openLoom(s.loom, D.latest)}) : el('button', {class: 'link', type: 'button', text: `Looms on ${dfmt(D.latest)} ›`, onclick: () => openHg(s.hg, s.w, D.latest)})),
+        s.kind === 'loom' ? el('button', {class: 'link', type: 'button', text: `Loom ${s.loom} on ${dfmt(D.latest)} ›`, onclick: () => openLoom(s.loom, D.latest)}) : el('button', {class: 'link', type: 'button', text: `Looms on ${dfmt(D.latest)} ›`, onclick: () => openHg(s.hg, s.w, D.latest)}), trWk(s, 'erpm', st.mode)),
       el('p', {class: 'note', style: 'margin:0', text: notes.join(' ')}),
       tiles, trRefToggles(trRefKeys(Object.values(T)), null), charts, compTrendBlock(s, dates), recs]};
 }

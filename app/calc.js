@@ -493,3 +493,40 @@ function bridgeBasis(days, date, mode, pick) {
   }
   return {ref: null, why: 'mode'};
 }
+
+// ---- This week vs last week on every period bar (Round D, Divyam 17 Nov 2026, D1–D4).
+// D1: "this week" = the 7 days to the day shown, "last week" = the 7 days before them (rolling, not calendar weeks).
+const WK_N = 7;
+function wkSpans(end) {
+  return {cur: {from: addDays(end, -(WK_N - 1)), to: end}, prev: {from: addDays(end, -(2 * WK_N - 1)), to: addDays(end, -WK_N)}};
+}
+// D2/D3: one week's figure from any records. fig(records) is the card's own headline formula, so the week's figure is
+// worked exactly as the card works its period (totals, weighted or averages); days = the days of the week whose own records
+// give a figure. A week with no such day has no figure (null, never 0). dateOf(record) → 'YYYY-MM-DD'.
+function wkSide(recs, sp, dateOf, fig) {
+  const by = new Map();
+  for (const r of recs || []) { const d = dateOf(r); if (d >= sp.from && d <= sp.to) { if (!by.has(d)) by.set(d, []); by.get(d).push(r); } }
+  let days = 0; for (const L of by.values()) if (ok(fig(L))) days++;
+  const v = days ? fig([...by.values()].flat()) : null;
+  return {from: sp.from, to: sp.to, v: ok(v) ? v : null, days: ok(v) ? days : 0};
+}
+// The comparison: d = this week − last week, pct = d ÷ |last week| × 100. better: 'up' (higher is better), 'down', or null
+// (neither: no colour). dir: 'up' / 'down' / 'flat' (exactly equal), null when either week has no figure.
+function wkCompare(cur, prev, better) {
+  const has = ok(cur.v) && ok(prev.v), d = has ? cur.v - prev.v : null;
+  const dir = !has ? null : Math.abs(d) < 1e-9 ? 'flat' : d > 0 ? 'up' : 'down';
+  return {cur, prev, of: WK_N, d, pct: has && prev.v !== 0 ? d / Math.abs(prev.v) * 100 : null, dir,
+    good: !dir || dir === 'flat' || !better ? null : dir === better, short: cur.days < WK_N || prev.days < WK_N};
+}
+function wkBy(recs, end, dateOf, fig, better) {
+  const S = wkSpans(end);
+  return wkCompare(wkSide(recs, S.cur, dateOf, fig), wkSide(recs, S.prev, dateOf, fig), better);
+}
+// Day rows with one figure a day: the week's figure is Σ v·w ÷ Σ w over the days with a figure and a weight above 0
+// (w omitted: 1, a plain average a day; w = picks: the picks-weighted mean, which for a per-pick figure is the week's
+// rupees ÷ the week's picks).
+function wkMean(days, end, get, w, better) {
+  const pts = (days || []).map((d) => ({date: d.date, v: get(d), w: w ? w(d) : 1})).filter((p) => ok(p.v) && ok(p.w) && p.w > 0);
+  const fig = (L) => { const W = L.reduce((a, p) => a + p.w, 0); return W > 0 ? L.reduce((a, p) => a + p.v * p.w, 0) / W : null; };
+  return wkBy(pts, end, (p) => p.date, fig, better);
+}

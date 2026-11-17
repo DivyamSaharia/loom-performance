@@ -371,3 +371,29 @@ function keyline(extra) {
     el('span', {}, el('b', {text: '▼ ▲'}), ' worse than a reference by more than its tolerance; the missed one is ', el('u', {text: 'underlined'})),
     extra ? el('span', {text: extra}) : null);
 }
+
+// ---- This week vs last week on a period bar (Round D, Divyam 17 Nov 2026). c: a wkMean / wkBy result (calc.js);
+// o: {what (the figure's name), fmt (number only), unit, dunit (the change's unit, if not unit), basis (named when the figure sits on a basis switch)}.
+// "This week" = the 7 days to the day shown, "last week" = the 7 before (D1); a week with missing days shows "5 of 7 days"
+// and compares the average of the days it has (D3); a week with no day is "—", never 0. Each week carries its dates on
+// both widths, so a phone reader sees they are rolling 7 days, not calendar weeks.
+function wkPill(c, o) {
+  if (!c) return null;
+  const sp = (x) => shortRange(x.from, x.to), cov = (x) => x.days < c.of ? ` (${x.days} of ${c.of} days)` : '';
+  const tip = `This week = ${sp(c.cur)}, the 7 days to the day shown. Last week = ${sp(c.prev)}, the 7 days before. A week with missing days compares the average of the days it has.`;
+  const u = (x) => !x ? '' : x[0] === '%' ? x : ' ' + x, unit = u(o.unit), dunit = u(o.dunit != null ? o.dunit : o.unit), basis = o.basis ? ` · ${o.basis}` : '';
+  const dd = (x) => el('span', {class: 'wkd', text: ` (${sp(x)})`});   // the week's dates, on both widths
+  if (!c.dir) {
+    const miss = !ok(c.cur.v) && !ok(c.prev.v) ? ['neither this week', dd(c.cur), ' nor last week', dd(c.prev), ' has a day with figures yet']
+      : !ok(c.prev.v) ? ['last week', dd(c.prev), ' has no day with figures yet'] : ['this week', dd(c.cur), ' has no day with figures yet'];
+    return el('div', {class: 'wkcmp', 'data-wk': 'gap', title: tip}, el('b', {text: o.what}), ', this week vs last week: — ', ...miss,
+      '. The comparison shows once both weeks have a day: pick a later day, or check again after the daily run (it updates the app every hour, 10:40 to 16:40 IST). ' +
+      (typeof fxIsOwner === 'function' && fxIsOwner() ? 'If a week stays empty, see Files per day on Data health for the missing days.' : 'If a week stays empty, tell the owner.'));
+  }
+  const ad = Math.abs(c.d), zero = !/[1-9]/.test(o.fmt(ad));
+  const cls = zero || c.good == null ? 'flat' : c.good ? 'up-good' : 'up-bad';
+  const chg = zero ? '±0' : (c.d > 0 ? '▲ +' : '▼ −') + o.fmt(ad) + dunit;
+  return el('div', {class: 'wkcmp', 'data-wk': c.dir, title: tip},
+    el('b', {text: o.what}), ', this week', dd(c.cur), ` ${o.fmt(c.cur.v)}${unit}${cov(c.cur)} vs last week`, dd(c.prev), ` ${o.fmt(c.prev.v)}${unit}${cov(c.prev)} `,
+    el('span', {class: 'delta ' + cls, text: chg}), basis);
+}
