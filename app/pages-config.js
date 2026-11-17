@@ -189,7 +189,7 @@ function pageBench() {
         onclick: () => { BQ = k; render(); if (window.innerWidth < 1180) { const d = $('#bdetail'); if (d) d.scrollIntoView({behavior: 'smooth', block: 'start'}); } }},
         el('span', {class: 'qdot', style: `background:${dot[b.status] || 'var(--muted)'}`, title: b.status}),
         el('div', {style: 'min-width:0'}, el('div', {class: 'qn', text: b.hg}), el('div', {class: 'qs', text: `${b.width} cm · ${b.n} loom-days · ${b.looms} loom${b.looms === 1 ? '' : 's'}`})),
-        el('div', {class: 'qv'}, `RPM ${f0(b.rpm)}`, el('br'), `air ${f1(b.apk)}`));
+        el('div', {class: 'qv'}, `RPM ${f0(b.rpm)}`, el('br'), `air ${f1(b.apk)}`, ...(typeof fxBenchListLine === 'function' ? fxBenchListLine(b.width, b.hg) || [] : [])));
     });
     box.replaceChildren(...(rows.length ? rows : [el('div', {class: 'empty', text: 'No quality matches.'})]));
   };
@@ -197,7 +197,8 @@ function pageBench() {
   draw();
   const left = el('div', {class: 'card bench-list'}, el('div', {class: 'search'}, icon('search', 18), q), box,
     el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'qdot', style: 'background:var(--good)'}), 'benchmark'),
-      el('span', {class: 'lg'}, el('span', {class: 'qdot', style: 'background:var(--info)'}), 'single loom'), el('span', {class: 'lg'}, el('span', {class: 'qdot', style: 'background:var(--warn)'}), 'provisional')));
+      el('span', {class: 'lg'}, el('span', {class: 'qdot', style: 'background:var(--info)'}), 'single loom'), el('span', {class: 'lg'}, el('span', {class: 'qdot', style: 'background:var(--warn)'}), 'provisional')),
+    typeof fxBenchListNote === 'function' ? fxBenchListNote() : null);
   const [w, hg] = BQ.split('|'); const b = bench(w, hg);
   const day = agg((D.loomdays || []).filter((x) => x.date === D.latest && String(x.width) === w && x.hg === hg && x.run >= 60));
   const met = el('div', {class: 'chips', role: 'group', 'aria-label': 'Metric'}, BMET_LIST.map(([k, l]) => el('button', {type: 'button', class: 'chip', 'aria-pressed': BMET === k ? 'true' : 'false', text: l, onclick: () => { BMET = k; render(); }})));

@@ -42,6 +42,18 @@ button{font:inherit;color:inherit}
 .sb-item[aria-current="page"] .sb-count{color:rgba(0,42,0,.7)}
 .badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:600;text-align:center;line-height:18px}
 .sb-item .badge{margin-left:auto}
+.sb-item .sb-spark{margin-left:auto;width:46px;flex:none;display:block}
+.sb-item.sb-two{height:auto;min-height:38px;padding-top:4px;padding-bottom:4px}
+.sb-item .sb-lab{display:flex;flex-direction:column;line-height:1.2;min-width:0}
+.sb-item .sb-sub{font-size:11.5px;color:rgba(255,255,255,.62);white-space:nowrap}
+.sb-item[aria-current="page"] .sb-sub{color:rgba(0,42,0,.72)}
+.sb-item .sb-spark+.badge{margin-left:6px}
+.sb-item .sb-spark .spark{height:16px;margin:0}
+.sb-item .sb-spark .spark polyline{stroke:rgba(255,255,255,.62)!important}
+.sb-item[aria-current="page"] .sb-spark .spark polyline{stroke:rgba(0,42,0,.7)!important}
+.fx-lspark{margin:4px 0 8px}
+.fx-lspark .spark{max-width:220px;margin-top:4px}
+.qv .qreal{color:var(--series)}
 .sb-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:12px}
 .sb-sync{display:flex;align-items:center;gap:6px;border-top:.5px solid rgba(255,255,255,.18);padding:10px 0 0 10px;font-size:13px;color:#fff}
 .sb-sync-text{flex:1;min-width:0}

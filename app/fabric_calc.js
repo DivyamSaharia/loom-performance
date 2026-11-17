@@ -422,6 +422,35 @@ function fcRealAtErpm(erpm, minutes, pf, realPp) {
   if (!n(erpm) || !n(minutes) || !n(realPp) || !(minutes > 0)) return null;
   return erpm * minutes * (n(pf) ? pf : 1) / FC_PICKS_PER_INCH * realPp / 100;
 }
+// Round W (Divyam, 17 Nov 2026): a beam is priced on its warp-stop minutes, not every stop (the Toyota report's "Warp (min)").
+// Each of the beam's loom-days: warp minutes × the loom-day's RPM × its panna factor = fabric picks lost to warp stops,
+// ÷ 39.37 = the costing basis, × that loom-day's realisation paise per pick ÷ 100. A loom-day with no warp minutes (a file
+// read before 17 Nov and not yet read back, or one without the column) is a gap: out of the minutes, picks and rupees and
+// counted, never 0. A loom-day with minutes the analysis cannot price is in the minutes and picks, not the rupees.
+// days: [{warp_min, rpm, pf, realPp}] → {min, picks, rs, timed, priced, days}; min/picks null when no day has minutes,
+// rs null when no day is priced.
+function fcBeamWarpLoss(days) {
+  const n = (v) => typeof v === 'number' && isFinite(v);
+  let min = 0, picks = 0, rs = 0, timed = 0, priced = 0;
+  for (const d of days || []) {
+    if (!n(d.warp_min) || d.warp_min < 0) continue;
+    timed++; min += d.warp_min;
+    const p = d.warp_min * (n(d.rpm) ? d.rpm : 0) * (n(d.pf) ? d.pf : 1) / FC_PICKS_PER_INCH;
+    picks += p;
+    if (n(d.realPp)) { rs += p * d.realPp / 100; priced++; }
+  }
+  return {min: timed ? min : null, picks: timed ? picks : null, rs: priced ? rs : null, timed, priced, days: (days || []).length};
+}
+// Round C (Divyam, 17 Nov 2026): the 7-day realisation lines (sidebar, loom panel). For each date, the realisation per pick
+// of the rows kept (As sold rows from fcAnalyse; `keep` picks a loom or both widths): the day's realisation ÷ its priced
+// picks × 100, with the share of picks priced. A day with nothing priced is null (a gap in the line, never 0).
+// → [{date, real_pp, real, coverage}]
+function fcRealSeries(rows, dates, keep) {
+  return (dates || []).map((date) => {
+    const t = fcSum((rows || []).filter((r) => r.date === date && (!keep || keep(r))));
+    return {date, real_pp: t.priced ? t.real_pp : null, real: t.priced ? t.real : null, coverage: t.picks ? t.coverage : null};
+  });
+}
 // Break-even realisation per loom per day (Divyam, 12 Nov 2026): the day's total cost ÷ the looms running.
 function fcBreakEven(cost, looms) { return typeof cost === 'number' && isFinite(cost) && looms > 0 ? cost / looms : null; }
 // What fixing a loom is worth a day (Actions, "Work on these first"), with the quality's realisation factored in: lost picks

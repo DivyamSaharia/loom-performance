@@ -1211,23 +1211,34 @@ function fxIdleCell(loom, date, offMin) {
   if (r.rs == null) return el('span', {class: 'pill muted', text: r.why, title: r.hg ? `${r.hg}: no priced loom-day for this loom on it` : null});
   return el('span', {}, fxMoney(r.rs), el('div', {class: 'note', text: `${fxLakh(r.picks)} lakh picks on ${r.hg}${r.when !== date ? ` · rate of ${dfmt(r.when)}` : ''}`}));
 }
-// Warp breaks tab (R2): a bad beam has a price. The stop minutes of each beam's loom-days (every stop: the Toyota report
-// does not split stops by cause) × the loom's RPM = picks lost while stopped, valued at that loom-day's realisation per
-// pick. A loom-day the analysis cannot price is counted in the minutes but not in the rupees.
+// Warp breaks tab (R2; Round W, 17 Nov 2026): a bad beam has a price. Since Round W it is the warp-stop minutes of each
+// beam's loom-days (the report's "Warp (min)"), not every stop: × the loom's RPM = picks lost to warp stops, valued at that
+// loom-day's realisation per pick (fcBeamWarpLoss). A loom-day with no warp minutes is a gap, shown in "Days counted".
 function fxBeamTable(beams, recs) {
   if (!fxOn()) return null;
   if (!fxAll()) return el('p', {class: 'note', text: 'Realisation lost on each beam: loading the fabric masters…'});
   const rows = beams.map((b) => {
     const L = recs.filter((x) => x.loom === b.loom && x.beam === b.beam);
-    let stop = 0, picks = 0, rs = 0, n = 0, m = 0;
-    for (const x of L) { stop += x.stop || 0; const p = (x.stop || 0) * (x.rpm || 0) * pf(x.width, x.hg) / FC_PICKS_PER_INCH; picks += p; m++; const v = fxPicksRs(x.date, x.loom, x.hg, p); if (v != null) { rs += v; n++; } }
-    return {b, stop, picks, rs, n, m};
-  }).sort((a, c) => c.rs - a.rs || c.stop - a.stop);
-  return el('div', {},
-    table(['Beam', 'Loom', ['Stopped', 'h on this beam'], ['Picks lost while stopped', 'lakh'], ['Realisation lost', '₹'], 'Priced'],
-      rows.map((r) => [r.b.beam, el('span', {}, loomLink(r.b.loom, r.b.last, 'Loom ' + r.b.loom), el('div', {class: 'note', text: `${r.b.hg} · ${r.b.width} cm · ${f2(r.b.rate)} /100k`})), f1(r.stop / 60), fxLakh(r.picks),
-        r.n ? el('b', {text: fxMoney(r.rs)}) : el('span', {class: 'pill muted', text: 'not priced'}), el('span', {class: r.n < r.m ? 'pill warn' : 'note', text: `${r.n} of ${r.m} days`})]), [2, 3, 4]),
-    el('p', {class: 'note', text: 'Stop minutes are every stop on the beam\'s loom-days (the report does not split stops by cause) × the loom\'s RPM = picks lost while stopped, × that loom-day\'s realisation per pick (As sold, from the Realisation tab). Read it with the break rate: a beam high on both is the one to send back to warping first.'}));
+    const r = fcBeamWarpLoss(L.map((x) => { const o = fxLd(x.date, x.loom, x.hg); return {warp_min: x.warp_min, rpm: x.rpm, pf: pf(x.width, x.hg), realPp: o && o.real_pp != null ? o.real_pp : null}; }));
+    return {b, ...r};
+  }).sort((a, c) => (c.rs ?? -1) - (a.rs ?? -1) || (c.min ?? -1) - (a.min ?? -1));
+  const rsC = (r) => r.rs != null ? el('b', {text: fxMoney(r.rs)}) : el('span', {class: 'pill muted', text: r.timed ? 'not priced' : 'no warp minutes yet'});
+  const dc = (r) => el('span', {class: r.timed < r.days || r.priced < r.timed ? 'pill warn' : 'note', style: 'white-space:normal', text: `${r.timed} of ${r.days} days with warp minutes · ${r.priced} priced`});
+  const hrs = (r) => r.min == null ? '—' : f1(r.min / 60), lk = (r) => r.picks == null ? '—' : fxLakh(r.picks);
+  // On a phone (below 560 px) one block per beam carrying the column names, so nothing scrolls sideways (Round W).
+  const body = window.matchMedia('(max-width: 560px)').matches
+    ? el('div', {class: 'beamlist'}, rows.map((r) => el('div', {style: 'padding:10px 0;border-top:1px solid var(--line, #ddd)'},
+        el('div', {}, el('strong', {text: 'Beam ' + r.b.beam}), ' · ', loomLink(r.b.loom, r.b.last, 'Loom ' + r.b.loom)),
+        el('div', {class: 'note', text: `${r.b.hg} · ${r.b.width} cm · ${f2(r.b.rate)} breaks /100k picks`}),
+        el('div', {}, 'Realisation lost: ', rsC(r)),
+        el('div', {text: `Warp stops: ${hrs(r)} h · Picks lost on warp stops: ${lk(r)} lakh`}),
+        el('div', {}, 'Days counted: ', dc(r)))))
+    : table(['Beam', 'Loom', ['Warp stops', 'h on this beam'], ['Picks lost on warp stops', 'lakh'], ['Realisation lost', '₹'], 'Days counted'],
+      rows.map((r) => [r.b.beam, el('span', {}, loomLink(r.b.loom, r.b.last, 'Loom ' + r.b.loom), el('div', {class: 'note', text: `${r.b.hg} · ${r.b.width} cm · ${f2(r.b.rate)} /100k`})),
+        hrs(r), lk(r), rsC(r), dc(r)]), [2, 3, 4]);
+  return el('div', {}, el('h3', {text: 'Realisation lost on each beam'}), body,
+    el('p', {class: 'note', text: 'Warp stops are the report\'s "Warp (min)": the minutes each loom stood on warp breaks on this beam\'s loom-days. Picks lost on warp stops = those minutes × the loom\'s RPM, and Realisation lost values them at that loom-day\'s realisation per pick (As sold, from the Realisation tab). Weft and other stops are not charged to the beam. A day without warp minutes is left out and shown in Days counted, never counted as 0; "—" means no day of the beam has warp minutes yet.'}),
+    el('p', {class: 'note', text: '"no warp minutes yet": days stored before 17 Nov are read again from the plant files over the next daily runs (every hour, 10:40 to 16:40 IST); if it stays a day later, that shift\'s file has no warp minutes, so ask the plant for the full Toyota report. "not priced": the beam\'s days have no realisation price; see Coverage on the Realisation tab for what to link or approve. Read the table with the break rate: a beam high on both is the one to send back to warping first.'}));
 }
 // Benchmarks (R2): what each benchmark gap is worth for that quality on that day, in rupees: a picks gap (RPM, effective
 // RPM, efficiency) × the realisation per pick of the subject on the day (the head group's priced looms, or the one loom);
@@ -1330,9 +1341,48 @@ function fxLoomLines(loom, days, recs) {
         !o ? el('span', {class: 'pill muted', text: 'not in the analysis'}) : o.priced ? (o.gaps.length ? el('span', {class: 'pill warn', text: 'partly: ' + o.gaps[0]}) : '') : el('span', {class: 'pill warn', text: o.gaps[0] || 'not priced', style: 'white-space:normal'})]);
     }
   }
-  return el('div', {}, el('h3', {text: 'Realisation'}), el('p', {class: 'note', text: 'Sale value at prevailing rate, realisation and profit per loom-day, As sold, from the Realisation tab.'}),
+  return el('div', {}, el('h3', {text: 'Realisation'}), fxLoomSpark(loom, days.slice().sort().pop()), el('p', {class: 'note', text: 'Sale value at prevailing rate, realisation and profit per loom-day, As sold, from the Realisation tab.'}),
     rows.length ? table(['Date', 'Head group', ['Picks', 'lakh'], ['Sale', '₹'], ['Realisation', '₹'], ['Profit', '₹'], 'Gap'], rows, [2, 3, 4, 5]) : el('p', {class: 'empty', text: 'No loom-day in the analysis for these days.'}));
 }
+// Round C (Divyam, 17 Nov 2026): 7-day realisation lines. Realisation per pick (paise, As sold) for the last 7 days that have
+// loom data, up to the day shown; a day with nothing priced is a gap in the line, never 0. The sidebar's is the whole floor
+// (both widths), beside Realisation; the loom panel's is that loom. Owner with the analysis on only.
+const fxLast7 = (end) => fxDays().filter((d) => d <= end).slice(-7);
+function fxSparkTitle(label, S) {
+  return `${label}, paise per pick (As sold): ` + S.map((p) => `${dfmt(p.date)} ${p.real_pp == null ? '— not priced' : fxPaise(p.real_pp) + (p.coverage < 1 - 1e-9 ? ` (${fxPct(p.coverage)} of picks priced)` : '')}`).join(' · ');
+}
+function fxNavSpark() {
+  for (const a of document.querySelectorAll('#sbnav .sb-item[data-tab="realisation"]')) {
+    let box = a.querySelector('.sb-spark'), sub = a.querySelector('.sb-sub');
+    if (!box) { box = el('span', {class: 'sb-spark'}); const bd = a.querySelector('.badge'); a.insertBefore(box, bd || null); }
+    if (!sub) { const lab = a.querySelector('span:not(.badge):not(.sb-spark)'); sub = el('small', {class: 'sb-sub'}); if (lab) { lab.classList.add('sb-lab'); lab.append(sub); } }
+    const A = fxOn() && D ? fxAll() : null;
+    const S = A ? fcRealSeries(A.rows, fxLast7(D.latest)) : [], last = [...S].reverse().find((p) => p.real_pp != null);
+    const show = S.filter((p) => p.real_pp != null).length >= 2;
+    box.hidden = sub.hidden = !show; a.classList.toggle('sb-two', show);
+    box.replaceChildren(...(show ? [spark(S.map((p) => p.real_pp), {aria: `Realisation per pick, whole floor, last ${S.length} days`, title: fxSparkTitle('Realisation per pick, whole floor, both widths', S)})] : []));
+    sub.textContent = show ? `${fxPaise(last.real_pp)} paise/pick` : '';
+  }
+}
+function fxLoomSpark(loom, date) {
+  if (!fxOn()) return null;
+  const A = fxAll(); if (!A) return null;
+  const L7 = fxLast7(date); if (!L7.length) return null;
+  const S = fcRealSeries(A.rows, L7, (r) => +r.loom === +loom), n = S.filter((p) => p.real_pp != null).length;
+  const last = [...S].reverse().find((p) => p.real_pp != null);
+  return el('div', {class: 'fx-lspark'},
+    el('div', {class: 'note', text: n ? `Realisation per pick, last ${S.length} days: ${fxPaise(last.real_pp)} paise on ${dfmt(last.date)}${n < S.length ? ` · ${S.length - n} day${S.length - n === 1 ? '' : 's'} not priced (gap in the line)` : ''}` : `Realisation per pick, last ${S.length} days: no day priced (see Coverage on the Realisation tab)`}),
+    n >= 2 ? spark(S.map((p) => p.real_pp), {aria: `Realisation per pick, loom ${loom}, last ${S.length} days`, title: fxSparkTitle(`Loom ${loom}`, S)}) : null);
+}
+// Benchmarks quality list (Round C, backlog 5): the head group's realisation per pick on the latest day, under its RPM and
+// air. "—" = not priced that day (a gap, never 0); owner with the analysis on only.
+function fxBenchListLine(w, hg) {
+  if (!fxOn()) return null;
+  if (!fxAll()) return [el('br'), 'paise/pick …'];
+  const h = hg === 'Unassigned' ? null : fxHgPp(D.latest, w, hg);
+  return [el('br'), el('span', {class: h ? 'qreal' : null, title: h ? `Realisation per pick on ${dfmt(D.latest)}, As sold${h.coverage < 1 - 1e-9 ? ` · ${fxPct(h.coverage)} of picks priced` : ''}` : `Not priced on ${dfmt(D.latest)}: see Coverage on the Realisation tab`, text: h ? `${fxPaise(h.real_pp)} paise/pick` : 'not priced'})];
+}
+const fxBenchListNote = () => fxOn() ? el('p', {class: 'note', text: `paise/pick = realisation per pick on ${dfmt(D.latest)}, As sold (from the Realisation tab). "not priced": nothing of that quality was priced that day; see Coverage on the Realisation tab.`}) : null;
 // Search (R2): fabric names, for the owner with the analysis on. A hit opens the product's loom-days (its own waterfall
 // and coverage) for the Realisation tab's period, or Fabric masters while the masters are still loading.
 function fxSearchHits(q) {

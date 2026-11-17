@@ -76,6 +76,7 @@ function render() {
   for (const c of document.querySelectorAll('[data-count="benchmarks"]')) c.textContent = nb || '';
   $('#ptitle').textContent = TITLES[TAB] || 'Loom Performance';
   sbGroups();
+  if (typeof fxNavSpark === 'function') fxNavSpark();   // Round C: 7-day realisation line beside Realisation (owner, laptop sidebar)
   document.title = `${TITLES[TAB] || 'Loom Performance'} · W2 Looms`;
   const y = window.scrollY;
   { // only the filters that change what the tab shows: Costing, Access and Data health don't follow the loom width or the day
