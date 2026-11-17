@@ -21,6 +21,7 @@ function guideSections() {
   const exFall = () => waterfall([{label: 'Yesterday', v: 24.4, total: true}, {label: 'Volume', v: 0.49}, {label: 'POWER', v: 0.37}, {label: 'OPERATOR', v: -0.02}, {label: 'All other', v: 0.04}, {label: 'Today', v: 25.28, total: true}], 'Example: why cost per pick moved');
   const plant = isPlant();
   const ed = typeof canEdit === 'function' && canEdit();   // Reload data and Save all: the edit targets and admin roles only
+  const own = typeof fxOn === 'function' && fxOn();   // Round E: fabrics in the search (owner, analysis on)
 
   const all = [
     {id: 'g-start', grp: 'Start here', title: 'How to read this app', body: [
@@ -28,7 +29,8 @@ function guideSections() {
       B(K('The day picker', 'at the top shows the app as it stood on an earlier day. Benchmarks, best and targets stay today\'s.'),
         K('190 cm / 280 cm / Both widths', 'filters the loom tabs by loom width. Pressure always covers both, because one compressor serves the whole floor.'),
         K('Refresh', '(the round-arrow icon: at the foot of the side menu on a laptop, in the top bar on a phone; on a laptop, point at it to see its name) fetches the latest figures from the database.' + (ed ? ' It does not start the daily run: Reload data (on Data health and the Needs a head group card) does that.' : '')),
-        K('Search', '(press /) finds a loom number or head group: pick a suggestion to open it, or keep typing to filter every table on the page.'),
+        K('Search', 'finds a tab, a card, a loom, a head group or a Guide heading and takes you there (see "Search, Favourites and shortcuts" below).'),
+        K('Filter tables on this page', '(the box above the tables) keeps only the table rows that match: a loom number, a head group or any text.'),
         K('The section bar', 'under the title jumps between the sections of a long tab; "All sections" lists them.'),
         K('Click almost anything:', 'a loom number opens that loom, a head group opens its looms and benchmark, a bm or best figure shows the loom-days behind it, a chart point opens that day.')),
       el('p', {class: 'note', text: 'A red line under the title means the latest data is old: the plant\'s files may be missing or the daily run may have stopped.'})]},
@@ -44,6 +46,15 @@ function guideSections() {
         K('line', `= the efficiency line: below ${eff}% is bad on any quality.`),
         K('▼ ▲ on a figure', 'means it is worse than a reference by more than its tolerance. Green or red on a change says whether it moved the good or bad way, not up or down.'),
         K('Toggle boxes', 'above a chart switch its lines on and off; your choice is kept on this device.'))]},
+    {id: 'g-search', grp: 'Start here', title: 'Search, Favourites and shortcuts', body: [
+      P('One search finds every tab and card you can see, plus looms, head groups and the headings of this Guide' + (own ? ', and fabrics' : '') + '. Pick a result to go there: a card is scrolled to and opened if it was folded; a loom or head group opens its panel. It only finds what your own screens show' + (plant ? ', so no money sections.' : '.')),
+      B(K('On a laptop:', 'the search box sits right under the logo at the top of the side menu. Press / or Ctrl K (⌘ K on a Mac) to jump to it from anywhere. With the box empty it lists Recent; the keys are listed under the results.'),
+        K('On a phone:', 'tap the search icon (the magnifier) in the top bar, next to Refresh (the round-arrow icon). A full-screen sheet opens with the search box, Favourites (folded) and Recent; Close shuts it.'),
+        K('Favourites:', 'the 5 tabs and cards you open most, counted over the last 30 days (opening a tab, or a card from the search). The list starts folded: tap Favourites to open it. On a laptop it is under the search box; on a phone it is in the search sheet and at the top of More.'),
+        K('Recent:', 'the last 10 places you opened (tabs, cards, looms, head groups, Guide headings) and searches you picked, newest first. Clear empties it.'),
+        K('Same on every device you sign in on:', 'Favourites and Recent are kept against your sign-in email, so the laptop and the phone show the same lists.'),
+        K('Shortcuts (laptop keyboard):', '1 to 9 open the first nine tabs in the side menu (1 Actions, 2 Quality, 3 Benchmarks, 4 CFM, 5 Effective RPM, 6 Pressure, 7 Utilisation, 8 Warp breaks, 9 Costing); / or Ctrl K opens the search; g then l opens it ready for a loom number (type it, then Enter); Esc closes it. They do nothing while you type in a box or while a panel is open.')),
+      el('p', {class: 'note', text: 'The search and the shortcuts only go places and open looms: they never change loom, costing, target or fabric data. All they keep is your own Favourites and Recent.'})]},
     {id: 'g-bench', grp: 'Ideas used everywhere', title: 'Benchmark, best and target', body: [
       P('Every head group gets a benchmark per loom width from all of its history. For RPM and effective RPM it is the 90th percentile of its loom-days (beaten by only 1 day in 10). For air per 1,000 picks and main pressure it is the 10th percentile (lower is better). Nothing is filtered out as an outlier.'),
       P('Best is the single best loom-day behind it: fastest RPM, lowest air, lowest pressure. Target is what you set on the Targets tab; the effective RPM target is ' + etg + '% of your target RPM.'),

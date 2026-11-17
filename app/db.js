@@ -91,6 +91,7 @@ async function prefsLoad(c) {
     try { localStorage.setItem(prefKey(), JSON.stringify(all)); } catch (e) {}
     if (JSON.stringify(all) === before || !D) return;
     if (typeof gapSoon === 'function') gapSoon();   // folded sections follow the email (12 Nov 2026)
+    if (typeof navPaint === 'function') navPaint();   // Favourites follow the email (Round E, 17 Nov 2026)
     if (typeof render === 'function' && TAB === 'realisation') render();
   } catch (e) {}
 }

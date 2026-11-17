@@ -109,7 +109,7 @@ function moreButton(id, total, shown) {
 }
 // Every table longer than 8 rows shows its first 8, with "Show all N rows" under it ("Show fewer" once open). A closing
 // Total row stays in view, and an open drill-down row goes with its row. Open tables stay open while the page is open
-// (keyed by the card title and the column headings). While the search box filters a page, every matching row shows.
+// (keyed by the card title and the column headings). While the Filter tables box (above the tables) filters a page, every matching row shows.
 const TMAX = 8, TOPEN = new Set();
 function tableKey(t) {
   const c = t.closest('.card,dialog'), h = c && c.querySelector('h3,h2');
@@ -273,7 +273,7 @@ function collapseTables(root, off) {
 // (buttons and links in that row keep their own job). What is folded is kept against the signed-in email (the 'fold'
 // preference, prefGet / prefSet in db.js), keyed by tab (or the panel) and heading, counts ignored, so it follows the person
 // to any device; in passcode mode it stays on the device. A device's older w2-fold copy seeds the first save. Coverage
-// starts folded; every other card starts open. While the search box filters a page, every card shows. Wired on each redraw
+// starts folded; every other card starts open. While the Filter tables box filters a page, every card shows. Wired on each redraw
 // by the same observer as collapseTables (gapSoon in nav.js).
 const FOLD_DEF = {'Coverage': true};
 function foldMap() {
@@ -396,4 +396,55 @@ function wkPill(c, o) {
   return el('div', {class: 'wkcmp', 'data-wk': c.dir, title: tip},
     el('b', {text: o.what}), ', this week', dd(c.cur), ` ${o.fmt(c.cur.v)}${unit}${cov(c.cur)} vs last week`, dd(c.prev), ` ${o.fmt(c.prev.v)}${unit}${cov(c.prev)} `,
     el('span', {class: 'delta ' + cls, text: chg}), basis);
+}
+
+// ---------------------------------------------------------------- Search, favourites and recent places (Round E, 17 Nov 2026)
+// Pure parts, tested in tests/test_nav.py; the screens are in nav.js. Visits are kept per place as [IST day number, count]
+// pairs for the last NAV_DAYS days; favourites are the NAV_FAV places with the most visits in that window (ties: the most
+// recent visit first, then the place id). Recent holds the last NAV_RECENT places or searches, newest first, no repeats.
+const NAV_DAYS = 30, NAV_FAV = 5, NAV_RECENT = 10, NAV_MAX_PLACES = 40;
+const navDay = (t) => Math.floor((t + 5.5 * 3600e3) / 86400e3);   // the IST calendar day
+function navVisit(store, id, t) {
+  const d = navDay(t), s = {};
+  for (const [k, a] of Object.entries(store && typeof store === 'object' ? store : {})) {
+    const kept = (Array.isArray(a) ? a : []).filter((x) => Array.isArray(x) && x[0] > d - NAV_DAYS && x[1] > 0);
+    if (kept.length) s[k] = kept;
+  }
+  const a = s[id] || (s[id] = []), last = a[a.length - 1];
+  if (last && last[0] === d) a[a.length - 1] = [d, last[1] + 1]; else a.push([d, 1]);
+  const ids = Object.keys(s);
+  if (ids.length > NAV_MAX_PLACES) {   // keep the places with the most visits (the one just visited always stays)
+    const tot = (k) => s[k].reduce((n, x) => n + x[1], 0);
+    for (const k of ids.filter((k) => k !== id).sort((x, y) => tot(x) - tot(y) || s[x].at(-1)[0] - s[y].at(-1)[0]).slice(0, ids.length - NAV_MAX_PLACES)) delete s[k];
+  }
+  return s;
+}
+function navFavs(store, t, okId = () => true) {
+  const d = navDay(t);
+  return Object.entries(store && typeof store === 'object' ? store : {}).map(([id, a]) => {
+    const w = (Array.isArray(a) ? a : []).filter((x) => Array.isArray(x) && x[0] > d - NAV_DAYS && x[0] <= d);
+    return {id, n: w.reduce((n, x) => n + (x[1] > 0 ? x[1] : 0), 0), last: w.reduce((m, x) => Math.max(m, x[0]), -1)};
+  }).filter((x) => x.n > 0 && okId(x.id)).sort((a, b) => b.n - a.n || b.last - a.last || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).slice(0, NAV_FAV);
+}
+function navRecentAdd(list, item) {
+  return [item, ...(Array.isArray(list) ? list : []).filter((x) => x && x.id !== item.id)].slice(0, NAV_RECENT);
+}
+// A card's place id ignores the figures in its heading ("RPM · 18 looms" and "RPM · 20 looms" are one place).
+const navCardName = (t) => String(t).trim().replace(/\s·\s[^·]*\d[^·]*$/, '');
+const navNorm = (t) => navCardName(t).toLowerCase().replace(/\d[\d,.]*/g, '#');
+// Matches every word of Q against an item's label (and its tab or group, `sub`), best first: the whole label, the label's
+// start, a word's start, inside the label, then only through `sub`. Ties keep the items' own order (tab order).
+function navMatch(items, q) {
+  const words = String(q || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const qq = words.join(' ');
+  const out = [];
+  items.forEach((it, i) => {
+    const lab = String(it.label || '').toLowerCase(), all = lab + ' ' + String(it.sub || '').toLowerCase();
+    if (!words.every((w) => all.includes(w))) return;
+    const inLab = words.every((w) => lab.includes(w));
+    const s = lab === qq ? 5 : lab.startsWith(qq) ? 4 : inLab && words.every((w) => (' ' + lab).includes(' ' + w)) ? 3 : inLab ? 2 : 1;
+    out.push({it, s, i});
+  });
+  return out.sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.it);
 }

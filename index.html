@@ -16,7 +16,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="stylesheet" href="app/style.css?v=b285d0d6f8">
+<link rel="stylesheet" href="app/style.css?v=4814fdaca7">
 </head>
 <body>
 <div class="shell">
@@ -24,6 +24,12 @@
     <div class="sb-brand">
       <img class="sb-logo" src="logo.svg" alt="Hanuman" width="46" height="46">
       <div><div class="sb-top">Hanuman</div><div class="sb-main">Weavelon 2 Looms</div></div>
+    </div>
+    <div class="sb-find" id="nfind">
+      <div class="search" role="search"><span id="nq-icon" aria-hidden="true"></span>
+        <input type="search" id="nq" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search tabs, cards, looms, head groups and the Guide" aria-autocomplete="list" aria-controls="nres" aria-expanded="false">
+        <span class="kbd" aria-hidden="true">/</span></div>
+      <div id="nfav-sb"></div>
     </div>
     <nav class="sb-nav" id="sbnav" aria-label="Pages"></nav>
     <div class="sb-foot">
@@ -40,6 +46,7 @@
         <button type="button" class="icon-btn" id="help" title="Guide" aria-label="Guide"></button>
       </div>
       <div class="side">
+        <button type="button" class="icon-btn m-only" id="nfind-m" title="Search tabs, cards, looms" aria-label="Search tabs, cards, looms, head groups and the Guide"></button>
         <button type="button" class="icon-btn m-only" id="refresh-m" title="Refresh: fetch the latest figures" aria-label="Refresh: fetch the latest figures"></button>
       </div>
     </div>
@@ -47,9 +54,8 @@
     <div class="asof" id="asof">Loading the latest day…</div>
     <div class="filters">
       <div class="search" id="gsearch" role="search"><span id="gs-icon" aria-hidden="true"></span>
-        <input type="search" id="q" placeholder="Search loom or head group" autocomplete="off" spellcheck="false" aria-label="Search loom number or head group" aria-autocomplete="list" aria-controls="sugg">
-        <button type="button" class="clear" id="q-clear" aria-label="Clear search" hidden>×</button><span class="kbd" id="q-kbd" aria-hidden="true">/</span>
-        <div class="sugg" id="sugg" role="listbox" hidden></div></div>
+        <input type="search" id="q" placeholder="Filter tables on this page" autocomplete="off" spellcheck="false" aria-label="Filter the tables on this page by loom number, head group or any text">
+        <button type="button" class="clear" id="q-clear" aria-label="Clear the filter" hidden>×</button></div>
       <div class="segmented" role="group" aria-label="Loom width">
         <button type="button" data-w="190" aria-pressed="true">190 cm</button>
         <button type="button" data-w="280" aria-pressed="false">280 cm</button>
@@ -62,8 +68,15 @@
 </div>
 <nav class="tabbar" id="tabbar" aria-label="Pages"></nav>
 <dialog class="more" id="more" aria-label="More pages"></dialog>
+<div class="sugg nres" id="nres" role="listbox" aria-label="Search results" hidden></div>
+<dialog class="nsheet" id="nsheet" aria-label="Search">
+  <div class="nhead"><div class="search" role="search"><span id="nqm-icon" aria-hidden="true"></span>
+    <input type="search" id="nq-m" placeholder="Search tabs, cards, looms" autocomplete="off" spellcheck="false" aria-label="Search tabs, cards, looms, head groups and the Guide" aria-controls="nres-m"></div>
+    <button type="button" class="ghost" id="nsheet-x">Close</button></div>
+  <div class="nbody"><div class="sugg nlist" id="nres-m" role="listbox" aria-label="Search results"></div></div>
+</dialog>
 <script src="app/core.js?v=f6142539f2"></script>
-<script src="app/model.js?v=210794df9f"></script>
+<script src="app/model.js?v=3969978946"></script>
 <script src="app/calc.js?v=fdc75bb7bf"></script>
 <script src="app/panel.js?v=bede53239c"></script>
 <script src="app/pages-looms.js?v=10e52b4337"></script>
@@ -72,11 +85,11 @@
 <script src="app/charts.js?v=6030b3e248"></script>
 <script src="app/visuals.js?v=25f8cb3bbc"></script>
 <script src="app/costing.js?v=5655a3c682"></script>
-<script src="app/guide.js?v=5d3c5537c0"></script>
-<script src="app/db.js?v=90760c22b3"></script>
+<script src="app/guide.js?v=8c9a355179"></script>
+<script src="app/db.js?v=ef32f8978b"></script>
 <script src="app/fabric_calc.js?v=89cb5ea191"></script>
 <script src="app/fabric.js?v=3bec182342"></script>
-<script src="app/nav.js?v=535903d3f2"></script>
+<script src="app/nav.js?v=bb05b40d88"></script>
 <script src="app/loader.js?v=83cb9a318d"></script>
 
 </body></html>

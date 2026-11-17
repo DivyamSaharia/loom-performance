@@ -42,9 +42,9 @@ function buildNav() {
   $('#sb-guide').replaceChildren(icon('help'), el('span', {text: 'Guide'}));
   const tb = $('#tabbar');
   tb.replaceChildren(...MOB.map((id) => { const n = NAV.find((x) => x[0] === id); return el('a', {href: '#' + id, 'data-tab': id}, icon(n[2], 24), el('span', {text: n[1]}), el('span', {class: 'badge', 'data-badge': id, hidden: true})); }),
-    el('button', {type: 'button', id: 'morebtn', onclick: () => $('#more').showModal()}, icon('dots', 24), el('span', {text: 'More'}), el('span', {class: 'badge', 'data-badge': 'corrections', hidden: true})));   // Round B: unread realisation corrections (Realisation sits in More)
+    el('button', {type: 'button', id: 'morebtn', onclick: () => { navMoreFavs(); $('#more').showModal(); }}, icon('dots', 24), el('span', {text: 'More'}), el('span', {class: 'badge', 'data-badge': 'corrections', hidden: true})));   // Round B: unread realisation corrections (Realisation sits in More)
   const more = $('#more');
-  more.replaceChildren(...GROUPS.flatMap(([name, ids]) => { const its = ids.filter((id) => inMode(id) && !MOB.includes(id)); return its.length ? [el('div', {class: 'more-grp', 'data-grp': name, text: name}), ...its.map((id) => { const a = item(id, 'more-item', 22); a.addEventListener('click', () => more.close()); return a; })] : []; }),
+  more.replaceChildren(el('div', {id: 'nfav-more'}), ...GROUPS.flatMap(([name, ids]) => { const its = ids.filter((id) => inMode(id) && !MOB.includes(id)); return its.length ? [el('div', {class: 'more-grp', 'data-grp': name, text: name}), ...its.map((id) => { const a = item(id, 'more-item', 22); a.addEventListener('click', () => more.close()); return a; })] : []; }),
     el('a', {href: '#', onclick: (e) => { e.preventDefault(); more.close(); openGuide(); }}, icon('help', 22), el('span', {text: 'Guide'})));
   more.addEventListener('click', (e) => { if (e.target === more) more.close(); });
   for (const a of document.querySelectorAll('.sb-nav .sb-item[data-tab="actions"]')) a.append(el('span', {class: 'badge', 'data-badge': 'actions', hidden: true}));
@@ -52,8 +52,11 @@ function buildNav() {
   $('#help').replaceChildren(icon('help', 22)); $('#help').addEventListener('click', openGuide);
   $('#refresh').replaceChildren(icon('refresh', 20)); $('#refresh-m').replaceChildren(icon('refresh', 22));
   $('#gs-icon').replaceChildren(icon('search', 18));
+  $('#nq-icon').replaceChildren(icon('search', 16)); $('#nqm-icon').replaceChildren(icon('search', 18)); $('#nfind-m').replaceChildren(icon('search', 22));
   sbGroups();
 }
+// Round E: Favourites at the top of More (phone), folded, filled each time More opens.
+function navMoreFavs() { const b = $('#nfav-more'); if (b) b.replaceChildren(navSignedIn() ? navFavBox(() => $('#more').close()) : ''); }
 // A group label shows only while one of its items does (plant view, other admins and the Realisation switch collapse groups).
 function sbGroups() {
   for (const root of ['#sbnav', '#more']) for (const g of document.querySelectorAll(root + ' [data-grp]')) {
@@ -92,6 +95,7 @@ function render() {
   applyFilter();
   setStickTop();
   window.scrollTo(0, y);
+  navPaint();
 }
 // Sticky period bars sit just under the sticky section bar: tell CSS how tall that bar is (0 when the tab has none).
 function setStickTop() { const j = $('#main .jump'); document.documentElement.style.setProperty('--stick-top', (j && !j.hidden ? j.offsetHeight : 0) + 'px'); }
@@ -196,7 +200,12 @@ function jumpNav(page) {
 // Access and the fabric screens are the admin's only; Realisation only once Divyam has switched it on; the plant view has no
 // Data health either (10 Nov 2026). The database enforces the same with RLS.
 const tabAllowed = (t) => !!PAGES[t] && (!ADMIN_TABS.includes(t) || isAdmin()) && (!['approvals', 'masters', 'links'].includes(t) || fxIsOwner()) && (t !== 'realisation' || fxAnalysisOn()) && !(t === 'data' && isPlant());
-function setTab(t) { if (t === 'trends') t = 'quality'; TAB = tabAllowed(t) ? t : 'actions'; if (location.hash.slice(1) !== TAB) history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0); }
+function setTab(t) {
+  if (t === 'trends') t = 'quality';
+  const was = TAB;
+  TAB = tabAllowed(t) ? t : 'actions'; if (location.hash.slice(1) !== TAB) history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0);
+  if (TAB !== was && !NAV_QUIET && typeof navPlace === 'function') navPlace({id: 't:' + TAB, label: TITLES[TAB], sub: navTabSub(TAB)}, true);   // Round E: a tab visit
+}
 function busyEditing(sel) { const a = document.activeElement; return a && a.closest && a.closest(sel); }
 // Unsaved edits (17 Nov 2026): what is typed in a Targets box or picked for a style is kept by box id until it is saved, so a
 // redraw (another row's save, Save all, a data refresh) never wipes it. FLASH keeps a row's last message for 2 minutes across
@@ -207,10 +216,10 @@ function draftKeep(id, v, saved) { if (v === saved) DRAFT.delete(id); else DRAFT
 function flashSet(id, cls, text) { FLASH.set(id, {cls, text, at: Date.now()}); }
 function flashShow(id, node) { const f = FLASH.get(id); if (f && Date.now() - f.at < 120e3) { node.className = f.cls; node.textContent = f.text; } return node; }
 
-// Search: filters the rows of every table on the page (loom number = exact loom, text = head group or any cell)
-// and suggests looms and head groups to open directly.
-let QF = '', SUG = [], SUGI = -1;
-const qIn = $('#q'), sugBox = $('#sugg');
+// Filter (the box above the tables, since 17 Nov 2026 Round E): filters the rows of every table on the page (loom number =
+// exact loom, text = head group or any cell). Finding a place (tab, card, loom, head group, Guide) is the side-menu search below.
+let QF = '';
+const qIn = $('#q');
 function rowMatches(node, q) {
   const n = q.replace(/^loom\s*/, '').trim();
   const looms = [...node.querySelectorAll('[data-loom]')].map((e) => e.dataset.loom);
@@ -241,10 +250,10 @@ function suggestions(raw) {
     for (const l of Object.keys(D.machine || {}).map(Number).sort((a, b) => a - b)) {
       if (!String(l).startsWith(String(+n))) continue;
       const mc = D.machine[l] || {};
-      out.push({k: 'Loom', label: `Loom ${l}`, sub: `${mc.width} cm ${mc.type || ''} · ${hgNow[l] || 'no run'}`, go: () => openLoom(l, D.latest)});
+      out.push({k: 'Loom', id: 'l:' + l, label: `Loom ${l}`, sub: `${mc.width} cm ${mc.type || ''} · ${hgNow[l] || 'no run'}`, go: () => openLoom(l, D.latest)});
       if (out.length >= 8) break;
     }
-    for (const o of out.slice(0, 2)) { const l = +o.label.slice(5); out.push({k: 'Trends', label: `Loom ${l} · all trends`, sub: 'every metric, 7 days or since changeover', go: () => openTrends({kind: 'loom', loom: l})}); }
+    for (const o of out.slice(0, 2)) { const l = +o.label.slice(5); out.push({k: 'Trends', id: 'rl:' + l, label: `Loom ${l} · all trends`, sub: 'every metric, 7 days or since changeover', go: () => openTrends({kind: 'loom', loom: l})}); }
   }
   const seen = new Map();
   for (const b of D.benchmarks || []) seen.set(key(b.width, b.hg), {w: String(b.width), hg: b.hg});
@@ -252,40 +261,226 @@ function suggestions(raw) {
   const hits = [...seen.values()].filter((v) => v.hg.toLowerCase().includes(q)).sort((a, b) => (W !== 'all' && (a.w === W) !== (b.w === W) ? (a.w === W ? -1 : 1) : 0) || a.hg.localeCompare(b.hg) || a.w.localeCompare(b.w));
   for (const v of hits.slice(0, 10)) {
     const nl = new Set((D.loomdays || []).filter((x) => x.date === D.latest && x.hg === v.hg && String(x.width) === v.w).map((x) => x.loom)).size;
-    out.push({k: 'Head group', label: v.hg, sub: `${v.w} cm · ${nl} loom${nl === 1 ? '' : 's'} on ${dfmt(D.latest)}`,
+    out.push({k: 'Head group', id: 'h:' + v.w + '|' + v.hg, label: v.hg, sub: `${v.w} cm · ${nl} loom${nl === 1 ? '' : 's'} on ${dfmt(D.latest)}`,
       go: () => { if (TAB === 'benchmarks' && bench(v.w, v.hg)) { BQ = key(v.w, v.hg); render(); } else openHg(v.hg, v.w, D.latest); }});
   }
-  for (const v of hits.slice(0, 2)) out.push({k: 'Trends', label: `${v.hg} ${v.w} cm · all trends`, sub: 'every metric, 7 / 14 / 30 days', go: () => openTrends({kind: 'hg', w: v.w, hg: v.hg})});
+  for (const v of hits.slice(0, 2)) out.push({k: 'Trends', id: 'rh:' + v.w + '|' + v.hg, label: `${v.hg} ${v.w} cm · all trends`, sub: 'every metric, 7 / 14 / 30 days', go: () => openTrends({kind: 'hg', w: v.w, hg: v.hg})});
   if (!/^\d+$/.test(n) && typeof fxSearchHits === 'function') out.push(...fxSearchHits(q));   // R2: fabric names (owner, analysis on)
   return out;
 }
-function drawSugg() {
-  if (!SUG.length && !QF.trim()) { sugBox.hidden = true; return; }
-  sugBox.replaceChildren(...(SUG.length ? SUG.map((s, i) => el('button', {type: 'button', role: 'option', class: i === SUGI ? 'on' : null, 'aria-selected': i === SUGI ? 'true' : 'false',
-    onmousedown: (e) => e.preventDefault(), onclick: () => pick(i)}, el('span', {class: 'k', text: s.k}), el('span', {text: s.label}), el('span', {class: 's', text: s.sub})))
-    : [el('div', {class: 'none', text: 'No loom or head group matches. Tables below are filtered by this text.'})]));
-  sugBox.hidden = false;
-}
-function pick(i) { const s = SUG[i]; if (!s) return; sugBox.hidden = true; qIn.blur(); s.go(); }
-function clearSearch() { qIn.value = ''; QF = ''; SUG = []; SUGI = -1; sugBox.hidden = true; $('#q-clear').hidden = true; $('#q-kbd').hidden = false; applyFilter(); }
-qIn.addEventListener('input', () => {
-  QF = qIn.value; $('#q-clear').hidden = !QF; $('#q-kbd').hidden = !!QF;
-  SUG = suggestions(QF); SUGI = SUG.length ? 0 : -1; drawSugg(); applyFilter();
-});
-qIn.addEventListener('focus', () => { if (QF) { SUG = suggestions(QF); drawSugg(); } });
-qIn.addEventListener('blur', () => setTimeout(() => { sugBox.hidden = true; }, 120));
+function clearSearch() { qIn.value = ''; QF = ''; $('#q-clear').hidden = true; applyFilter(); }
+qIn.addEventListener('input', () => { QF = qIn.value; $('#q-clear').hidden = !QF; applyFilter(); });
 qIn.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowDown' && SUG.length) { e.preventDefault(); SUGI = (SUGI + 1) % SUG.length; drawSugg(); }
-  else if (e.key === 'ArrowUp' && SUG.length) { e.preventDefault(); SUGI = (SUGI - 1 + SUG.length) % SUG.length; drawSugg(); }
-  else if (e.key === 'Enter') { e.preventDefault(); if (SUG.length) pick(SUGI < 0 ? 0 : SUGI); }
+  if (e.key === 'Enter') e.preventDefault();
   else if (e.key === 'Escape') { if (qIn.value) clearSearch(); else qIn.blur(); }
 });
 $('#q-clear').addEventListener('click', () => { clearSearch(); qIn.focus(); });
+
+// ---------------------------------------------------------------- Find: search, favourites, recent, shortcuts (Round E, 17 Nov 2026)
+// One search on both widths: under the logo in the side menu on a laptop (results drop below it), and a full-screen sheet
+// from the search icon next to Refresh on a phone. It finds every tab and card the signed-in role can see, plus Guide
+// headings, looms and head groups (suggestions() above) and, for the owner, fabrics. The cards come from drawing each tab
+// once off screen (navIndex), so a role only ever finds what its own screens show; tabs whose cards arrive after the page is
+// drawn, or that read the database while drawn, list their cards here (NAV_STATIC). Plant view never gets a money section.
+// Favourites (the 5 most-visited tabs and cards over 30 days) and Recent (the last 10 places or searches) follow the email
+// (user_prefs keys nav_visits and nav_recent). Shortcuts: 1–9 the first nine tabs, / or Ctrl/⌘ K the search, g then l a
+// loom, Esc closes. Nothing here changes data.
+const NAV_HEADS = ['.card>.cardhead>h3', '.card>summary>h3', 'h3.sechead'];
+const NAV_MONEY = /realis|profit|sale value/i;
+const NAV_STATIC = {
+  realisation: ['Corrections', 'Coverage', 'Trend', 'By loom / By head group', 'Per pick: sale value to profit', 'By width', "Cost charged against the plant's costing", 'How it is worked out'],
+  data: ['Last 30 days', 'Files per day', 'Backup age', () => canEdit() ? 'Reload data' : null, 'Days', 'Files', 'Other alerts', 'Settings in use'],
+  links: ['Head-group links'], masters: ['Fabrics', 'Yarns', 'Switches', 'History'], approvals: [],
+  fabric: ['Fabrics', 'About this read', 'Recent reads'], access: ['Requests', 'People', 'Add someone directly']};
+const NAV_ALT = {'By loom / By head group': ['By loom', 'By head group']};   // a card whose heading follows its own switch
+const navGrp = (t) => (GROUPS.find((g) => g[1].includes(t)) || ['', []])[0];
+const navTabSub = (t) => 'in ' + navGrp(t);   // a tab's second line: its side-menu group
+const navTabs = () => GROUPS.flatMap((g) => g[1]).filter(tabAllowed);
+let NIDX = null, NIDX_T = 0, NAV_QUIET = false;
+const navSig = () => [D, typeof COST !== 'undefined' ? COST : null, ME && ME.role, fxAnalysisOn(), typeof FX !== 'undefined' ? FX : null];
+const navFresh = () => { const g = navSig(); return !!NIDX && NIDX.sig.every((v, i) => v === g[i]); };
+function navIndex() {
+  if (!D) return [];
+  if (navFresh()) return NIDX.items;
+  const items = [], saved = TAB, plant = isPlant();
+  for (const t of navTabs()) {
+    items.push({id: 't:' + t, k: 'Tab', label: TITLES[t], sub: navTabSub(t)});
+    let names = [];
+    if (NAV_STATIC[t]) names = NAV_STATIC[t].map((x) => typeof x === 'function' ? x() : x).filter(Boolean);
+    else {
+      try { TAB = t; const sec = PAGES[t](); names = [...sec.querySelectorAll(NAV_HEADS.join(','))].filter((h) => !h.closest('tr.drillrow')).map((h) => navCardName(h.textContent)); }
+      catch (e) { names = []; } finally { TAB = saved; }
+    }
+    const seen = new Set();
+    for (const n of names) {
+      const id = 'c:' + t + '|' + navNorm(n);
+      if (!n || seen.has(id) || (plant && NAV_MONEY.test(n))) continue;
+      seen.add(id); items.push({id, k: 'Card', label: n, sub: TITLES[t] + ' tab', t, card: n});
+    }
+  }
+  for (const g of guideSections()) if (!(plant && NAV_MONEY.test(g.title))) items.push({id: 'g:' + g.id, k: 'Guide', label: g.title, sub: 'Guide · ' + g.grp, gid: g.id});
+  NIDX = {sig: navSig(), items, by: new Map(items.map((x) => [x.id, x]))};
+  return items;
+}
+// Build the index when the app is idle after a redraw, so the first search answers at once.
+function navSoon() { clearTimeout(NIDX_T); NIDX_T = setTimeout(() => { if (D && !navFresh()) { try { navIndex(); } catch (e) { return; } navPaint(); } }, 900); }
+const navReduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function navFindHead(name) {
+  const want = (NAV_ALT[name] || [name]).map(navNorm);
+  return [...document.querySelectorAll(NAV_HEADS.map((x) => '#main ' + x).join(','))].find((h) => !h.closest('tr.drillrow') && want.includes(navNorm(h.textContent)));
+}
+function navNote(text) {
+  const m = $('#main'); if (!m) return;
+  const old = m.querySelector('.navnote'); if (old) old.remove();
+  const n = el('p', {class: 'note navnote', role: 'status', text}); m.prepend(n);
+  setTimeout(() => n.remove(), 8000);
+}
+// Go to a card: open its tab, wait for the card (Realisation draws after loading), open it if folded and scroll to it.
+function navGoCard(t, name) {
+  if (TAB !== t) { NAV_QUIET = true; try { setTab(t); } finally { NAV_QUIET = false; } }
+  if (TAB !== t) return;
+  const until = Date.now() + 8000;
+  const look = () => {
+    if (TAB !== t) return;
+    const h = navFindHead(name);
+    if (!h) { if (Date.now() < until) setTimeout(look, 250); else navNote(`“${name}” is not on ${TITLES[t]} for the day shown: pick another day with the day picker, or look the card up in the Guide.`); return; }
+    const c = h.closest('.card') || h;
+    if (c.tagName === 'DETAILS') c.open = true;
+    const hh = c.querySelector(':scope>.cardhead>h3');   // the fold state a fresh page has not applied yet counts too
+    if (c.classList.contains('shut') || (hh && foldShut(c, hh))) foldSet(c, false);
+    c.scrollIntoView({behavior: navReduced() ? 'auto' : 'smooth', block: 'start'});
+    c.classList.add('navhit'); setTimeout(() => c.classList.remove('navhit'), 2000);
+  };
+  requestAnimationFrame(() => requestAnimationFrame(look));   // after the redraw's own fold and table pass
+}
+function navGuide(gid) {
+  GUIDE_Q = '';
+  pushView(() => guideView());
+  requestAnimationFrame(() => { const x = panelEl().querySelector('#' + gid); if (x) x.scrollIntoView({block: 'start'}); });
+}
+// A stored place (Favourites, Recent) back to something that can be opened, or null when this role cannot see it now.
+function navResolve(r) {
+  if (!r || typeof r.id !== 'string' || !D) return null;
+  const p = r.id.slice(0, r.id.indexOf(':') + 1), v = r.id.slice(p.length), plant = isPlant();
+  if (plant && NAV_MONEY.test(String(r.label || ''))) return null;
+  if (p === 't:') return tabAllowed(v) ? {id: r.id, k: 'Tab', label: TITLES[v], sub: navTabSub(v)} : null;
+  if (p === 'c:' || p === 'g:') { const it = NIDX && NIDX.by.get(r.id); return it || null; }
+  if (p === 'l:') return (D.machine || {})[+v] ? {id: r.id, k: 'Loom', label: `Loom ${+v}`, sub: r.sub || '', go: () => openLoom(+v, D.latest)} : null;
+  if (p === 'rl:') return (D.machine || {})[+v] ? {id: r.id, k: 'Trends', label: `Loom ${+v} · all trends`, sub: r.sub || '', go: () => openTrends({kind: 'loom', loom: +v})} : null;
+  const [w, ...h] = v.split('|'), hg = h.join('|');
+  if (p === 'h:' && hg) return {id: r.id, k: 'Head group', label: hg, sub: `${w} cm`, go: () => openHg(hg, w, D.latest)};
+  if (p === 'rh:' && hg) return {id: r.id, k: 'Trends', label: `${hg} ${w} cm · all trends`, sub: r.sub || '', go: () => openTrends({kind: 'hg', w, hg})};
+  if (p === 'q:' && r.label) return {id: r.id, k: 'Search', label: r.label, sub: 'search again', search: r.label};
+  return null;
+}
+const navSignedIn = () => !!D;   // the loom data loads only after an email sign-in (MODE is always 'db' since the 14 Nov 2026 switchover)
+// A place opened: tabs and cards count towards Favourites; every place (and a search with no place) goes into Recent.
+function navPlace(it, count) {
+  if (!navSignedIn() || !it || !it.id) return;
+  if (count) prefSet('nav_visits', navVisit(prefGet('nav_visits'), it.id, Date.now()));
+  prefSet('nav_recent', navRecentAdd(prefGet('nav_recent'), {id: it.id, label: it.label, sub: it.sub || ''}));
+  navPaint();
+}
+function navGo(it, q) {
+  if (!it) return;
+  if (it.search != null) { navOpen(it.search); return; }
+  if (it.go) {   // looms, head groups, trends, fabrics
+    if (it.id) navPlace(it, false); else if (q && q.trim()) navPlace({id: 'q:' + q.trim().toLowerCase(), label: q.trim(), sub: 'search again'}, false);
+    it.go(); return;
+  }
+  const p = it.id.slice(0, 2);
+  if (p === 't:') { if (TAB === it.id.slice(2)) { window.scrollTo(0, 0); navPlace(it, true); } else setTab(it.id.slice(2)); }
+  else if (p === 'c:') { navPlace(it, true); navGoCard(it.t, it.card); }
+  else if (p === 'g:') { navPlace(it, false); navGuide(it.gid); }
+}
+const navFavList = () => navFavs(prefGet('nav_visits'), Date.now(), (id) => !!navResolve({id})).map((f) => navResolve({id: f.id}));
+const navRecentList = () => (prefGet('nav_recent') || []).map(navResolve).filter(Boolean);
+// One row of results (the same look as the search suggestions).
+function navRow(it, on, pick) {
+  return el('button', {type: 'button', role: 'option', class: on ? 'on' : null, 'aria-selected': on ? 'true' : 'false', onmousedown: (e) => e.preventDefault(), onclick: pick},
+    el('span', {class: 'k', text: it.k}), el('span', {class: 'nl', text: it.label}), el('span', {class: 's', text: it.sub || ''}));
+}
+// Favourites: a list that starts folded (side menu, the phone's search sheet, the top of More).
+function navFavBox(onPick) {
+  const favs = navFavList();
+  return el('details', {class: 'nfav'}, el('summary', {}, 'Favourites', favs.length ? el('span', {class: 'nfn', text: ` (${favs.length})`}) : null),
+    favs.length ? el('div', {class: 'nfav-list'}, favs.map((f) => el('button', {type: 'button', onclick: () => { if (onPick) onPick(); navGo(f); }},
+      el('span', {class: 'nl', text: f.label}), el('span', {class: 'ns', text: f.sub}))))
+      : el('p', {class: 'nempty', text: 'None yet: open a tab, or pick a card from the search, and the 5 you open most over the last 30 days show here.'}));
+}
+function navPaint() {
+  const sb = $('#nfav-sb'); if (sb) { const open = sb.querySelector('details[open]'); sb.replaceChildren(navSignedIn() ? navFavBox() : ''); if (open) sb.querySelector('details').open = true; }
+  if (D && !navFresh()) navSoon();
+}
+// The results list, shared by the laptop drop-down and the phone sheet.
+function navFinder(inp, list, o) {
+  let rows = [], sel = -1;
+  const pick = (i) => { const it = rows[i]; if (!it) return; const q = inp.value; o.done(); navGo(it, q); };
+  const head = (t, btn) => el('div', {class: 'nh'}, el('span', {text: t}), btn || null);
+  function draw() {
+    if (!navSignedIn()) { list.replaceChildren(el('div', {class: 'none', text: 'Search works once the loom data has loaded. If it does not load, press Refresh (the round-arrow icon).'})); rows = []; return; }
+    const q = inp.value.trim(), parts = [];
+    rows = [];
+    const add = (it) => { const i = rows.length; rows.push(it); parts.push(navRow(it, i === sel, () => pick(i))); };
+    if (!q) {
+      if (o.favs) parts.push(navFavBox(o.done));
+      const rec = navRecentList();
+      parts.push(head('Recent', rec.length ? el('button', {type: 'button', class: 'link', text: 'Clear', onmousedown: (e) => e.preventDefault(), onclick: () => { prefSet('nav_recent', []); draw(); inp.focus(); }}) : null));
+      if (rec.length) rec.forEach(add); else parts.push(el('div', {class: 'none', text: 'Nothing yet: open a tab, or pick a card, loom or head group from the search, and it shows here.'}));
+    } else {
+      let all = [], broke = false;
+      try { all = navIndex(); } catch (e) { broke = true; }
+      if (broke) parts.push(el('div', {class: 'none', text: 'Cards and Guide headings could not be listed: press Refresh (the round-arrow icon). Looms and head groups are still found.'}));
+      const idx = navMatch(all, q), num = /^(loom\s*)?\d+$/i.test(q), sug = suggestions(q);
+      const tc = idx.filter((x) => x.k !== 'Guide').slice(0, 10), gd = idx.filter((x) => x.k === 'Guide').slice(0, 5);
+      (num ? [...sug, ...tc, ...gd] : [...tc, ...sug.slice(0, 12), ...gd]).forEach(add);
+      if (/^loom\s*$/i.test(q)) parts.unshift(el('div', {class: 'none', text: 'Type the loom number, then Enter.'}));
+      else if (!rows.length) parts.push(el('div', {class: 'none', text: `Nothing matches “${q}”. Try a tab or card name, a loom number or a head group.`}));
+    }
+    if (o.keys) parts.push(el('div', {class: 'nkeys', text: 'Keys: 1–9 open the first nine tabs · / or Ctrl K (⌘ K on a Mac) opens this search · g then l opens a loom · Esc closes'}));
+    list.replaceChildren(...parts);
+  }
+  inp.addEventListener('input', () => { sel = inp.value.trim() ? 0 : -1; draw(); });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' && rows.length) { e.preventDefault(); sel = (sel + 1) % rows.length; draw(); }
+    else if (e.key === 'ArrowUp' && rows.length) { e.preventDefault(); sel = (sel - 1 + rows.length) % rows.length; draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (rows.length) pick(sel < 0 ? 0 : sel); }
+    else if (e.key === 'Escape') { e.preventDefault(); if (inp.value) { inp.value = ''; sel = -1; draw(); } else o.done(); }
+  });
+  return {draw, reset: () => { sel = inp.value.trim() ? 0 : -1; }};
+}
+// Laptop: the box under the logo, its results in a drop-down beside the side menu.
+const nIn = $('#nq'), nRes = $('#nres');
+function navPlaceRes() { const r = nIn.getBoundingClientRect(); nRes.style.left = Math.round(r.left) + 'px'; nRes.style.top = Math.round(r.bottom + 6) + 'px'; }
+const NF = navFinder(nIn, nRes, {keys: true, done: () => { nRes.hidden = true; nIn.setAttribute('aria-expanded', 'false'); nIn.blur(); }});
+function navShowRes() { navPlaceRes(); NF.draw(); nRes.hidden = false; nIn.setAttribute('aria-expanded', 'true'); }
+nIn.addEventListener('focus', () => { NF.reset(); navShowRes(); });
+nIn.addEventListener('input', () => { if (nRes.hidden) navShowRes(); });
+nIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== nIn) { nRes.hidden = true; nIn.setAttribute('aria-expanded', 'false'); } }, 150));
+window.addEventListener('resize', () => { if (!nRes.hidden) navPlaceRes(); });
+// Phone: the search sheet.
+const nSheet = $('#nsheet'), nInM = $('#nq-m');
+const NFM = navFinder(nInM, $('#nres-m'), {favs: true, done: () => nSheet.close()});
+$('#nsheet-x').addEventListener('click', () => nSheet.close());
+$('#nfind-m').addEventListener('click', () => navOpen(''));
+// Open the search with TEXT typed: in the side menu on a laptop, else the sheet.
+function navOpen(text) {
+  if (nIn.offsetParent) { nIn.value = text; nIn.focus(); NF.reset(); navShowRes(); const n = nIn.value.length; nIn.setSelectionRange(n, n); return; }
+  nInM.value = text; NFM.reset(); NFM.draw(); if (!nSheet.open) nSheet.showModal(); nInM.focus(); const n = nInM.value.length; nInM.setSelectionRange(n, n);
+}
+// Shortcuts: never while typing in a box, with a panel or sheet open, or with Ctrl, ⌘ or Alt held (except Ctrl/⌘ K).
+let NAV_G = 0;
 document.addEventListener('keydown', (e) => {
-  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
-  const a = document.activeElement; if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)) return;
-  if (dlg && dlg.open) return;
-  e.preventDefault(); qIn.focus(); qIn.select();
+  if (e.defaultPrevented || !navSignedIn()) return;
+  const k = e.key, a = document.activeElement, open = document.querySelector('dialog[open]');
+  const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (k === 'k' || k === 'K')) { if (open && open !== nSheet) return; e.preventDefault(); navOpen(''); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey || typing || open) { NAV_G = 0; return; }
+  if (k === '/') { e.preventDefault(); NAV_G = 0; navOpen(''); return; }
+  if (k === 'g') { NAV_G = Date.now(); return; }
+  if ((k === 'l' || k === 'L') && NAV_G && Date.now() - NAV_G < 1500) { NAV_G = 0; e.preventDefault(); navOpen('Loom '); return; }
+  NAV_G = 0;
+  if (/^[1-9]$/.test(k)) { const t = navTabs()[+k - 1]; if (t) { e.preventDefault(); if (t === TAB) window.scrollTo(0, 0); else setTab(t); } }
 });
 
 // Light / dark (follows the phone or laptop until switched here)
