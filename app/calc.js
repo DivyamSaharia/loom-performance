@@ -530,3 +530,185 @@ function wkMean(days, end, get, w, better) {
   const fig = (L) => { const W = L.reduce((a, p) => a + p.w, 0); return W > 0 ? L.reduce((a, p) => a + p.v * p.w, 0) / W : null; };
   return wkBy(pts, end, (p) => p.date, fig, better);
 }
+
+// ================================================================ Round F (Divyam, 18 Nov 2026): set point and target tiles
+// ---- Pressure. The set point needed = the floor (the highest main pressure of the day) + the margin from the Config
+// sheet's Settings tab (setpoint_margin_kgf, kgf/cm²; it replaced the 0.2 bar line drop). The saving, as a share of the
+// compressor's energy, is the rule's pct % per kgf/cm² of the drop from where the compressor runs (`from`) to where it
+// needs to run (`to`): 0 where it already runs at or below it, never negative; null when a figure is missing.
+function pressNeed(floor, margin) { return ok(floor) && ok(margin) ? floor + margin : null; }
+function pressFrac(from, to, pct) { return ok(from) && ok(to) && ok(pct) ? pct / 100 * Math.max(0, from - to) : null; }
+// The Pressure tab's two parts, which add up to the whole: the set point brought down to what today's floor needs
+// (fix), then the looms brought to their reference (looms), from wherever the fix leaves the compressor.
+function pressParts(sp, floorNow, floorNew, margin, pct) {
+  const now = pressNeed(floorNow, margin), after = pressNeed(floorNew, margin);
+  if (!ok(sp) || !ok(now) || !ok(after)) return {now, after, fix: null, looms: null, total: null};
+  const fix = pressFrac(sp, now, pct), looms = pressFrac(Math.min(sp, now), after, pct);
+  return {now, after, fix, looms, total: fix + looms};
+}
+
+// ---- Folding shortage (Divyam, 18 Nov 2026), month to date up to the day shown, dropped days left out (they are not in
+// the costing days): 1 − (A-grade folded picks + B grade picks + cut piece picks) ÷ production picks. B grade picks = each
+// register entry's metres × its quality's PICK (PROD.PICK = metres × PICK, so the units meet); an entry whose quality has
+// no PICK takes the floor's weighted PICK (the day's production picks ÷ its metres), as cut pieces do. A day without the
+// figures it needs (no picks, no A-grade folded picks, no cut piece metres, no B grade register) is left out, never 0.
+// days: costing days [{date, picks (lakh), afold (lakh), metres, bgrade: {cut_pcs}}]; reg: [{date, m, ppi}];
+// regDays: dates that have a register. → {s, days, of, from, to, A, B, C, P, avgM, out: [{date, why}]} (picks in units).
+function foldShort(days, reg, regDays, date) {
+  const ym = String(date || '').slice(0, 7), has = new Set(regDays || []);
+  const mtd = (days || []).filter((d) => d.date.slice(0, 7) === ym && d.date <= date).sort((a, b) => a.date.localeCompare(b.date));
+  const byDay = new Map();
+  for (const e of reg || []) { if (!byDay.has(e.date)) byDay.set(e.date, []); byDay.get(e.date).push(e); }
+  let A = 0, B = 0, C = 0, P = 0, avgM = 0, n = 0; const out = [], used = [];
+  for (const d of mtd) {
+    const cut = d.bgrade ? d.bgrade.cut_pcs : null;
+    const why = !(d.picks > 0) ? 'no production picks' : !ok(d.afold) ? 'no A-grade folded picks' : !(d.metres > 0) ? 'no metres' : !ok(cut) ? 'no cut piece metres' : !has.has(d.date) ? 'no B grade register' : null;
+    if (why) { out.push({date: d.date, why}); continue; }
+    const p = d.picks * 1e5, w = p / d.metres;
+    let b = 0;
+    for (const e of byDay.get(d.date) || []) { if (!ok(e.m)) continue; if (ok(e.ppi) && e.ppi > 0) b += e.m * e.ppi; else { b += e.m * w; avgM += e.m; } }
+    A += d.afold * 1e5; B += b; C += cut * w; P += p; n += 1; used.push(d.date);
+  }
+  return {s: P > 0 ? 1 - (A + B + C) / P : null, days: n, of: mtd.length, from: used[0] || null, to: used[used.length - 1] || null, A, B, C, P, avgM, out};
+}
+
+// ---- PACKING grows at the month-to-date rupees per metre: Σ PACKING ÷ Σ metres over the month's costing days up to the
+// day shown (dropped days are not costing days). A day without a PACKING amount or metres is left out (never ₹0); null
+// when no day has both.
+function packRate(days, date) {
+  const ym = String(date || '').slice(0, 7);
+  let a = 0, m = 0;
+  for (const d of days || []) {
+    if (d.date.slice(0, 7) !== ym || d.date > date || !(d.metres > 0)) continue;
+    const l = (d.lines || []).find((x) => x.n === 'PACKING');
+    if (!l || !ok(l.a)) continue;
+    a += l.a; m += d.metres;
+  }
+  return m > 0 ? a / m : null;
+}
+
+// ---- Target cost per pick (Divyam, 18 Nov 2026). The headline cost per pick, As entered, for one day: (total expenses +
+// cut piece loss) ÷ production picks. Steps applied in order, so they add up:
+//   1. CFM: each loom at its target CFM (excess air only, never more air); the compressor's kWh fall by the air saved ×
+//      its kWh per ft³ that day (Power (Compressor) kWh ÷ the floor's air), at its ₹ per unit.
+//   2. Pressure: the compressor at the set point needed with every loom at its target main pressure (press.frac, a share of its energy), on the kWh
+//      left after step 1.
+//   3. Extra picks: each loom that ran at its target effective RPM (93% of target RPM); one already above adds nothing.
+//      Fixed costs spread over the larger pick count.
+//   4. The lines that grow with the extra picks: POWER (the compressor's units for the extra picks at the loom's new air
+//      per pick and the lower pressure), WARPING and TRANSPORT (the rate on the day's file × extra metres) and PACKING
+//      (month-to-date ₹ per metre × extra metres). Extra metres loom by loom: extra picks ÷ its quality's PICK.
+//   5. No B grade and no cut pieces (Divyam, 18 Nov 2026): the B GRADE line and the cut piece loss to 0.
+// Every other line stays fixed. A loom with no target, or no PICK for its quality, is a gap for the step it lacks (never
+// 0) and counts in the coverage. A missing compressor reading, set point or line rate leaves that part out, named in gaps.
+// Picks are on the costing basis (fabric picks ÷ 39.37); paise per pick; rupees for the day.
+// inp = {day: {date, picks (lakh), total, cut, lines: [{n, a, r}], hg: [{hg, root, ppi}]}, comp: {kwh, rate} | null,
+//        pack: ₹ per metre | null, frac: pressure share | null, fracWhy, looms: [{loom, width, hg, hg0, run, stop, cfm,
+//        erpm, fpicks, pf, tcfm, terpm}]}
+const TC_PPI = 39.37;
+// Extra fabric picks of one loom-day at its target effective RPM: (target − now) × its run + stop minutes × its panna
+// factor; 0 when it already runs at or above the target; null with no target.
+function tcExtraFab(x) { return x && ok(x.terpm) && ok(x.erpm) ? Math.max(0, x.terpm - x.erpm) * ((x.run || 0) + (x.stop || 0)) * (x.pf || 1) : null; }
+function targetCost(inp) {
+  const day = inp && inp.day;
+  if (!day || !(day.picks > 0) || !ok(day.total)) return {ok: false, why: 'no costing'};
+  const P = day.picks * 1e5, N0 = day.total + (ok(day.cut) ? day.cut : 0);
+  const line = (n) => (day.lines || []).find((x) => x.n === n) || null;
+  const rate = (n) => { const l = line(n); return l && ok(l.r) ? l.r : null; };
+  const ppiBy = new Map();
+  for (const h of day.hg || []) { if (!(h.ppi > 0)) continue; if (h.root) ppiBy.set('r:' + h.root, h.ppi); ppiBy.set('n:' + h.hg, h.ppi); }
+  const L = (inp.looms || []).filter((x) => x.run > 0);
+  const comp = inp.comp && ok(inp.comp.kwh) && ok(inp.comp.rate) ? inp.comp : null;
+  const F = L.reduce((a, x) => a + (ok(x.cfm) ? x.cfm * x.run : 0), 0);
+  const k = comp && F > 0 ? comp.kwh / F : null, rho = comp ? comp.rate : null;
+  const f = ok(inp.frac) ? inp.frac : null;
+  const rW = rate('WARPING'), rT = rate('TRANSPORT'), rP = ok(inp.pack) ? inp.pack : null;
+  const recs = L.map((x) => {
+    const a0 = ok(x.cfm) ? x.cfm * x.run : 0;
+    const a1 = ok(x.tcfm) && ok(x.cfm) ? Math.min(x.cfm, x.tcfm) * x.run : a0;
+    const eFab = tcExtraFab(x);
+    const E = ok(eFab) ? eFab / TC_PPI : null;
+    const ppi = ppiBy.get('r:' + (x.hg0 || x.hg)) || ppiBy.get('n:' + x.hg) || null;
+    const dM = ok(E) && ppi ? E / ppi : null;
+    const xAir = ok(eFab) && x.fpicks > 0 ? eFab * a1 / x.fpicks : null;
+    // no CFM reading: its saving and the air its extra picks need are unknown (a gap, never 0)
+    const cfmKwh = k != null && ok(x.tcfm) && ok(x.cfm) ? (a0 - a1) * k : null;
+    const addKwh = k != null && ok(x.cfm) && ok(xAir) ? xAir * k * (1 - (f != null ? f : 0)) : null;
+    const gaps = [];
+    if (!ok(x.cfm)) gaps.push('no CFM reading');
+    else if (!ok(x.tcfm)) gaps.push('no target CFM');
+    if (!ok(x.terpm)) gaps.push('no target RPM');
+    else if (E > 0 && !ppi) gaps.push('no picks per metre for its quality in the day\'s costing');
+    else if (E > 0 && !(x.fpicks > 0)) gaps.push('no picks recorded for this loom that day');
+    // extra picks count only where the extra metres can be worked out, so every added cost has its picks and vice versa
+    const Ek = ok(E) && (E === 0 || (ppi && x.fpicks > 0)) ? E : null;
+    return {x, a0, a1, eFab, E: Ek, dM: Ek == null ? null : Ek === 0 ? 0 : dM, ppi, xAir: Ek == null ? null : xAir, cfmKwh, addKwh: Ek == null ? null : addKwh, gaps};
+  });
+  const sum = (g) => recs.reduce((a, r) => a + (ok(g(r)) ? g(r) : 0), 0);
+  const E = sum((r) => r.E), dM = sum((r) => r.dM);
+  const gaps = [];
+  const Sc = k != null ? sum((r) => r.cfmKwh) * rho : null;
+  if (!comp) gaps.push('compressor');
+  const K1 = comp ? comp.kwh - (k != null ? sum((r) => r.cfmKwh) : 0) : null;
+  const Sp = comp && f != null ? K1 * f * rho : null;
+  if (comp && f == null) gaps.push('pressure');
+  // the extra picks' compressor power counts whenever there is a reading; without the pressure step it is at today's pressure
+  const add = {power: comp && k != null ? sum((r) => r.addKwh) * rho : null,
+    warping: rW != null ? rW * dM : null, transport: rT != null ? rT * dM : null, packing: rP != null ? rP * dM : null};
+  for (const [n, v] of [['WARPING', add.warping], ['TRANSPORT', add.transport], ['PACKING', add.packing]]) if (v == null && dM > 0) gaps.push('rate:' + n);
+  const Add = (add.power || 0) + (add.warping || 0) + (add.transport || 0) + (add.packing || 0);
+  const bl = line('B GRADE'), Bq = (bl && ok(bl.a) ? bl.a : 0) + (ok(day.cut) ? day.cut : 0);
+  const s0 = 100 * N0 / P, s1 = 100 * (N0 - (Sc || 0)) / P, s2 = 100 * (N0 - (Sc || 0) - (Sp || 0)) / P;
+  const s3 = 100 * (N0 - (Sc || 0) - (Sp || 0)) / (P + E), s4 = 100 * (N0 - (Sc || 0) - (Sp || 0) + Add) / (P + E);
+  const s5 = 100 * (N0 - (Sc || 0) - (Sp || 0) + Add - Bq) / (P + E);
+  const steps = [
+    {id: 'cfm', pp: Sc != null ? s1 - s0 : null, rs: Sc != null ? -Sc : null},
+    {id: 'press', pp: Sp != null ? s2 - s1 : null, rs: Sp != null ? -Sp : null},
+    {id: 'picks', pp: s3 - s2, rs: (s3 - s2) / 100 * (P + E)},
+    {id: 'added', pp: s4 - s3, rs: Add, parts: add},
+    {id: 'quality', pp: s5 - s4, rs: -Bq, bgrade: bl && ok(bl.a) ? bl.a : 0, cut: ok(day.cut) ? day.cut : 0}];
+  // per loom (its loom-day records together): CFM saving, extra picks and metres, and its effect on the target cost per
+  // pick = (− its CFM saving + its added costs − today's cost per pick × its extra picks) ÷ the target day's picks, so the
+  // looms' effects plus the floor-wide pressure and quality steps add up to the whole change.
+  const c0 = N0 / P;
+  const parts = recs.map((r) => {
+    const cRs = r.cfmKwh != null ? r.cfmKwh * rho : null;
+    const aRs = (r.addKwh != null ? r.addKwh * rho : 0) + (r.dM != null ? (rW || 0) * r.dM + (rT || 0) * r.dM + (rP || 0) * r.dM : 0);
+    return {loom: r.x.loom, width: r.x.width, hg: r.x.hg, cfmRs: cRs, E: r.E, Eraw: ok(r.eFab) ? r.eFab / TC_PPI : null, dM: r.dM, gaps: r.gaps,
+      effect: 100 * (-(cRs || 0) + aRs - c0 * (ok(r.E) ? r.E : 0)) / (P + E)};
+  });
+  const rows = tcGroup(parts, (q) => q.loom);
+  const cover = {looms: rows.length, full: rows.filter((o) => !o.gap).length, cfm: recs.filter((r) => ok(r.x.tcfm) && ok(r.x.cfm)).length, rpm: recs.filter((r) => ok(r.x.terpm) && r.ppi).length, recs: recs.length};
+  // the whole-floor parts on the same footing as the loom rows (over the target day's picks), so rows + these = the change
+  const floorPp = {press: Sp != null ? -100 * Sp / (P + E) : null, quality: s5 - s4};
+  return {ok: true, date: day.date, P, E, dM, c0: s0, cpp: s5, steps, rows, parts, floorPp, gaps, cover, Sc, Sp, Add, Bq, add, f, kwhFt3: k, rate: rho,
+    rates: {warping: rW, transport: rT, packing: rP}};
+}
+// targetCost's per-record parts added up by a key (the loom, or head group × width): a figure no record has stays null
+// (a gap, never 0); gaps are listed once each.
+function tcGroup(parts, key) {
+  const by = new Map();
+  for (const q of parts || []) {
+    const k = key(q), o = by.get(k) || {key: k, loom: q.loom, width: q.width, hgs: [], looms: [], cfmRs: null, E: null, dM: null, effect: 0, gaps: []};
+    if (!o.hgs.includes(q.hg)) o.hgs.push(q.hg);
+    if (!o.looms.includes(q.loom)) o.looms.push(q.loom);
+    if (ok(q.cfmRs)) o.cfmRs = (o.cfmRs || 0) + q.cfmRs;
+    if (ok(q.E)) o.E = (o.E || 0) + q.E;
+    if (ok(q.dM)) o.dM = (o.dM || 0) + q.dM;
+    o.effect += q.effect;
+    for (const g of q.gaps) if (!o.gaps.includes(g)) o.gaps.push(g);
+    by.set(k, o);
+  }
+  return [...by.values()].map((o) => ({...o, gap: o.gaps.length ? o.gaps.join('; ') : null, none: o.cfmRs == null && o.E == null}));
+}
+// Target folded cost per pick (owner, Divyam 18 Nov 2026): the folded cost per pick of the corrected costing (COST.days) with
+// the same savings, extra picks and added costs, and no B grade or cut pieces: (OPEX − savings + added costs) ÷ target
+// A-grade folded picks, where OPEX = the folded cost × A-grade folded picks − (B grade loss + cut piece loss − B grade
+// revenue) and target A-grade folded picks = target production picks × (1 − folding shortage). Paise; null when missing.
+function targetFolded(fday, tc, short) {
+  if (!fday || !ok(fday.fcpp) || !(fday.afold > 0) || !tc || !tc.ok || !ok(short)) return null;
+  const b = fday.bgrade || {}, cut = ok(fday.cut) ? fday.cut : 0;
+  const opex = fday.fcpp / 100 * fday.afold * 1e5 - ((ok(b.loss) ? b.loss : 0) + cut - (ok(b.rev) ? b.rev : 0));
+  const num = opex - (tc.Sc || 0) - (tc.Sp || 0) + tc.Add, den = (fday.picks * 1e5 + tc.E) * (1 - short);
+  return den > 0 ? 100 * num / den : null;
+}

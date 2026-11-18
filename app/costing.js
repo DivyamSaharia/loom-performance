@@ -705,6 +705,7 @@ function dayRulesCard(d, adj, dp, R) {
 // Power (Compressor) kWh and rupees come from the costing sheet (D.power, from 07 Nov 2026). One compressor serves both widths,
 // so the day's kWh is spread over the whole floor's air (all looms, both widths).
 let POWER_PCT = 7;   // compressor energy saved per 1 kgf/cm² of pressure; set on the Targets tab
+let COMP_SP = null;  // Round F: the compressor's own set point, kgf/cm², typed on the Pressure tab (App targets row compsp__kgf)
 // Cost per pick saved, in paise per pick on the costing basis: rupees saved ÷ picks of the same scope and day, where picks are
 // fabric picks ÷ 39.37 (= metres × picks per inch, the costing sheet's PROD PICK), so it compares with the Costing tab's cost per pick.
 const cPicks = (L) => L.reduce((a, x) => a + (ok(x.fpicks) ? x.fpicks : (x.picks || 0)), 0) / 39.37;
@@ -768,27 +769,27 @@ function compPowerCard() {
     last ? el('div', {class: 'kpis'}, kpiC('Compressor energy', f0(last.c.kwh), 'kWh', dfmt(last.d)), kpiC('Cost', rs(last.c.rupees), '', `₹${f2(last.c.rate)} a unit`), kpiC('Energy per air', f1(last.c.kwhKm3), 'kWh per 1,000 m³', `${f2(last.c.kwhFt3 * 1000)} kWh per 1,000 ft³`), kpiC('Cost per air', rs(last.c.rsFt3 * 1000), 'per 1,000 ft³', null)) : null,
     bar, rows.length > 1 ? lineChart({dates: rows.map((r) => r.d), aria: 'Compressor energy per 1,000 m³ of air', fmt: f1, series: [{name: 'kWh per 1,000 m³', vals: rows.map((r) => r.c.kwhKm3)}]}) : el('p', {class: 'note', text: allRows.length > 1 ? 'Pick a longer period: the line needs two days with a compressor reading.' : 'The trend line starts once a second day with a compressor reading is in.'}));
 }
-function pressureMoneyCard(floorNow, floorNew, rule, adia) {
+function pressureMoneyCard(pp) {
   const c = compDay(D.latest);
   const body = [];
-  if (c && floorNow > floorNew) {
-    body.push(moneyKpis(c, rule * c.kwh, adia * c.kwh, floorPicks(c.date), `all looms, both widths, on ${dfmt(c.date)}`));
-    body.push(el('p', {class: 'note', text: `${f1(rule * 100)}–${f1(adia * 100)}% of the compressor's ${f0(c.kwh)} kWh. The low end is the ${POWER_PCT}% per 1 kgf/cm² rule (editable on the Targets tab); the high end is the adiabatic estimate. Cost per pick saved = rupees saved ÷ the whole floor's picks that day (fabric picks ÷ 39.37, the costing sheet's basis), in paise. A pressure saving is a whole-compressor saving, so the tables use the whole floor's picks too.`}));
-  } else if (c) body.push(el('p', {class: 'note', text: 'No loom sits above its reference pressure, so there is nothing to save.'}));
+  if (c && ok(pp.total) && pp.total > 0) {
+    body.push(moneyKpis(c, pp.total * c.kwh, pp.total * c.kwh, floorPicks(c.date), `all looms, both widths, on ${dfmt(c.date)}`));
+    body.push(el('p', {class: 'note', text: `${f1(pp.total * 100)}% of the compressor's ${f0(c.kwh)} kWh: ${f1(pp.fix * 100)}% from bringing the compressor down from its set point (${f2(COMP_SP)} kgf/cm²) to the ${f2(pp.now)} today's floor needs, and ${f1(pp.looms * 100)}% from the looms brought to their reference (${f2(pp.after)} needed after the work). ${POWER_PCT}% of compressor energy per 1 kgf/cm² (editable on the Targets tab). Cost per pick saved = rupees saved ÷ the whole floor's picks that day (fabric picks ÷ 39.37, the costing sheet's basis), in paise. A pressure saving is a whole-compressor saving, so the tables use the whole floor's picks too.`}));
+  } else if (c && ok(pp.total)) body.push(el('p', {class: 'note', text: 'The compressor already runs at or below the set point needed, and no loom sits above its reference pressure, so there is nothing to save.'}));
+  else if (c) body.push(el('p', {class: 'note', text: !ok(COMP_SP) ? (canEdit() ? 'Type the compressor set point on the tile above to see the saving.' : 'The compressor set point is not typed in yet: tell the owner.') : (typeof fxIsOwner === 'function' && fxIsOwner() ? 'The margin is missing: add setpoint_margin_kgf (kgf/cm²) to the Config sheet Settings tab.' : 'The margin is not set yet: tell the owner.')}));
   body.push(el('p', {class: 'note', text: compNote(c, D.latest) + ' CFM savings are on the CFM tab and are not added to this: lowering pressure also lowers air use, so the two overlap.'}));
   if (typeof fxRpmGainNote === 'function') body.push(fxRpmGainNote(D.latest, true));   // R2: realisation gained at benchmark RPM, whole floor (owner, analysis on)
-  return card('What lowering the pressure is worth', 'Compressor energy at the lower setpoint, in kWh and rupees', ...body);
+  return card('What lowering the pressure is worth', 'Compressor energy at the lower set point, in kWh and rupees', ...body);
 }
-function moneyRange(lo, hi) {
-  const c = compDay(D.latest); if (!c) return '—';
-  const a = Math.round(lo * c.kwh * c.rate), b = Math.round(hi * c.kwh * c.rate), pk = floorPicks(c.date);
-  const pa = ppS(lo * c.kwh * c.rate, pk), pb = ppS(hi * c.kwh * c.rate, pk);
-  const money = a === b ? rs(a) : `${rs(a)}–${rs(b)}`;
-  if (!ok(pa)) return money;
-  return el('span', {}, money, el('div', {class: 'note', text: pzR(pa, pb) + ' paise/pick'}));
+// A share of the compressor's energy, in rupees a day on the day shown, with its paise per pick under it (Round F: one
+// figure, the rule only).
+function moneyOne(frac) {
+  const c = compDay(D.latest); if (!c || !ok(frac)) return '—';
+  const r = frac * c.kwh * c.rate, pa = ppS(r, floorPicks(c.date));
+  return ok(pa) ? el('span', {}, rs(Math.round(r)), el('div', {class: 'note', text: pz(pa) + ' paise/pick'})) : rs(Math.round(r));
 }
-function setPct(x) { const [a, b] = saving(x.floor, x.without); return `${f1(a * 100)}–${f1(b * 100)}`; }
-function setRs(x) { const [a, b] = saving(x.floor, x.without); return moneyRange(a, b); }
+function setPct(x) { const a = saving(x.floor, x.without); return ok(a) ? f1(a * 100) : '—'; }
+function setRs(x) { const a = saving(x.floor, x.without); return ok(a) ? moneyOne(a) : '—'; }
 // All-trends panel: what the subject's air costs, from the floor's compressor energy per ft³ (days with a compressor reading only)
 function compTrendBlock(s, dates) {
   const P = (D.power && D.power.days) || {};
@@ -816,9 +817,131 @@ function powerRuleCard() {
     catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access'); }
     btn.disabled = false;
   }});
-  return card('Compressor power rule', 'Used on the Pressure tab',
+  return card('Compressor power rule', 'Used on the Pressure tab and the Target cost per pick tile on Actions',
     el('div', {class: 'toolbar'}, el('label', {text: 'Energy saved per 1 kgf/cm² of lower pressure'}), inp, el('span', {text: '%'}), btn, msg),
-    el('p', {class: 'note', text: 'Rule of thumb: about 7% of compressor power per 1 kgf/cm² (about 1 bar) of pressure. Set the figure for your compressor; the Pressure tab uses it for the low end of the saving range, and the adiabatic estimate stays as the high end.'}));
+    el('p', {class: 'note', text: 'Rule of thumb: about 7% of compressor power per 1 kgf/cm² (about 1 bar) of pressure. Set the figure for your compressor; the Pressure tab and the Target cost per pick tile on Actions use it for every pressure saving.'}));
+}
+// ================================================================ Round F (Divyam, 18 Nov 2026): Target cost per pick
+// The Actions tiles (Target cost per pick, Folding shortage) and the "Where the saving is" card. Same day as Actions
+// (D.latest); headline cost per pick As entered (the plant's power units, without the power correction); whole plant, both
+// widths. Never falls back to another day. Arithmetic: targetCost, foldShort, packRate in calc.js.
+const tcDays = () => !COST ? [] : (cHasFix() ? COST.days_entered : COST.days) || [];
+const tcOwner = () => typeof fxIsOwner === 'function' && fxIsOwner();
+const tcNext = () => tcOwner() ? 'see Files per day on Data health' : 'tell the owner';
+const TC_CARD = 'Where the saving is';
+function tcRun(date) {
+  const days = tcDays(), day = days.find((d) => d.date === date) || null;
+  const PL = date === D.latest ? pressLooms() : [];
+  const floorT = PL.length ? Math.max(...PL.map((l) => ok(l.tg) ? Math.min(l.main, l.tg) : l.main)) : null;
+  const need = pressNeed(floorT, pMargin()), frac = pressFrac(COMP_SP, need, POWER_PCT);
+  const c = compDay(date), comp = c && c.exact ? {kwh: c.kwh, rate: c.rate} : null;
+  const looms = tcLooms(date);
+  const tc = targetCost({day, comp, pack: packRate(days, date), frac, looms});
+  return Object.assign(tc, {date, looms, floorT, need, frac, noTgtP: PL.filter((l) => !ok(l.tg)).length, nPress: PL.length, comp: !!comp});
+}
+// The loom-days that ran on a day, with their targets (target CFM; target effective RPM = 93% of target RPM)
+function tcLooms(date) {
+  return (D.loomdays || []).filter((x) => x.date === date && x.run > 0).map((x) => {
+    const t = x.hg !== 'Unassigned' ? tgt(x.width, x.hg) : null;
+    return {loom: x.loom, width: String(x.width), hg: x.hg, hg0: x.hg0, run: x.run, stop: x.stop, cfm: x.cfm, erpm: ok(x.erpm) ? x.erpm : erpmOf(x),
+      fpicks: ok(x.fpicks) ? x.fpicks : x.picks, pf: pf(x.width, x.hg), tcfm: t && ok(t.cfm) ? t.cfm : null, terpm: x.hg !== 'Unassigned' ? tgtE(x.width, x.hg) : null};
+  });
+}
+function tcShort(date) {
+  const bq = (COST && COST.bq) || {};
+  return foldShort(tcDays(), bq.reg || [], (bq.days || []).filter((d) => d.reg).map((d) => d.date), date);
+}
+const tcUnavail = (date) => `Unavailable: costing for ${dfmt(date)} not uploaded yet`;
+const tcPp = (x) => !ok(x) ? '—' : (x < 0 ? '−' : x > 0 ? '+' : '') + Math.abs(x).toFixed(Math.abs(x) < 0.1 && x !== 0 ? 3 : 2);
+// What a gap on the tile leaves out, in plain words
+function tcGapText(tc) {
+  const g = tc.gaps || [], out = [];
+  if (g.includes('compressor')) out.push(`CFM, pressure and the extra picks' compressor power left out: no compressor reading for ${dfmt(tc.date)} (${tcNext()})`);
+  if (g.includes('pressure')) out.push(!ok(COMP_SP) ? (canEdit() ? 'pressure left out: type the compressor set point on the Pressure tab' : 'pressure left out: the compressor set point is not typed in yet (tell the owner)') : !ok(pMargin()) ? (tcOwner() ? 'pressure left out: add setpoint_margin_kgf to the Config sheet Settings tab' : 'pressure left out: no set point margin yet (tell the owner)') : `pressure left out: no main pressure readings for ${dfmt(tc.date)}`);
+  const r = g.filter((x) => x.startsWith('rate:') && x !== 'rate:PACKING').map((x) => x.slice(5));
+  if (r.length) out.push(`${r.map((x) => x.charAt(0) + x.slice(1).toLowerCase()).join(', ')} left out: no rate on the day's costing file (${tcNext()})`);
+  if (g.includes('rate:PACKING')) out.push(`Packing left out: no packing amount on this month's costing days up to ${dfmt(tc.date)} yet, so there is no month-to-date rupees per metre (${tcNext()})`);
+  return out;
+}
+function tcActionTiles(kpi) {
+  if (!COST) { const why = `costing not loaded yet: press Refresh (the round arrow); if it stays, ${tcNext()}`;
+    return [kpi('Target cost per pick', '—', '', null, why), kpi('Folding shortage', '—', '', null, why)]; }
+  const date = D.latest, tc = tcRun(date), out = [];
+  const t = tc.ok
+    ? kpi('Target cost per pick', pn(tc.cpp, 2), 'paise', el('span', {class: 'delta ' + (tc.cpp < tc.c0 ? 'up' : 'flat'), text: `now ${pn(tc.c0, 2)} · ${tcPp(tc.cpp - tc.c0)} paise`}),
+      `As entered · ${tc.cover.full} of ${tc.cover.looms} looms with every target${tcGapText(tc).length ? ' · ' + tcGapText(tc).length + ' part' + (tcGapText(tc).length === 1 ? '' : 's') + ' left out' : ''}`,
+      el('div', {class: 'note', text: 'Folding, beams and dispatch lag the looms: this assumes they catch up within the month.'}))
+    : kpi('Target cost per pick', '—', '', null, `${tcUnavail(date)}. Next: ${tcNext()}.`);
+  t.classList.add('tap'); t.setAttribute('role', 'button'); t.setAttribute('tabindex', '0'); t.setAttribute('aria-label', 'Target cost per pick: open Where the saving is');
+  const go = () => navGoCard('actions', TC_CARD);
+  t.addEventListener('click', go); t.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+  out.push(t);
+  const fs = tcShort(date);
+  out.push(ok(fs.s)
+    ? kpi('Folding shortage', f1(fs.s * 100), '%', null, `month to date, ${fs.days} of ${fs.of} days (${dfmt(fs.from)}–${dfmt(fs.to)}) · picks woven but not folded as A grade, B grade or cut pieces`)
+    : kpi('Folding shortage', '—', '', null, fs.of ? `no day this month has all its figures yet (${fs.out.map((o) => `${dfmt(o.date)}: ${o.why}`).slice(0, 2).join('; ')}). Next: ${tcNext()}.` : `no costing day this month up to ${dfmt(date)} yet. Next: ${tcNext()}.`));
+  if (typeof fxTargetTiles === 'function') out.push(...fxTargetTiles(kpi, tc, fs));
+  return out;
+}
+function tcCard() {
+  if (!COST) return null;
+  const date = D.latest, tc = tcRun(date);
+  if (!tc.ok) return card(TC_CARD, `${dfmt(date)} · target cost per pick, step by step`,
+    el('p', {class: 'empty', text: `${tcUnavail(date)}. Next: ${tcNext()}. This card never uses another day's costing.`}));
+  const hgTab = (name) => () => navGoCard('quality', name);
+  const go = (t, name) => el('button', {class: 'link', type: 'button', text: name ? `${TITLES[t]}: ${name}` : TITLES[t], onclick: () => name ? navGoCard(t, name) : setTab(t)});
+  const toCosting = (name) => el('button', {class: 'link', type: 'button', text: `Costing: ${name}`, onclick: () => { CDATE = date; navGoCard('costing', name); }});
+  const st = Object.fromEntries(tc.steps.map((x) => [x.id, x]));
+  const rsC = (x) => !ok(x) ? '—' : rs(x);
+  const left = tcGapText(tc);
+  // a step left out says why, with the same next step as tcGapText
+  const noComp = `left out: no compressor reading for ${dfmt(date)}. Next: ${tcNext()}`;
+  const why = (id) => id === 'cfm' && !tc.comp ? noComp : id === 'press' && st.press.pp == null ? (tc.comp ? (!ok(COMP_SP) ? (canEdit() ? 'left out: type the compressor set point on the Pressure tab' : 'left out: the compressor set point is not typed in yet. Next: tell the owner') : !ok(pMargin()) ? (tcOwner() ? 'left out: no set point margin. Next: add setpoint_margin_kgf to the Config sheet Settings tab' : 'left out: no set point margin yet. Next: tell the owner') : `left out: no main pressure readings for ${dfmt(date)}. Next: ${tcNext()}`) : noComp) : null;
+  const lk = (p) => pn(p / 1e5, 2);
+  const A = tc.add;
+  const at = (v, r, dec, miss) => ok(r) ? `${rsC(v)} at ₹${pn(r, dec)}/m${dec === 3 ? ' (month to date)' : ''}` : `left out (${miss})`;
+  const stepRow = (label, sub, x, link) => [el('div', {}, el('div', {text: label}), sub ? el('div', {class: 'note', text: sub}) : null, link ? el('div', {}, link) : null),
+    x && x.pp != null ? tcPp(x.pp) : el('span', {class: 'pill muted', text: 'left out'}), x && x.rs != null ? rsC(x.rs) : '—'];
+  const steps = el('div', {class: 'nosort tcsteps'}, table(['Step', ['Per pick', 'paise'], ['The day', '₹']], [
+    [el('b', {text: 'Cost per pick now'}), pn(tc.c0, 2), rsC(tc.c0 / 100 * tc.P)],
+    stepRow('1. Every loom at its target CFM', why('cfm') || `${ok(tc.Sc) ? f0(tc.Sc / tc.rate) : '—'} kWh less at ₹${f2(tc.rate)} a unit (Power (Compressor) for the day)`, st.cfm, go('cfm', 'Current vs benchmark, best and target, by loom')),
+    stepRow('2. Compressor at the set point needed with every loom at its target pressure', why('press') || (COMP_SP > tc.need ? `${f2(COMP_SP)} → ${f2(tc.need)} kgf/cm² (the floor with every loom at its target main pressure, ${f2(tc.floorT)}, + margin; this uses targets whatever the Pressure tab's Reference switch shows), on the air left after step 1` : `the compressor runs at ${f2(COMP_SP)} kgf/cm², already at or below the ${f2(tc.need)} needed with every loom at its target main pressure (floor ${f2(tc.floorT)} + margin): nothing to save`) + (tc.noTgtP ? ` · ${tc.noTgtP} of ${tc.nPress} looms have no target pressure and stay where they run` : ''), st.press, go('pressure')),
+    stepRow('3. Every loom at its target effective RPM', `+${lk(tc.E)} lakh picks, looms that ran only; a loom already above its target adds nothing; the same fixed costs are shared over ${lk(tc.P + tc.E)} lakh picks`, st.picks, go('erpm')),
+    stepRow('4. Costs that grow with the extra picks', `+${f0(tc.dM)} m: compressor power ${rsC(A.power)} · warping ${at(A.warping, tc.rates.warping, 2, 'no rate on the day\'s file')} · transport ${at(A.transport, tc.rates.transport, 2, 'no rate on the day\'s file')} · packing ${at(A.packing, tc.rates.packing, 3, 'no packing amount this month yet')}. Every other expense line stays the same.`, st.added, toCosting('Power')),
+    stepRow('5. No B grade and no cut pieces', `the B grade expense line ${rs(st.quality.bgrade)} and the cut piece loss ${rs(st.quality.cut)} both taken as 0`, st.quality, toCosting('B grade and cut pieces')),
+    [el('b', {text: 'Target cost per pick'}), el('b', {text: pn(tc.cpp, 2)}), rsC(tc.cpp / 100 * (tc.P + tc.E))]], [1, 2]));
+  // the loom-wise / head-group-wise table, gaps last with the next step
+  const hg = bv('tc') === 'hg';
+  const R = hg ? tcGroup(tc.parts, (q) => q.hg + '|' + q.width) : tc.rows;
+  // the next step for a row's gap: a missing target → Targets; no picks per metre → Costing; a missing reading → Data health (owner) or tell the owner
+  const gapCell = (o) => { const g = o.gap, tg = /no target/.test(g), pm = g.includes('picks per metre');
+    const rd = /no CFM reading|no picks recorded/.test(g), next = [];   // one next step per kind of gap the row has
+    if (tg) next.push(el('button', {class: 'link', type: 'button', text: 'Set a target on Targets', onclick: () => setTab('targets')}));
+    if (pm) next.push(el('button', {class: 'link', type: 'button', text: 'Check the day on Costing', onclick: () => toCosting('Production by quality head group').click()}));
+    if (rd || !next.length) next.push(tcOwner() ? el('button', {class: 'link', type: 'button', text: 'See Files per day on Data health', onclick: () => setTab('data')}) : el('span', {class: 'note', text: 'Next: tell the owner'}));
+    return el('div', {}, el('span', {class: 'pill muted', style: 'white-space:normal', text: g}), ...next.map((n) => el('div', {}, n))); };
+  const name = (o) => hg ? el('div', {}, el('button', {class: 'link', type: 'button', text: `${o.hgs[0]} · ${o.width}`, onclick: hgTab('Current vs reference')}))
+    : el('div', {}, loomLink(o.loom, date, 'Loom ' + o.loom), el('div', {class: 'note', text: `${o.hgs.join(', ')} · ${o.width} cm`}));
+  const cell = (v, fmt) => ok(v) ? fmt(v) : '—';
+  const phone = window.matchMedia('(max-width: 560px)').matches;
+  const tot = R.reduce((a, o) => ({cfm: a.cfm + (o.cfmRs || 0), E: a.E + (o.E || 0), dM: a.dM + (o.dM || 0), ef: a.ef + o.effect}), {cfm: 0, E: 0, dM: 0, ef: 0});
+  if (!R.length) return card(TC_CARD, `${dfmt(date)} · target cost per pick, step by step`, steps, el('p', {class: 'empty', text: `No loom ran on ${dfmt(date)}, so there is no loom to bring to its targets. Pick another day with the day picker.`}));
+  const heads = [hg ? 'Head group' : 'Loom', hg ? ['Looms', 'ran'] : null, ['CFM saving', '₹'], ['Extra picks', 'lakh'], ['Extra metres', 'm'], ['Effect on cost per pick', 'paise']].filter(Boolean);
+  const body = phone
+    ? sortableChart('tc-' + (hg ? 'hg' : 'loom'), R, [{v: 'name', label: hg ? 'Head group' : 'Loom', get: (o) => hg ? o.hgs[0] : o.loom, d: 'a'}, ...(hg ? [{v: 'looms', label: 'Looms', get: (o) => o.looms.length}] : []),
+      {v: 'cfm', label: 'CFM saving', get: (o) => o.cfmRs}, {v: 'E', label: 'Extra picks', get: (o) => o.E}, {v: 'dM', label: 'Extra metres', get: (o) => o.dM}, {v: 'ef', label: 'Effect on cost per pick', get: (o) => o.effect, d: 'a'}],
+      (RR) => el('div', {}, RR.map((o) => el('div', {style: 'padding:10px 0;border-top:1px solid var(--line, #ddd)'}, name(o),
+        hg ? el('div', {text: `Looms: ${o.looms.length}`}) : null,
+        el('div', {text: `CFM saving: ${cell(o.cfmRs, rs)} · Extra picks: ${cell(o.E, (v) => pn(v / 1e5, 3))} lakh · Extra metres: ${cell(o.dM, f0)} m`}),
+        el('div', {text: `Effect on cost per pick: ${tcPp(o.effect)} paise`}), o.gap ? gapCell(o) : null))), {b: 'ef', d: 'a'})
+    : table(heads, [...R.map((o) => [el('div', {}, name(o), o.gap ? gapCell(o) : null), ...(hg ? [o.looms.length] : []), cell(o.cfmRs, rs), cell(o.E, (v) => pn(v / 1e5, 3)), cell(o.dM, f0), sortAs(el('span', {text: tcPp(o.effect)}), o.none ? null : o.effect)]),
+      [el('b', {text: 'Total'}), ...(hg ? [R.reduce((a, o) => a + o.looms.length, 0)] : []), rs(tot.cfm), pn(tot.E / 1e5, 3), f0(tot.dM), tcPp(tot.ef)]], hg ? [1, 2, 3, 4, 5] : [1, 2, 3, 4]);
+  return card(TC_CARD, `${dfmt(date)} · headline cost per pick, As entered · whole plant, both widths`,
+    steps,
+    el('p', {class: 'note', text: `Coverage: ${tc.cover.full} of ${tc.cover.looms} looms that ran have a target CFM, a target RPM and a picks-per-metre figure for their quality on the day's costing; the rest count only the parts they have and are listed below as gaps, never as 0.${left.length ? ' ' + left.join('. ') + '.' : ''}`}),
+    el('div', {class: 'toolbar'}, bvSeg('tc')), body,
+    el('p', {class: 'note', text: `Effect on cost per pick = (− the CFM saving + the added costs − today's cost per pick × the extra picks) ÷ the target day's ${lk(tc.P + tc.E)} lakh picks. The pressure step (${tcPp(tc.floorPp.press)} paise on that footing) and step 5 (${tcPp(tc.floorPp.quality)} paise) are whole-floor and not split by ${hg ? 'head group' : 'loom'}; with them the rows add up to the change on the tile.`}),
+    el('p', {class: 'note', text: 'Folding, beams and dispatch lag the looms. Valuing warping, transport and packing on metres woven assumes they catch up within the month. Extra metres are worked out loom by loom: extra picks ÷ the picks per metre of its quality on the day\'s costing.'}));
 }
 // ================================================================ END COSTING TAB
 // COSTING-TAB>>

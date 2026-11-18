@@ -101,15 +101,16 @@ function priorityList(n = 5) {
   const looms = (D.pressure.looms || []).map((l) => { const b = bench(l.width, l.hg) || {}, t = tgt(l.width, l.hg) || {}, bm = ok(b.main_max) ? b.main_max : (ok(b.main) ? b.main : null), tg = ok(t.main) ? t.main : null;
     return {loom: l.loom, hg: l.hg, width: l.width, main: l.main, ref: ok(bm) && ok(tg) ? Math.min(bm, tg) : ok(tg) ? tg : bm}; });
   const F = floorLadder(looms, n);
-  let prev = [0, 0];
+  let prev = 0;
   const done = [];
   for (const [i, st] of (F.steps || []).entries()) {
     const before = done.slice(); done.push(st.loom);
     if (!(st.drop > 1e-9)) continue;
-    const cur = saving(F.now, st.floor), part = ((cur[0] - prev[0]) + (cur[1] - prev[1])) / 2; prev = cur;
+    // Round F: the rule only; no set point or margin = the pressure money is a gap (null, shown "—" with its next step), never ₹0
+    const s0 = saving(F.now, st.floor), cur = s0 || 0, part = cur - prev; prev = cur;
     const x = latestRecs().find((r) => r.loom === st.loom) || {loom: st.loom, hg: st.hg, width: st.width};
-    const o = get(x); o.press += st.drop; o.rsPress += cc ? part * cc.kwh * cc.rate : 0;
-    o.why.push({k: 'Main pressure', t: `${f2(st.from)} kgf/cm²; bring it to ${f2(st.to)} and the compressor setpoint drops ${f2(st.drop)} kgf/cm² more`, sub: `step ${i + 1} of the floor ladder${before.length ? `, after loom${before.length === 1 ? '' : 's'} ${before.join(', ')}` : ''}`});
+    const o = get(x); o.press += st.drop; o.rsPress = s0 == null || o.rsPress == null ? null : o.rsPress + (cc ? part * cc.kwh * cc.rate : 0);
+    o.why.push({k: 'Main pressure', t: `${f2(st.from)} kgf/cm²; bring it to ${f2(st.to)} and the compressor set point drops ${f2(st.drop)} kgf/cm² more`, sub: `step ${i + 1} of the floor ladder${before.length ? `, after loom${before.length === 1 ? '' : 's'} ${before.join(', ')}` : ''}`});
   }
   // R2 (11 Nov 2026): the same lost picks valued in rupees of realisation (that loom-day's realisation per pick, As sold),
   // beside the cost figure; the ranking is unchanged. null = that loom-day is not priced (a gap, never ₹0).
@@ -143,7 +144,7 @@ function priorityCard() {
     const imp = [];   // [what, how worked out, ₹ or null]
     if (o.lakh > 0.0005) imp.push(['Lost picks', `${Math.round(o.lakh * 1e5).toLocaleString('en-IN')} picks × ${o.pickBy === 'realisation' ? `${f2(100 * o.rsPicks / (o.lakh * 1e5))} paise per pick of realisation on ${o.x.hg}` : o.pickBy === 'cost' ? `${f2(P.ppPick)} paise fixed + attendance cost per pick${pricedOff ? ' (this loom-day is not priced)' : ''}` : 'not valued: no costing for the day'}`, o.pickBy ? o.rsPicks : null]);
     if (o.ft3 > 0) imp.push(['Extra air', `${f0(o.ft3)} ft³ at the compressor's ₹ per ft³`, P.cc ? o.rsAir : null]);
-    if (o.press > 0) imp.push(['Floor pressure', `setpoint down ${f2(o.press)} kgf/cm²`, P.cc ? o.rsPress : null]);
+    if (o.press > 0) imp.push(['Floor pressure', `set point down ${f2(o.press)} kgf/cm²${o.rsPress == null ? ` · no ₹ yet: ${!ok(COMP_SP) ? (canEdit() ? 'type the compressor set point on the Pressure tab' : 'the compressor set point is not typed in, tell the owner') : (typeof fxIsOwner === 'function' && fxIsOwner() ? 'add setpoint_margin_kgf to the Config sheet Settings tab' : 'no set point margin yet, tell the owner')}` : ''}`, P.cc ? o.rsPress : null]);
     const any = imp.some((r) => ok(r[2]));
     const tb = el('table', {class: 'impt nosort'}, el('tbody', {}, ...imp.map((r) => el('tr', {}, el('td', {text: r[0]}), el('td', {class: 'note', text: r[1]}), el('td', {class: 'num', text: ok(r[2]) ? rs(r[2]) : '—'}))),
       any && imp.length > 1 ? el('tr', {class: 'tot'}, el('td', {}, el('b', {text: 'Total'})), el('td', {class: 'note', text: 'a day'}), el('td', {class: 'num'}, el('b', {text: rs(o.rs)}))) : null));
@@ -187,9 +188,11 @@ function pageActions() {
     const fm = new Map((D.pressure.floor || []).map((f) => [f.date, f.floor]));
     if (fl) kp.append(kpi('Floor pressure', f2(fl.floor), 'kgf/cm²', el('span', {class: 'delta flat', text: `both widths · loom ${fl.loom}, ${fl.hg}`}), null, spk(last7.map((d) => fm.has(d) ? fm.get(d) : null), f2, 'Floor pressure, kgf/cm²')));
     if (typeof fxActionTiles === 'function') kp.append(...fxActionTiles(kpi, last7, spk));   // 12 Nov 2026: realisation per pick (owner) and cost per pick
+    if (typeof tcActionTiles === 'function') kp.append(...tcActionTiles(kpi));   // Round F: target cost per pick, folding shortage (+ owner: target realisation and profit)
   }
   s.append(kp);
   if (day) s.append(priorityCard());
+  if (day && typeof tcCard === 'function') { const c = tcCard(); if (c) s.append(c); }   // Round F: Where the saving is (opens from the Target cost per pick tile)
 
   const un = D.unassigned || [];
   if (un.length) s.append(assignCard(un));
@@ -426,11 +429,49 @@ function qualityHeat(groups) {
 }
 
 // ---------------------------------------------------------------- Pressure
-function compWork(p) { return Math.pow((p * KGF + PATM) / PATM, 0.2857) - 1; }
-function saving(pNow, pNew) {
-  const drop = D.pressure.line_drop_kgf || 0.2 / KGF;
-  if (!ok(pNow) || !ok(pNew) || pNew >= pNow) return [0, 0];
-  return [POWER_PCT / 100 * (pNow - pNew), 1 - compWork(pNew + drop) / compWork(pNow + drop)];
+// Round F (Divyam, 18 Nov 2026): set point needed = floor + the margin (Config sheet Settings tab, setpoint_margin_kgf,
+// kgf/cm²; it replaced the line drop); the compressor's own set point is typed on this tab (COMP_SP); the saving is the
+// rule's POWER_PCT % per kgf/cm² only (the adiabatic range is gone). saving(fNow, fNew) = the share of the compressor's
+// energy the looms' work saves when the floor drops from fNow to fNew, from wherever the set point fix leaves the
+// compressor (pressParts in calc.js); null without a set point or margin, 0 when nothing comes down, never negative.
+const pMargin = () => { const v = S().setpoint_margin_kgf; return ok(v) ? v : null; };
+const pParts = (fNow, fNew) => pressParts(COMP_SP, fNow, fNew, pMargin(), POWER_PCT);
+function saving(fNow, fNew) { return ok(fNow) && ok(fNew) ? pParts(fNow, fNew).looms : null; }
+let PSP_EDIT = false;
+// Round F: why the Pressure tab's Energy saved and Worth columns show "—", with the next step (null when nothing is missing).
+// Owner: Files per day on Data health for a missing compressor reading; everyone else: tell the owner.
+// Round F: the tables' Energy saved and Worth count the looms' part only; the tile at the top adds the set point fix.
+const pLoomsNote = () => el('p', {class: 'note', text: 'Energy saved and Worth here count the looms\' part only (the floor coming down as looms reach their reference). The Compressor energy saved tile at the top of this tab also counts bringing the compressor down from its set point to what today\'s floor needs, so it can be higher.'});
+function pGapNote() {
+  const own = typeof fxIsOwner === 'function' && fxIsOwner(), tell = own ? null : 'tell the owner';
+  if (!ok(COMP_SP)) return el('p', {class: 'note', text: `Energy saved and Worth show "—" until the compressor set point is typed in: ${canEdit() ? 'tap the Compressor set point tile at the top of this tab and type it' : tell}.`});
+  if (!ok(pMargin())) return el('p', {class: 'note', text: `Energy saved and Worth show "—" until the set point margin is set: ${own ? 'add setpoint_margin_kgf to the Config sheet Settings tab' : tell}.`});
+  if (!compDay(D.latest)) return el('p', {class: 'note', text: `Worth shows "—" until the day's Power (Compressor) reading is in the costing: ${own ? 'see Files per day on Data health' : tell}.`});
+  return null;
+}
+// The compressor set point tile: tap to type the set point (edit targets and admin); everyone else reads it.
+function spTile(pp, M, noM) {
+  const ed = canEdit() && !!db, has = ok(COMP_SP);
+  const need = ok(pp.now) ? `needed ${f2(pp.now)} → ${f2(pp.after)} after the work (floor + ${f2(M)} margin)` : noM;
+  const note = (has ? '' : (ed ? 'not set yet: tap to type it · ' : 'not set yet: tell the owner · ')) + need + (has && ed ? ' · tap to change' : '');
+  const k = el('div', {class: 'kpi' + (ed ? ' tap' : ''), role: ed ? 'button' : null, tabindex: ed ? '0' : null, 'aria-label': ed ? 'Compressor set point: tap to change' : null},
+    el('div', {class: 'label', text: 'Compressor set point'}), el('div', {class: 'big'}, has ? f2(COMP_SP) : '—', el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: note}));
+  if (ed) { const go = () => { PSP_EDIT = !PSP_EDIT; render(); }; k.addEventListener('click', go); k.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }); }
+  return el('div', {}, k);
+}
+function spEditor() {
+  if (!PSP_EDIT || !canEdit() || !db) return null;
+  const inp = el('input', {type: 'number', step: '0.05', min: '1', max: '15', value: ok(COMP_SP) ? String(COMP_SP) : '', 'aria-label': 'Compressor set point, kgf/cm²', style: 'width:100px'});
+  const msg = el('span', {class: 'meta'});
+  const btn = el('button', {class: 'primary', type: 'button', text: 'Save', onclick: async () => {
+    const v = parseFloat(inp.value); if (!(v >= 1 && v <= 15)) { msg.className = 'err'; msg.textContent = 'Enter the set point in kgf/cm², from 1 to 15.'; return; }
+    btn.disabled = true; msg.className = 'meta'; msg.textContent = 'Saving…';
+    try { await db.collection('targets').doc('compsp__kgf').set({width: 'all', hg: 'all', main: v}); COMP_SP = v; PSP_EDIT = false; render(); }
+    catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access'); btn.disabled = false; }
+  }});
+  return el('div', {class: 'toolbar'}, el('label', {text: 'Compressor set point, as set on the compressor'}), inp, el('span', {text: 'kgf/cm²'}), btn,
+    el('button', {class: 'ghost', type: 'button', text: 'Cancel', onclick: () => { PSP_EDIT = false; render(); }}), msg,
+    el('p', {class: 'note', text: 'Saved for everyone at once; the Pressure tab and the Target cost per pick tile on Actions use it straight away.'}));
 }
 function pressLooms() {
   // every loom that ran ≥60 min in a shift on the latest day, both widths (one compressor)
@@ -506,26 +547,30 @@ function pressWidthSeg() {
 function pagePressure() {
   const s = el('section', {class: 'page', id: 'pressure'});
   const P = D.pressure; const fl = (P.floor || []).slice(-1)[0];
-  const drop = P.line_drop_kgf || 0.2 / KGF;
+  const M = pMargin();
   s.append(el('div', {}, el('h2', {text: `Main pressure, all 72 looms, ${dfmt(D.latest)}`}),
-    el('p', {class: 'lead', text: `One compressor serves both widths, so this page always covers both. The loom with the highest main pressure sets the floor; the compressor must give that plus ${f2(drop)} kgf/cm² (0.2 bar) line drop. Benchmark pressure is the 10th percentile of each head group's daily highest main pressure on that width. Click any benchmark or best figure to see the loom runs behind it.`})));
+    el('p', {class: 'lead', text: `One compressor serves both widths, so this page always covers both. The loom with the highest main pressure sets the floor; the compressor needs to run at that plus a margin of ${ok(M) ? f2(M) : '—'} kgf/cm² (Config sheet, Settings tab). Benchmark pressure is the 10th percentile of each head group's daily highest main pressure on that width. Click any benchmark or best figure to see the loom runs behind it.`})));
   const looms = pressLooms();
   const floorNow = looms.length ? Math.max(...looms.map((l) => l.main)) : null;
   const floorNew = looms.length ? Math.max(...looms.map(lowered)) : null;
-  const [rule, adia] = saving(floorNow, floorNew);
+  const pp = looms.length ? pParts(floorNow, floorNew) : {now: null, after: null, fix: null, looms: null, total: null};
   const holders = looms.filter((l) => Math.abs(lowered(l) - floorNew) < 1e-9);
   const why = (l) => !ok(l.ref) ? 'has no benchmark yet' : l.main <= l.ref + 1e-9 ? 'is already at or below its reference' : 'is at its reference';
   const holdNote = holders.length ? 'Held by ' + holders.slice(0, 3).map((l) => `loom ${l.loom} (${l.hg}), which ${why(l)}`).join('; ') + (holders.length > 3 ? ` and ${holders.length - 3} more` : '') : '';
   const nT = Object.keys(TG).filter((k) => ok(TG[k].main)).length;
   const mode = modeSeg(PMODE, (v) => { PMODE = v; }, nT, 'Reference pressure');
+  const owner = typeof fxIsOwner === 'function' && fxIsOwner();
+  const noM = owner ? 'no margin row: add setpoint_margin_kgf to the Config sheet Settings tab' : 'no margin set: tell the owner';
+  const cc = compDay(D.latest), pk = cc ? floorPicks(cc.date) : 0, rsDay = ok(pp.total) && cc ? pp.total * cc.kwh * cc.rate : null;
+  const kp = (label, big, unit, note) => el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'big'}, ...big, el('small', {text: unit})), note ? el('div', {class: 'note', text: note}) : null));
   const sumBox = el('div', {class: 'kpis'},
-    el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: 'Floor now'}), el('div', {class: 'big'}, f2(floorNow), el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: fl ? `loom ${fl.loom}, ${fl.hg}` : ''}))),
-    el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: 'Floor after the work'}), el('div', {class: 'big'}, f2(floorNew), el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: holdNote}))),
-    el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: 'Compressor setpoint'}), el('div', {class: 'big'}, f2(floorNow + drop), el('span', {class: 'arrow', text: '→'}), f2(floorNew + drop), el('small', {text: 'kgf/cm²'})))),
-    el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: 'Compressor energy saved'}), el('div', {class: 'big'}, `${f1(rule * 100)}–${f1(adia * 100)}`, el('small', {text: '%'})), el('div', {class: 'note', text: `${f1(POWER_PCT)}% per kgf/cm² rule to adiabatic estimate`}))));
-  s.append(card('If every loom ran at its reference pressure', PMODE === 'bm' ? 'Head group benchmark (10th percentile)' : REF_NOTE[PMODE], el('div', {class: 'toolbar'}, mode), sumBox,
-    el('p', {class: 'note', text: 'Each loom above its reference is brought down to it; looms already below stay where they are. Looms with no head group or no benchmark stay as they are.'})));
-  s.append(pressureMoneyCard(floorNow, floorNew, rule, adia));
+    kp('Floor now', [f2(floorNow)], 'kgf/cm²', fl ? `loom ${fl.loom}, ${fl.hg}` : ''),
+    kp('Floor after the work', [f2(floorNew)], 'kgf/cm²', holdNote),
+    spTile(pp, M, noM),
+    kp('Compressor energy saved', [ok(pp.total) ? f1(pp.total * 100) : '—'], '%', ok(pp.total) ? `${ok(rsDay) ? `${rs(rsDay)} a day${ppTxt(rsDay, pk) ? ', ' + ppTxt(rsDay, pk) : ''} · ` : `no compressor reading yet (${typeof fxIsOwner === 'function' && fxIsOwner() ? 'see Files per day on Data health' : 'tell the owner'}) · `}${f1(pp.fix * 100)}% from the set point, ${f1(pp.looms * 100)}% from the looms · ${f1(POWER_PCT)}% per kgf/cm²` : !ok(COMP_SP) ? (canEdit() ? 'needs the compressor set point: tap the Compressor set point tile and type it' : 'needs the compressor set point: tell the owner') : noM));
+  s.append(card('If every loom ran at its reference pressure', PMODE === 'bm' ? 'Head group benchmark (10th percentile)' : REF_NOTE[PMODE], el('div', {class: 'toolbar'}, mode), sumBox, spEditor(),
+    el('p', {class: 'note', text: 'Each loom above its reference is brought down to it; looms already below stay where they are. Looms with no head group or no benchmark stay as they are. The saving has two parts that add up: the compressor brought down from its set point to what today\'s floor needs, then the looms brought to their reference. Where the compressor already runs at or below what is needed, that part is 0, never negative.'})));
+  s.append(pressureMoneyCard(pp));
   s.append(floorLadderCard(looms, floorNew));
 
   // chart: current vs benchmark and target, looms sorted by current pressure
@@ -564,15 +609,15 @@ function pagePressure() {
       const l0 = L[0]; const hi = Math.max(...L.map((l) => l.main)); const avg = L.reduce((a, l) => a + l.main, 0) / L.length;
       const k = key(l0.width, l0.hg);
       const only = Math.max(...looms.map((l) => key(l.width, l.hg) === k ? lowered(l) : l.main));
-      const [r1, r2] = saving(floorNow, only);
-      return {l0, L, hi, avg, only, r1, r2};
+      const r1 = saving(floorNow, only);
+      return {l0, L, hi, avg, only, r1};
     }).sort((a, b) => b.hi - a.hi);
-    body = table(['Head group', ['Looms', 'ran'], ['Highest now', 'kgf/cm²'], ['Average now', 'kgf/cm²'], ['Reference', `kgf/cm², ${REF_NAME[PMODE]}`], ['Floor if only this quality is fixed', 'kgf/cm²'], ['Energy saved', '% of compressor'], ['Worth', '₹ a day · paise per pick']],
+    body = table(['Head group', ['Looms', 'ran'], ['Highest now', 'kgf/cm²'], ['Average now', 'kgf/cm²'], ['Reference', `kgf/cm², ${REF_NAME[PMODE]}`], ['Floor if only this quality is fixed', 'kgf/cm²'], ['Energy saved', '% of compressor, from the looms'], ['Worth', '₹ a day · paise per pick, from the looms']],
       rows.map((r) => [el('span', {}, hgLink(r.l0.hg, r.l0.width, D.latest), el('div', {class: 'note', text: r.l0.width + ' cm'})), r.L.length, f2(r.hi), f2(r.avg), refCell(PMODE, r.l0.bm, r.l0.best, r.l0.tg, f2, () => bmBtn(f2(r.l0.bm), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg))), () => bmBtn(f2(r.l0.best), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg)), {kind: 'best'})),
-        r.only < floorNow - 1e-9 ? el('b', {text: f2(r.only)}) : f2(r.only), r.r2 > 0 ? `${f1(r.r1 * 100)}–${f1(r.r2 * 100)}` : '0', r.r2 > 0 ? moneyRange(r.r1, r.r2) : '0']), [1, 2, 3, 4, 5, 6, 7]);
+        r.only < floorNow - 1e-9 ? el('b', {text: f2(r.only)}) : f2(r.only), !ok(r.r1) ? '—' : r.r1 > 0 ? f1(r.r1 * 100) : '0', !ok(r.r1) ? '—' : r.r1 > 0 ? moneyOne(r.r1) : '0']), [1, 2, 3, 4, 5, 6, 7]);
   }
   s.append(card('Reference vs running pressure', (PVIEW === 'quality' ? 'The floor only drops when every quality at the top comes down, so most single-quality rows show no saving on their own.' : 'Highest pressure each loom ran at in the day') + pwNote,
-    el('div', {class: 'toolbar'}, view, pressWidthSeg(), modeSeg(PMODE, (v) => { PMODE = v; }, nT, 'Reference pressure', true)), body));
+    el('div', {class: 'toolbar'}, view, pressWidthSeg(), modeSeg(PMODE, (v) => { PMODE = v; }, nT, 'Reference pressure', true)), body, PVIEW === 'quality' ? pLoomsNote() : null, PVIEW === 'quality' ? pGapNote() : null));
 
   const ps = looms.slice().sort((a, b) => b.main - a.main || a.loom - b.loom)[0];
   s.append(trendCard('pressure', ps ? (PVIEW === 'loom' ? {kind: 'loom', loom: ps.loom} : {kind: 'hg', w: String(ps.width), hg: ps.hg}) : null));
@@ -580,15 +625,15 @@ function pagePressure() {
     card('Floor by day', 'Highest main pressure per day and shift, kgf/cm²',
       table(['Date', ['Floor', 'kgf/cm²'], ['Shift A', 'kgf/cm²'], ['Shift B', 'kgf/cm²'], 'Set by'], (P.floor || []).slice().reverse().slice(0, 14).map((f) => [dfmt(f.date), f2(f.floor), f2(f.A), f2(f.B), el('span', {}, loomLink(f.loom, f.date, 'Loom ' + f.loom), ' · ', hgLink(f.hg, (D.machine[f.loom] || {}).width, f.date))]), [1, 2, 3])),
     card('Head groups holding the floor up', 'At the top on at least half of the last 14 days. Drop decisions are yours.',
-      (P.setters || []).length ? table(['Head group', 'Days at top', ['Floor → without it', 'kgf/cm²'], ['Saving', '% of compressor'], ['Worth', '₹ a day · paise per pick'], ['Share of picks', '%'], 'Recommendation'],
+      (P.setters || []).length ? table(['Head group', 'Days at top', ['Floor → without it', 'kgf/cm²'], ['Saving', '% of compressor, from the looms'], ['Worth', '₹ a day · paise per pick, from the looms'], ['Share of picks', '%'], 'Recommendation'],
         P.setters.map((x) => [el('span', {}, hgLink(x.hg, null, D.latest), el('div', {class: 'note'}, 'Looms ', (x.looms || []).flatMap((l, i) => [i ? ', ' : '', loomLink(l.loom, D.latest)]))), `${x.days}/${x.of}`, `${f2(x.floor)} → ${f2(x.without)}`, setPct(x), setRs(x), f1(x.share),
           el('div', {}, el('span', {class: 'pill warn', text: x.rec}), el('p', {class: 'why', text: x.why}))]), [3, 4, 5])
-        : el('div', {class: 'empty', text: 'None yet.'}))));
+        : el('div', {class: 'empty', text: 'None yet.'}), (P.setters || []).length ? pLoomsNote() : null, (P.setters || []).length ? pGapNote() : null)));
   return s;
 }
 
 // The floor ladder: the loom setting the floor is brought down to its reference, then the next one, five times over,
-// showing how far the floor (and so the compressor setpoint) drops at each step. Uses the reference switched above.
+// showing how far the floor (and so the compressor set point) drops at each step. Uses the reference switched above.
 function floorLadderCard(looms, floorNew) {
   const F = floorLadder(looms.map((l) => ({loom: l.loom, hg: l.hg, width: l.width, main: l.main, ref: l.ref})), 5);
   if (!ok(F.now)) return card('Floor ladder', null, el('div', {class: 'empty', text: 'No loom pressure for this day.'}));
@@ -596,12 +641,14 @@ function floorLadderCard(looms, floorNew) {
     ...F.steps.map((st, i) => ({label: `${i + 1}. Loom ${st.loom}`, v: -st.drop, tip: `Step ${i + 1}: loom ${st.loom} (${st.hg}) from ${f2(st.from)} to ${f2(st.to)}; floor ${f2(st.before)} → ${f2(st.floor)}`})),
     {label: F.steps.length ? `After ${F.steps.length}` : 'Now', v: F.after, total: true, tip: `Floor after ${F.steps.length} step${F.steps.length === 1 ? '' : 's'}: ${f2(F.after)} kgf/cm²`}];
   const why = F.held ? `Loom ${F.held.loom} (${F.held.hg}) holds the floor at ${f2(F.held.main)}: it has ${F.held.why === 'no reference' ? 'no reference yet' : 'come down to its reference already, or runs below it'}.` : '';
-  const rows = F.steps.map((st, i) => { const [a, b] = saving(F.now, st.floor);
-    return [el('span', {}, `${i + 1}. `, loomLink(st.loom, D.latest, 'Loom ' + st.loom)), el('span', {}, hgLink(st.hg, st.width, D.latest), el('div', {class: 'note', text: st.width + ' cm'})), `${f2(st.from)} → ${f2(st.to)}`, f2(st.floor), st.drop > 1e-9 ? '−' + f2(st.drop) : '0', b > 0 ? `${f1(a * 100)}–${f1(b * 100)}` : '0', b > 0 ? moneyRange(a, b) : '0']; });
+  const rows = F.steps.map((st, i) => { const a = saving(F.now, st.floor);
+    return [el('span', {}, `${i + 1}. `, loomLink(st.loom, D.latest, 'Loom ' + st.loom)), el('span', {}, hgLink(st.hg, st.width, D.latest), el('div', {class: 'note', text: st.width + ' cm'})), `${f2(st.from)} → ${f2(st.to)}`, f2(st.floor), st.drop > 1e-9 ? '−' + f2(st.drop) : '0', !ok(a) ? '—' : a > 0 ? f1(a * 100) : '0', !ok(a) ? '—' : a > 0 ? moneyOne(a) : '0']; });
   return card('Floor ladder', `The ${F.steps.length || 'no'} loom${F.steps.length === 1 ? '' : 's'} to fix first, in order · ${PMODE === 'bm' ? 'to benchmark' : PMODE === 'best' ? 'to best' : 'to target'} · kgf/cm²`,
     F.steps.length ? waterfall(items, 'Floor pressure after each loom is brought down to its reference', null, {unit: 'kgf/cm²', dec: 2}) : el('p', {class: 'empty', text: why || 'The floor cannot come down.'}),
     F.steps.length ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2);opacity:.75'}), 'floor'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--good)'}), 'drop from fixing that loom')) : null,
-    F.steps.length ? el('div', {class: 'nosort'}, table(['Step and loom', 'Head group', ['Loom pressure', 'now → reference'], ['Floor after', 'kgf/cm²'], ['Drop', 'kgf/cm²'], ['Energy saved so far', '% of compressor'], ['Worth so far', '₹ a day · paise per pick']], rows, [2, 3, 4, 5, 6])) : null,   // steps build on each other: not sortable
+    F.steps.length ? el('div', {class: 'nosort'}, table(['Step and loom', 'Head group', ['Loom pressure', 'now → reference'], ['Floor after', 'kgf/cm²'], ['Drop', 'kgf/cm²'], ['Energy saved so far', '% of compressor, from the looms'], ['Worth so far', '₹ a day · paise per pick, from the looms']], rows, [2, 3, 4, 5, 6])) : null,   // steps build on each other: not sortable
+    F.steps.length ? pLoomsNote() : null,
+    F.steps.length ? pGapNote() : null,
     el('p', {class: 'note', text: `Each step brings the loom that sets the floor down to its reference and works the floor out again; a step that drops 0 means another loom sat at the same pressure. ${why} With every loom at its reference the floor would be ${f2(floorNew)}. The reference follows the switch at the top.`}));
 }
 

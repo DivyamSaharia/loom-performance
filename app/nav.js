@@ -292,7 +292,8 @@ const NAV_STATIC = {
   data: ['Last 30 days', 'Files per day', 'Backup age', () => canEdit() ? 'Reload data' : null, 'Days', 'Files', 'Other alerts', 'Settings in use'],
   links: ['Head-group links'], masters: ['Fabrics', 'Yarns', 'Switches', 'History'], approvals: [],
   fabric: ['Fabrics', 'About this read', 'Recent reads'], access: ['Requests', 'People', 'Add someone directly']};
-const NAV_ALT = {'By loom / By head group': ['By loom', 'By head group']};   // a card whose heading follows its own switch
+const NAV_ALT = {'By loom / By head group': ['By loom', 'By head group'],
+  'Current vs benchmark, best and target, by loom': ['Current vs benchmark, best and target, by loom', 'Current vs benchmark, best and target, by head group']};   // Round F links   // a card whose heading follows its own switch
 const navGrp = (t) => (GROUPS.find((g) => g[1].includes(t)) || ['', []])[0];
 const navTabSub = (t) => 'in ' + navGrp(t);   // a tab's second line: its side-menu group
 const navTabs = () => GROUPS.flatMap((g) => g[1]).filter(tabAllowed);

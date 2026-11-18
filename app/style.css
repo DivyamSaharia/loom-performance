@@ -561,3 +561,9 @@ dialog.nsheet::backdrop{background:rgba(0,0,0,.35)}
 .card.kpi.fxkpi{display:flex;flex-direction:column}.fxkpi .kfoot{margin-top:auto;padding-top:6px}
 .fxkpi .spk{gap:6px;align-items:flex-start}.fxkpi .spk>span{white-space:nowrap}.fxkpi .spk>span:nth-child(2){text-align:center;line-height:1.25}
 .filters{max-width:none}
+/* Round F (18 Nov 2026): tiles that open something (the compressor set point editor, Target cost per pick) */
+.kpi.tap{cursor:pointer;outline-offset:2px}.kpi.tap:hover{box-shadow:0 0 0 2px var(--accent, #4a7) inset}.kpi.tap:focus-visible{outline:2px solid var(--accent, #4a7)}
+.kpi.tap .label::after{content:' ›';color:var(--muted)}
+.tcsteps table{table-layout:fixed;width:100%}.tcsteps th:first-child{width:auto}.tcsteps th:nth-child(2),.tcsteps th:nth-child(3){width:110px}
+.tcsteps td:first-child,.tcsteps td:first-child .note,.tcsteps td:first-child .link{white-space:normal;overflow-wrap:anywhere;text-align:left}
+@media (max-width:560px){.tcsteps th:nth-child(2),.tcsteps th:nth-child(3){width:78px}}

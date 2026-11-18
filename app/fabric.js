@@ -1029,6 +1029,29 @@ function fxActionTiles(kpi, last7, spk) {
   }
   return out;
 }
+// Round F (Divyam, 18 Nov 2026): Target realisation per pick and Target profit per pick, owner only (fxOn), not clickable,
+// on Actions beside Target cost per pick. Same day, As sold, all widths. Realisation: each loom-day's target picks (its picks
+// + the extra picks at target effective RPM) × its own realisation per pick (fcTargetReal), a mix effect only. Profit: that
+// − the target folded cost per pick (targetFolded: the corrected costing's folded cost with the same savings, extra picks
+// and added costs, no B grade and no cut pieces, A-grade folded picks = target picks × (1 − folding shortage)).
+function fxTargetTiles(kpi, tc, fs) {
+  if (!fxOn()) return [];
+  const rows = fxDayRows(tc.date || D.latest);
+  if (!rows) { const w = 'loading the fabric masters; if this stays, press Refresh (the round arrow)'; return [kpi('Target realisation per pick', '…', '', null, w), kpi('Target profit per pick', '…', '', null, w)]; }
+  const ex = new Map();
+  for (const x of tc.looms || tcLooms(tc.date || D.latest)) { const k = x.loom + '|' + x.hg, v = ex.has(k) ? ex.get(k) : 0, e = tcExtraFab(x); ex.set(k, v == null || e == null ? null : v + e / FC_PICKS_PER_INCH); }
+  const T = fcTargetReal(rows, (r) => ex.has(r.loom + '|' + r.hg) ? ex.get(r.loom + '|' + r.hg) : null), now = fcSum(rows);
+  const date = tc.date || D.latest, out = [];
+  out.push(ok(T.pp)
+    ? kpi('Target realisation per pick', fxPaise(T.pp), 'paise', null, `As sold, both widths · ${fxPct(T.coverage)} of the day's picks priced and with a target · now ${fxPaise(now.real_pp)}: a mix effect only, each loom keeps its own quality's rate`)
+    : kpi('Target realisation per pick', '—', '', null, 'no loom that ran is both priced and has a target RPM: see Coverage on the Realisation tab and set targets on Targets'));
+  if (!tc.ok) { out.push(kpi('Target profit per pick', '—', '', null, `${tcUnavail(date)}. Next: see Files per day on Data health.`)); return out; }
+  const fday = (COST.days || []).find((d) => d.date === date), tf = targetFolded(fday, tc, fs && fs.s), pr = fcTargetProfit(T.pp, tf);
+  out.push(ok(pr)
+    ? kpi('Target profit per pick', fxPaise(pr), 'paise', null, `As sold · target realisation ${fxPaise(T.pp)} − target folded cost ${pn(tf, 2)} (corrected costing, no B grade or cut pieces, folding shortage ${f1(fs.s * 100)}% month to date) · ${fxPct(T.coverage)} of picks${tcGapText(tc).length ? ` · ${tcGapText(tc).length} part${tcGapText(tc).length === 1 ? '' : 's'} left out, see Where the saving is` : ''}`)
+    : kpi('Target profit per pick', '—', '', null, !ok(fs && fs.s) ? 'needs the folding shortage: no costing day this month has all its figures yet. Next: see Files per day on Data health.' : !ok(tf) ? `no folded cost for ${dfmt(date)} in the corrected costing. Next: see Files per day on Data health.` : 'needs the target realisation per pick: see the tile beside it'));
+  return out;
+}
 // "Work on these first" (12 Nov 2026): every loom's realisation on the day shown as a bar, least first, against the
 // break-even line = the day's total cost (Costing: expenses + cut piece loss) ÷ the looms running that day (any run time,
 // both widths, because the cost is the whole plant's). Head-group-wise: each head group's realisation per loom-day.

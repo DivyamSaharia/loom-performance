@@ -106,7 +106,7 @@ function pageData() {
   s.append(card('Settings in use', 'Edit these in the Settings tab of the W2 Loom Performance Config sheet',
     table(['Setting', 'Value'], [
       ['Bad efficiency', `below ${f0(EFF_BAD())}%, any quality`], ['Benchmark percentile, RPM', st.benchmark_pct_high + 'th'], ['Benchmark percentile, air and pressure', st.benchmark_pct_low + 'th'],
-      ['Loom-day counts toward benchmark from', st.benchmark_min_run_min + ' min run'], ['RPM tolerance', st.tol_rpm_pct + '%'],       ['Air and CFM tolerance', st.tol_air_pct + '%'], ['Pressure tolerance (this page)', PRESS_TOL + ' kgf/cm²'], ['Line drop, compressor to loom', st.line_drop_bar + ' bar'],
+      ['Loom-day counts toward benchmark from', st.benchmark_min_run_min + ' min run'], ['RPM tolerance', st.tol_rpm_pct + '%'],       ['Air and CFM tolerance', st.tol_air_pct + '%'], ['Pressure tolerance (this page)', PRESS_TOL + ' kgf/cm²'], ['Set point margin over the floor', ok(st.setpoint_margin_kgf) ? st.setpoint_margin_kgf + ' kgf/cm²' : 'not set (setpoint_margin_kgf)'],
       ['Long power-down (this page)', OFF_LONG / 60 + ' h'], ['Consistently low efficiency', `below ${f0(EFF_BAD())}% on ${LOW_EFF_DAYS} of last ${LOW_EFF_WINDOW} running days`]])));
   s.append(el('p', {class: 'note', text: `Data generated ${D.generated_at} IST. Head groups, machine master and thresholds are edited in the W2 Loom Performance Config sheet; targets on the Targets tab.`}));
   return s;

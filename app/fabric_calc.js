@@ -534,3 +534,27 @@ function fcLoomTotal(looms, perLoom, pricedLd) {
   const full = pricedLd >= looms;
   return {rs: (full ? looms : pricedLd) * perLoom, full, looms, priced: Math.min(pricedLd, looms)};
 }
+
+// ---- Round F (Divyam, 18 Nov 2026): target realisation per pick = Σ (each loom-day's target picks × its realisation per
+// pick, As sold) ÷ Σ target picks. Target picks = its picks + the extra picks at target effective RPM (extra(r): costing
+// picks, 0 for a loom already above target, null for a loom with no target). It is a mix effect only: each loom keeps its
+// own quality's rate. A loom-day not priced, or with no target, is left out and counted in the coverage (share of the
+// day's picks), never 0. rows: fcAnalyse rows of one day. → {pp (paise), tp, priced, all, coverage, n, gaps} or pp null.
+function fcTargetReal(rows, extra) {
+  let num = 0, tp = 0, priced = 0, all = 0, n = 0, gaps = 0;
+  for (const r of rows || []) {
+    if (!(r.picks > 0)) continue;
+    all += r.picks;
+    const e = extra(r);
+    if (r.gap || r.real == null || e == null || !isFinite(e)) { gaps += 1; continue; }
+    const t = r.picks + Math.max(0, e);
+    num += r.real / r.picks * t; tp += t; priced += r.picks; n += 1;
+  }
+  return {pp: tp > 0 ? 100 * num / tp : null, tp, priced, all, coverage: all > 0 ? priced / all : null, n, gaps};
+}
+// Target profit per pick = target realisation per pick − target folded cost per pick (no B grade, so no loom B grade
+// charge). Paise; null when either is missing.
+function fcTargetProfit(realPp, foldPp) {
+  const n = (v) => typeof v === 'number' && isFinite(v);
+  return n(realPp) && n(foldPp) ? realPp - foldPp : null;
+}

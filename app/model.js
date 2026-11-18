@@ -244,6 +244,7 @@ const SORT_DEFS = [
   [/^Loom-wise B grade/, 'B-grade metres produced:d'], [/^B-grade reasons/, 'B grade where named:d', 'B grade:d'],
   [/^Month to date$/, 'Month total:d'], [/^By loom$|^By head group$/, 'Profit#₹/loom/day:a', 'Realisation#paise/pick:a'],
   [/^Realisation targets/, 'Now vs target:a'], [/^Coverage$/, 'Picks:d'], [/^Files$/, 'Checked:d'],
+  [/^Where the saving is$/, 'Effect on cost per pick:a'],   // Round F: the biggest saving (most negative effect) first
 ];
 const headLabel = (h) => (h.firstChild && h.firstChild.nodeType === 3 ? h.firstChild.textContent : h.textContent).trim();
 function sortTables(root) {
