@@ -814,7 +814,7 @@ function powerRuleCard() {
     const v = parseFloat(inp.value); if (!(v >= 1 && v <= 30)) { msg.className = 'err'; msg.textContent = 'Enter a number from 1 to 30.'; return; }
     btn.disabled = true; msg.className = 'meta'; msg.textContent = 'Saving…';
     try { if (!db) throw new Error('no write access'); await db.collection('targets').doc('power__pct').set({width: 'all', hg: 'all', main: v}); POWER_PCT = v; msg.className = 'saved'; msg.textContent = 'Saved. Applies straight away.'; if (D) setTimeout(render, 600); }
-    catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access'); }
+    catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'save', 'Save'); }
     btn.disabled = false;
   }});
   return card('Compressor power rule', 'Used on the Pressure tab and the Target cost per pick tile on Actions',

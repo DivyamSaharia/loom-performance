@@ -31,6 +31,28 @@ async function sbClient() {
   return SB;
 }
 const sbErr = (e) => (e && (e.message || e.error_description || e.msg)) || 'unknown error';
+// A database error as a thrown Error that keeps its code, so saveFail can tell a refusal from a lost connection.
+const sbFail = (e) => Object.assign(new Error(sbErr(e)), {code: e && e.code, status: e && e.status});
+// Plain words for a failed save (Round G, 18 Nov 2026): what happened and what to do next, never the browser's own text
+// ("TypeError: Failed to fetch"). A lost connection, an expired sign-in, a real refusal (no write access; a sentence the
+// database wrote itself) and anything else each read differently. `did` = the verb ("save"), `again` = the button to press
+// again ('' = just "try again"). Roles that cannot fix a refusal are told to tell the owner; an admin checks Access.
+function saveFail(e, did = 'save', again = 'Save') {
+  const m = String(e && (e.message || e.error_description || e.msg) || ''), code = String(e && e.code || '');
+  const retry = again ? `press ${again} again` : 'try again';
+  if (/failed to fetch|networkerror|load failed|network request failed|fetch failed|timed out|timeout|aborted/i.test(m) || (typeof navigator !== 'undefined' && navigator.onLine === false))
+    return `Could not reach the database: check the connection and ${retry}.`;
+  if (code === 'PGRST301' || /jwt|not signed in/i.test(m))
+    return `Could not ${did}: your sign-in has expired. Tap the round-arrow icon (Refresh), sign in again, then ${retry}.`;
+  const fix = isAdmin() ? 'Check its role on Access.' : 'Tell the owner.';
+  if (code === '42501' && /row-level security|permission denied/i.test(m) || /row-level security|permission denied|no write access/i.test(m))
+    return `Could not ${did}: this sign-in has no write access. ${fix}`;
+  if (/^(P0001|42501)$/.test(code) && m) {   // a sentence the database wrote for people
+    const t = m.replace(/^(STALE|JUMP|DATE): /, '');
+    return `Could not ${did}: ${t}${/[.!?]$/.test(t) ? '' : '.'}${code === '42501' ? ' ' + fix : ''}`;
+  }
+  return `Could not ${did}: the database did not accept it. ${retry[0].toUpperCase() + retry.slice(1)}; if it repeats, ${isAdmin() ? 'see Data health.' : 'tell the owner.'}`;
+}
 // A sign-in link that failed (expired, already used, replaced by a newer code) comes back as #error=...&error_code=...
 function takeAuthError() {
   if (!/(^|[#&])error(_code)?=/.test(AUTH_HASH)) return '';
@@ -44,7 +66,7 @@ function setAccessBadge(n) { for (const b of document.querySelectorAll('[data-ba
 async function sbRows(table, build) {   // one query, rows or a thrown error
   const c = await sbClient();
   const {data, error} = await build(c.from(table));
-  if (error) throw new Error(sbErr(error));
+  if (error) throw sbFail(error);
   return data || [];
 }
 async function whoAmI() {
@@ -58,7 +80,7 @@ async function whoAmI() {
   else if (error.code === 'PGRST202' || /request_access/.test(sbErr(error))) {   // the database not migrated yet: the old list
     const rows = await sbRows('app_users', (q) => q.select('email, role').ilike('email', session.user.email));
     st = rows.length ? {status: 'approved', role: rows[0].role} : {status: 'pending', role: null};
-  } else throw new Error(sbErr(error));
+  } else throw sbFail(error);
   ME = {email: session.user.email, status: st.status || 'pending', role: st.status === 'approved' ? st.role || null : null};
   if (ME.role) c.rpc('touch_last_seen').then(() => {}, () => {});
   if (ME.role) prefsLoad(c);
@@ -176,13 +198,13 @@ const supaDb = {
           ? {id, width: String(data.width || ''), hg: String(data.hg || ''), cfm: ok(data.cfm) ? data.cfm : null, rpm: ok(data.rpm) ? data.rpm : null, main: ok(data.main) ? data.main : null, at: data.at || new Date().toISOString(), updated_by: ME && ME.email}
           : {id, style: String(data.style || ''), head_group: String(data.head_group || ''), is_new: !!data.is_new, status: data.status || 'pending', at: data.at || new Date().toISOString(), updated_by: ME && ME.email};
         const {error} = await c.from(name).upsert(row, {onConflict: 'id'});
-        if (error) throw new Error(sbErr(error));
+        if (error) throw sbFail(error);
         if (!STATE_HOLD) await loadState();
       },
       delete: async () => {
         const c = await sbClient();
         const {error} = await c.from(name).delete().eq('id', id);
-        if (error) throw new Error(sbErr(error));
+        if (error) throw sbFail(error);
         if (!STATE_HOLD) await loadState();
       },
     }),
@@ -225,7 +247,7 @@ function pageAccess() {
   const save = async (email, patch, msg) => {
     msg.className = 'meta'; msg.textContent = 'Saving…';
     try { const c = await sbClient(); const {error} = await c.from('app_users').update(patch).eq('email', email); if (error) throw error; return true; }
-    catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + sbErr(e); return false; }
+    catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'save', ''); return false; }
   };
   const draw = async () => {
     let users;
@@ -249,7 +271,7 @@ function pageAccess() {
       const rm = el('button', {type: 'button', class: 'ghost', text: 'Remove', disabled: isMe(u) ? true : null, onclick: async () => {
         if (!confirm(`Remove ${u.email}? They lose access at once. If they sign in again, it comes back to you as a new request.`)) return;
         try { const c = await sbClient(); const {error} = await c.from('app_users').delete().eq('email', u.email); if (error) throw error; draw(); }
-        catch (e) { msg.className = 'err'; msg.textContent = 'Could not remove: ' + sbErr(e); }
+        catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'remove', ''); }
       }});
       return [u.email, sel, when(u.decided_at || u.invited_at), when(u.last_seen), el('span', {}, rm, ' ', msg)];
     });
@@ -268,7 +290,7 @@ function pageAccess() {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { amsg.className = 'err'; amsg.textContent = 'Enter a full email address.'; return; }
       add.disabled = true; amsg.className = 'meta'; amsg.textContent = 'Saving…';
       try { const c = await sbClient(); const {error} = await c.from('app_users').upsert({email: addr, role: role.value, status: 'approved', invited_by: ME.email}, {onConflict: 'email'}); if (error) throw error; email.value = ''; amsg.textContent = `${addr} can now sign in with the app link.`; draw(); }
-      catch (e) { amsg.className = 'err'; amsg.textContent = 'Could not add: ' + sbErr(e); }
+      catch (e) { amsg.className = 'err'; amsg.textContent = saveFail(e, 'add', 'Add'); }
       add.disabled = false;
     });
     box.className = '';
@@ -327,7 +349,7 @@ function pageFabric() {
         const d = data || {};
         msg.textContent = d.dispatched ? 'Read started. It takes about a minute; tap Refresh then.' : d.reused ? 'A read is already asked for. It runs with the next hourly run (10:40 to 16:40).' : 'Asked. It runs with the next hourly run (10:40 to 16:40); starting it at once needs the GitHub token in the database Vault.';
         setTimeout(draw, 1500);
-      } catch (e) { msg.className = 'err'; msg.textContent = 'Could not ask: ' + sbErr(e); }
+      } catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'ask', ''); }
     };
     const kp = el('div', {class: 'kpis'},
       el('div', {class: 'card kpi'}, el('div', {class: 'label', text: 'Last successful read'}), el('div', {class: 'val', style: 'font-size:20px', text: lastOk ? when(lastOk.started_at) : 'None yet'}), el('div', {class: 'note', text: lastOk ? ago(lastOk.started_at) : 'The first read runs with the next hourly run, or tap Check now.'})),
@@ -350,7 +372,7 @@ function pageFabric() {
             if (!confirm(`Accept the ${L.tripped.length} fabrics listed and read again? A read with any other fabric changing still stops.`)) return;
             am.textContent = 'Asking…';
             try { const c = await sbClient(); const {error} = await c.rpc('fabric_accept_changes', {read_id: latest.id}); if (error) throw error; am.textContent = 'Accepted. The next read goes ahead.'; setTimeout(draw, 1500); }
-            catch (e) { am.className = 'err'; am.textContent = 'Could not accept: ' + sbErr(e); }
+            catch (e) { am.className = 'err'; am.textContent = saveFail(e, 'accept', ''); }
           }}), am));
       }
       out.push(card(latest.status === 'unreachable' ? 'The sheet was not reached' : 'The latest read stopped', lastOk ? `The screen below is the last good read, ${when(lastOk.started_at)}.` : null, ...items));
@@ -430,7 +452,7 @@ async function rlPress() {
   try {
     const c = await sbClient(); const {data, error} = await c.rpc('reload_request'); if (error) throw error;
     RL = data && data.id ? data : RL;
-  } catch (e) { RL_ERR = 'Could not start the reload: ' + sbErr(e) + ' Try again in a minute; if it keeps failing, tell the owner.'; }
+  } catch (e) { RL_ERR = saveFail(e, 'start the reload', 'Reload data'); }
   rlPaint(); rlWatch();
 }
 function rlWatch() { clearTimeout(RL_T); if (rlOpen(RL) || (RL && rlNext(RL) > Date.now())) RL_T = setTimeout(rlPoll, rlOpen(RL) ? 30e3 : Math.max(5e3, rlNext(RL) - Date.now() + 1e3)); }

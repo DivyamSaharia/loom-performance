@@ -38,7 +38,7 @@ async function sbAll(table, cols, order = 'id') {
 async function fxRpc(fn, args) {
   const c = await sbClient();
   const {data, error} = await c.rpc(fn, args);
-  if (error) throw new Error(sbErr(error));
+  if (error) throw sbFail(error);
   return data;
 }
 async function fxSettings() {
@@ -201,7 +201,7 @@ async function drawImport(box) {
     if (!confirm(`Write ${n} fabrics and their yarns into the masters as version 1, with first rates from ${dfmt(p.start)}? ${skip.length} go to the not-imported list.`)) return;
     go.disabled = true; msg.className = 'meta'; msg.textContent = 'Writing…';
     try { const r = await fxRpc('fm_accept_import', {p_proposal: P.id, p_fp: P.fp, p_skip: skip}); msg.textContent = `Done: ${r.fabrics} fabrics, ${r.yarns} yarns, ${r.rates} rates. Requests start with the next reads; Head-group links is open now.`; FX = null; setTimeout(() => render(), 1200); }
-    catch (e) { go.disabled = false; msg.className = 'err'; msg.textContent = 'Not written: ' + sbErr(e); }
+    catch (e) { go.disabled = false; msg.className = 'err'; msg.textContent = saveFail(e, 'write the import', 'Accept the import'); }
   }});
   box.replaceChildren(
     card('First import', `Proposed from the read at ${fxWhen(P.created_at)} · first rates from ${dfmt(p.start)}`,
@@ -240,19 +240,19 @@ async function drawMasters(box) {
   const brows = skipped.map((sid) => {
     const raw = rawOf.get(sid) || {}, m = el('span', {class: 'meta'});
     return [el('b', {text: raw.name ? fxRawName(raw) : sid}), el('span', {class: 'note', text: sid}), el('span', {}, el('button', {type: 'button', class: 'ghost', text: 'Bring in', onclick: async () => {
-      try { await fxRpc('fm_bring_in', {p_src: sid}); m.textContent = 'It comes back as a new-fabric request after the next two reads.'; } catch (e) { m.className = 'err'; m.textContent = sbErr(e); } }}), ' ', m)];
+      try { await fxRpc('fm_bring_in', {p_src: sid}); m.textContent = 'It comes back as a new-fabric request after the next two reads.'; } catch (e) { m.className = 'err'; m.textContent = saveFail(e, 'bring it in', ''); } }}), ' ', m)];
   });
   const hrows = hist.map((h) => [fxWhen(h.at), h.action, el('span', {class: 'note', text: [h.field, h.old != null ? fxShow(h.old) + ' →' : '', h.new != null ? fxShow(h.new) : ''].filter(Boolean).join(' ').slice(0, 160)}), h.eff_from ? dfmt(h.eff_from) + (h.mode && h.mode !== 'new' ? ' · ' + h.mode : '') : '', h.by]);
   // ---- switches
   const sm = el('span', {class: 'meta'});
   const paused = fxSet.sync_paused === true;
   const pause = el('button', {type: 'button', class: paused ? 'primary' : 'ghost', text: paused ? 'Resume the sync' : 'Pause the sync', onclick: async () => {
-    try { await fxRpc('fm_pause', {p_on: !paused}); render(); } catch (e) { sm.className = 'err'; sm.textContent = sbErr(e); } }});
+    try { await fxRpc('fm_pause', {p_on: !paused}); render(); } catch (e) { sm.className = 'err'; sm.textContent = saveFail(e, 'change the sync', ''); } }});
   const reviewed = fxSet.analysis_review && fxSet.analysis_review.passed === true;
   const am = el('span', {class: 'meta'});
   const on = fxSet.analysis_on === true;
   const sw = fxIsOwner() ? el('button', {type: 'button', class: on ? 'ghost' : 'primary', text: on ? 'Switch the analysis off' : 'Switch the analysis on', onclick: async () => {
-    try { await fxRpc('fm_set_analysis', {p_on: !on}); await fxSettings(); fxNavRealisation(); render(); } catch (e) { am.className = 'err'; am.textContent = sbErr(e); } }}) : el('span', {class: 'note', text: 'Only Divyam can switch it on.'});
+    try { await fxRpc('fm_set_analysis', {p_on: !on}); await fxSettings(); fxNavRealisation(); render(); } catch (e) { am.className = 'err'; am.textContent = saveFail(e, 'switch the analysis', ''); } }}) : el('span', {class: 'note', text: 'Only Divyam can switch it on.'});
   box.className = 'fxpage';   // 18 Nov 2026: cards keep the page's 16 px gap
   box.replaceChildren(
     el('div', {class: 'kpis'},
@@ -326,7 +326,7 @@ function drawLinks(box, sug) {
       try {
         for (const w of both && other ? [r.width, other.width] : [r.width]) await fxRpc('fm_link_style', {p_style: r.style, p_width: w, p_greige: gu, p_rfd: ru, p_eff: d.value || null, p_mode: mode, p_note: noteOf(cur && cur.basis)});
         m.textContent = 'Linked.'; await fxLoad(true); drawLinks(box, sug);
-      } catch (e) { m.className = 'err'; m.textContent = sbErr(e); }
+      } catch (e) { m.className = 'err'; m.textContent = saveFail(e, 'link', ''); }
     };
     // one tap sets which record "As sold" values this link on: a correction row with the same fabrics and the new note
     const def = cur ? fcLinkDefault(cur) : null;
@@ -334,7 +334,7 @@ function drawLinks(box, sug) {
       if (v === def) return;
       m.className = 'meta'; m.textContent = 'Saving…';
       try { await fxRpc('fm_link_style', {p_style: r.style, p_width: r.width, p_greige: cur.greige, p_rfd: cur.rfd, p_eff: r.cur.eff_from, p_mode: 'correction', p_note: noteOf(v)}); m.textContent = `As sold on ${v}.`; await fxLoad(true); drawLinks(box, sug); }
-      catch (e) { m.className = 'err'; m.textContent = sbErr(e); }
+      catch (e) { m.className = 'err'; m.textContent = saveFail(e, 'save', ''); }
     };
     const basisSeg = cur && (cur.greige != null || cur.rfd != null) ? el('div', {class: 'toolbar', style: 'margin:6px 0 0'}, el('label', {text: 'As sold on'}),
       el('div', {class: 'seg', role: 'group', 'aria-label': 'As sold basis for ' + name}, ['Greige', 'RFD'].map((v) => el('button', {type: 'button', 'aria-pressed': def === v ? 'true' : 'false', text: v,
@@ -357,7 +357,7 @@ function drawLinks(box, sug) {
         !cur && other && !other.cur ? el('button', {type: 'button', class: 'primary', text: `Confirm for ${r.width} and ${other.width} cm`, title: 'The same fabric on both loom widths', onclick: () => save(num(g), num(f), 'new', true)()}) : null,
         cur ? el('button', {type: 'button', class: 'ghost', text: 'Correct the link', title: 'Replace the current link for its whole period', onclick: () => save(num(g), num(f), 'correction')()}) : null,
         el('button', {type: 'button', class: 'ghost', text: 'Not a fabric to value', onclick: () => save(null, null, cur ? 'new' : 'new')()}),
-        cur ? el('button', {type: 'button', class: 'ghost', text: 'Undo this link', onclick: async () => { if (!confirm('Undo this link? It is kept in history; the style becomes unlinked for that period.')) return; try { await fxRpc('fm_unlink', {p_link: r.cur.id}); await fxLoad(true); drawLinks(box, sug); } catch (e) { m.className = 'err'; m.textContent = sbErr(e); } }}) : null, m));
+        cur ? el('button', {type: 'button', class: 'ghost', text: 'Undo this link', onclick: async () => { if (!confirm('Undo this link? It is kept in history; the style becomes unlinked for that period.')) return; try { await fxRpc('fm_unlink', {p_link: r.cur.id}); await fxLoad(true); drawLinks(box, sug); } catch (e) { m.className = 'err'; m.textContent = saveFail(e, 'undo', ''); } }}) : null, m));
   });
   const seg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Styles shown'}, [['unlinked', `Unlinked (${unlinked.length})`], ['all', `All (${rows.length})`]].map(([v, t]) =>
     el('button', {type: 'button', 'aria-pressed': FXLINKS === v ? 'true' : 'false', text: t, onclick: () => { FXLINKS = v; drawLinks(box, sug); }})));
@@ -412,7 +412,7 @@ async function drawApprovals(box) {
           if (!pick.length) return;
           m.textContent = 'Approving…';
           try { const x = await fxRpc('fm_approve_descriptive', {p_reqs: pick.map((r) => r.id), p_tokens: pick.map((r) => r.event_id)}); m.textContent = `${x.approved} approved.`; redraw(); }
-          catch (e) { m.className = 'err'; m.textContent = sbErr(e); }
+          catch (e) { m.className = 'err'; m.textContent = saveFail(e, 'approve', ''); }
         }}), m)));
     }
     for (const r of money) out.push(fxRequestCard(r, raw, redraw));
@@ -426,7 +426,7 @@ async function drawApprovals(box) {
       const r = h.request_id && approved.get(h.request_id), m = el('span', {class: 'meta'});
       const undo = r && h.action === 'approved' || r && /fabric added|linked to existing|retired|rate removed|added as a new/.test(h.action) ? el('button', {type: 'button', class: 'ghost', text: 'Undo', onclick: async () => {
         if (!confirm(`Undo "${r.title}"? The reversal is saved as a new version and the change goes back to Pending.`)) return;
-        try { await fxRpc('fm_undo', {p_req: r.id}); redraw(); } catch (e) { m.className = 'err'; m.textContent = sbErr(e); } }}) : null;
+        try { await fxRpc('fm_undo', {p_req: r.id}); redraw(); } catch (e) { m.className = 'err'; m.textContent = saveFail(e, 'undo', ''); } }}) : null;
       return [fxWhen(h.at), el('span', {}, h.action, h.detail && h.detail.title ? el('div', {class: 'note', text: h.detail.title}) : null),
         el('span', {class: 'note', text: [h.field, h.old != null ? fxShow(h.old) + ' →' : '', h.new != null ? fxShow(h.new) : ''].filter(Boolean).join(' ').slice(0, 160)}),
         h.eff_from ? dfmt(h.eff_from) + (h.mode && h.mode !== 'new' ? ' · ' + h.mode : '') : '', h.by, el('span', {}, undo, m)];
@@ -550,14 +550,14 @@ function fxRequestCard(r, raw, redraw, isRejected) {
       const all = r.kind === 'different' ? '\n\nEvery change in this request:\n' + facts.map(([a, b]) => `${a}: ${b}`).join('\n') : '';
       if (/^JUMP/.test(t) && confirm(t.replace(/^JUMP: /, '').replace(/\.\s*Confirm.*$/, '') + '.' + all + '\n\nThat is more than 25%. Approve ' + (all ? 'all of them' : 'it') + ' anyway?')) return approve(Object.assign(extra, {jump: true}));
       if (/^DATE/.test(t) && confirm(t.replace(/^DATE: /, '').replace(/\.\s*Confirm.*$/, '') + '.\n\nUse this date anyway?')) return approve(Object.assign(extra, {date: true}));
-      m.className = 'err'; m.textContent = /^STALE/.test(t) ? t.replace(/^STALE: /, '') + ' Reloading…' : 'Not approved: ' + t;
+      m.className = 'err'; m.textContent = /^STALE/.test(t) ? t.replace(/^STALE: /, '') + ' Reloading…' : saveFail(e, 'approve', '');
       if (/^STALE/.test(t)) setTimeout(redraw, 1500);
     }
   };
   const reject = async () => {
     m.className = 'meta'; m.textContent = 'Rejecting…';
     try { await fxRpc('fm_reject', {p_req: r.id, p_token: r.event_id, p_note: null}); m.textContent = 'Rejected.'; redraw(); }
-    catch (e) { m.className = 'err'; m.textContent = sbErr(e).replace(/^STALE: /, ''); }
+    catch (e) { m.className = 'err'; m.textContent = /^STALE/.test(sbErr(e)) ? sbErr(e).replace(/^STALE: /, '') : saveFail(e, 'reject', ''); }
   };
   const dated = r.cls === 'money' && r.kind !== 'rate_removed';
   const okBtn = el('button', {type: 'button', class: 'primary', text: isRejected ? 'Approve after all' : r.kind === 'new_fabric' ? 'Go ahead' : 'Approve', onclick: () => approve()});
@@ -1359,7 +1359,7 @@ function fxTargetsCard() {
     save.disabled = true; msg.className = 'meta'; msg.textContent = 'Saving…';
     out.mix = fxRTSaved(out.mix);
     try { await fxRpc('fm_set_realisation_targets', {p_value: out}); await fxSettings(); msg.className = 'saved'; msg.textContent = 'Saved. Applies straight away.'; setTimeout(render, 600); }
-    catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + sbErr(e); }
+    catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'save', 'Save'); }
     save.disabled = false;
   }});
   const mixTot = (w) => Object.values(mix[w] || {}).reduce((a, n) => a + n, 0), loomsW = (w) => Object.keys(D.machine || {}).filter((l) => String(D.machine[l].width) === w).length;

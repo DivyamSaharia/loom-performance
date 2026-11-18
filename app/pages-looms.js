@@ -272,7 +272,7 @@ function assignCard(un) {
           {style: u.style, head_group: hg, is_new: isNew, status: 'pending', at: new Date().toISOString()});
         DRAFT.delete(id); DRAFT.delete(id + '-new');
         msg.className = 'saved'; msg.textContent = `Saved as ${hg}. Applies on the next daily run, or press Reload data.`;
-      } catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access') + '. Assign it in the Config Sheet instead.'; res = 'err'; ready(); }
+      } catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'save', 'Save') + ' You can also assign it in the Config Sheet.'; res = 'err'; ready(); }
       flashSet(id, msg.className, msg.textContent);
       return res;
     };
@@ -291,7 +291,7 @@ function assignCard(un) {
     await holdState(async () => {
       for (const f of savers) n[await f(true)] += 1;
       flashSet('as-all', n.err || n.bad ? 'err' : 'saved', !n.saved && !n.err && !n.bad ? 'Nothing new to save: pick a head group for a style first.'
-        : [`${n.saved} style${n.saved === 1 ? '' : 's'} saved`, n.bad ? `${n.bad} with a new head group name to type` : null, n.err ? `${n.err} could not be saved` : null].filter(Boolean).join(' · ') + (n.saved ? '. They apply on the next daily run, or press Reload data.' : ''));
+        : [`${n.saved} style${n.saved === 1 ? '' : 's'} saved`, n.bad ? `${n.bad} with a new head group name to type` : null, n.err ? `${n.err} could not be saved: the reason is on each row` : null].filter(Boolean).join(' · ') + (n.saved ? '. They apply on the next daily run, or press Reload data.' : ''));
       allBtn.disabled = !db; flashShow('as-all', allMsg);
     });
   }});
@@ -467,7 +467,7 @@ function spEditor() {
     const v = parseFloat(inp.value); if (!(v >= 1 && v <= 15)) { msg.className = 'err'; msg.textContent = 'Enter the set point in kgf/cm², from 1 to 15.'; return; }
     btn.disabled = true; msg.className = 'meta'; msg.textContent = 'Saving…';
     try { await db.collection('targets').doc('compsp__kgf').set({width: 'all', hg: 'all', main: v}); COMP_SP = v; PSP_EDIT = false; render(); }
-    catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access'); btn.disabled = false; }
+    catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'save', 'Save'); btn.disabled = false; }
   }});
   return el('div', {class: 'toolbar'}, el('label', {text: 'Compressor set point, as set on the compressor'}), inp, el('span', {text: 'kgf/cm²'}), btn,
     el('button', {class: 'ghost', type: 'button', text: 'Cancel', onclick: () => { PSP_EDIT = false; render(); }}), msg,

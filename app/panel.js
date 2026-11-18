@@ -195,7 +195,7 @@ function pannaSwitch(w, hg) {
       if (toSingle) await db.collection('targets').doc(pannaId(w, root)).set({width: '280', hg: root});
       else for (const id of hgPannaIds(w, hg)) await db.collection('targets').doc(id).delete();   // every member of a merged group, and any stray
       PANNA_MSG[hg] = ['saved', `Saved: ${toSingle ? 'single' : 'double'} panna`];
-    } catch (e) { SINGLE = prev; PANNA_MSG[hg] = ['err', 'Could not save: ' + (e && e.message || 'no write access')]; }
+    } catch (e) { SINGLE = prev; PANNA_MSG[hg] = ['err', saveFail(e, 'save', '')]; }
     refreshAll();
   };
   const msg = PANNA_MSG[hg];

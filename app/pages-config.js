@@ -46,7 +46,7 @@ function pageTargets() {
         for (const id of stray) { try { await db.collection('targets').doc(id).delete(); STRAY[key(w, hg)].delete(id); } catch (e) {} }
         for (const f of ['cfm', 'rpm', 'main']) DRAFT.delete(`${id}-${f}`);
         msg.className = 'saved'; msg.textContent = 'Saved';
-      } catch (e) { msg.className = 'err'; msg.textContent = 'Could not save: ' + (e && e.message || 'no write access'); res = 'err'; }
+      } catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'save', 'Save'); res = 'err'; }
       flashSet(id, msg.className, msg.textContent);
       btn.disabled = false;
       return res;
@@ -73,7 +73,7 @@ function pageTargets() {
     const n = {saved: 0, same: 0, bad: 0, err: 0};
     await holdState(async () => {
       for (const f of savers) n[await f(true)] += 1;
-      flashSet('tg-all', n.err || n.bad ? 'err' : 'saved', !n.saved && !n.err && !n.bad ? 'Nothing changed to save. Type a target in a box first.' : [`${n.saved} head group${n.saved === 1 ? '' : 's'} saved`, n.bad ? `${n.bad} with a number to fix` : null, n.err ? `${n.err} could not be saved` : null].filter(Boolean).join(' · '));
+      flashSet('tg-all', n.err || n.bad ? 'err' : 'saved', !n.saved && !n.err && !n.bad ? 'Nothing changed to save. Type a target in a box first.' : [`${n.saved} head group${n.saved === 1 ? '' : 's'} saved`, n.bad ? `${n.bad} with a number to fix` : null, n.err ? `${n.err} could not be saved: the reason is on each row` : null].filter(Boolean).join(' · '));
       for (const x of allBtns) x.disabled = !db;
       flashShow('tg-all', allMsg);
     });
