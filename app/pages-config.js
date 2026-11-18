@@ -24,7 +24,7 @@ function pageTargets() {
       const box = el('input', {type: 'number', id: bid, step, min: '0', inputmode: 'decimal', 'aria-label': `Target ${f} for ${hg} ${w} cm`, value: draftOf(bid, saved) || null});
       const rb = () => { const v = box.value.trim() === '' ? null : Number(box.value); return rangeBar({now, bm, best, tg: ok(v) && v > 0 ? v : null, fmt, aria: `${f.toUpperCase()} for ${hg}, ${w} cm: now, benchmark, best and target`}); };
       let bar = rb(); box.addEventListener('input', () => { draftKeep(bid, box.value, saved); FLASH.delete(id); const nb = rb(); bar.replaceWith(nb); bar = nb; });
-      return el('div', {}, el('div', {class: 'tgin'}, box, bar),
+      return el('div', {'data-sort': saved}, el('div', {class: 'tgin'}, box, bar),   // sorts on the saved target; none = a gap (18 Nov 2026)
       el('div', {class: 'hint'}, `now ${fmt(now)} · `, ok(bm) && bk ? bmBtn('bm ' + fmt(bm), w, hg, bk.m, bk) : `bm ${fmt(bm)}`,
         ok(best) && bk ? [' · ', bmBtn('best ' + fmt(best), w, hg, bk.m, {...bk, kind: 'best'})] : null, extra || null)); };
     const msg = flashShow(id, el('div', {class: 'meta'}));

@@ -78,6 +78,7 @@ function fxCorrectionsCard(cors) {
   if (!cors) return card(title, what, el('p', {class: 'err', text: `Could not load the corrections${FXCOR_ERR ? ` (${FXCOR_ERR})` : ''}. Press the Refresh icon (the round arrow) to try again; if it keeps failing, the daily run's notification still carries every correction.`}));
   if (!cors.length) return card(title, what, el('p', {class: 'note', text: 'No corrections yet. Nothing to do: a day shows here, and in the hourly notification, if its figures move by ₹500 or more after it was announced (the last 31 days are checked every hour the daily run runs, 10:40 to 16:40 IST).'}));
   const seen = fxCorSeen(), arrow = (o, n, k) => `${fxMoney(o[k])} → ${fxMoney(n[k])}`;
+  const arrowCell = (o, n, k) => el('span', {style: 'white-space:normal'}, el('span', {style: 'white-space:nowrap', text: `${fxMoney(o[k])} →`}), ' ', el('span', {style: 'white-space:nowrap', text: fxMoney(n[k])}));   // 18 Nov 2026: breaks after the arrow on a laptop
   const chg = (o, n, k) => ok(o[k]) && ok(n[k]) ? (n[k] - o[k] >= 0 ? '+' : '') + fxMoney(n[k] - o[k]) : '—';
   const days = cors.flatMap((c) => (c.days || []).map((d) => ({c, d, o: d.old || {}, n: d.new || {}, open: () => openDayAny(d.date)})));
   const tag = (x) => x.c.id > seen ? el('span', {class: 'pill warn', text: 'new', style: 'margin-left:6px'}) : null;
@@ -92,9 +93,9 @@ function fxCorrectionsCard(cors) {
         el('div', {class: 'note', text: `Sale value, told → now: ${arrow(x.o, x.n, 'sale')}`}))))
     : table(['Day', 'Why', ['Realisation change', '₹'], ['Profit change', '₹'], ['Realisation', 'told → now'], ['Profit', 'told → now'], ['Sale value', 'told → now'], 'Sent'],
         days.map((x) => el('tr', Object.assign({class: 'pick corr'}, keys(x)), [el('span', {}, dfmt(x.d.date), tag(x)),
-          el('span', {style: 'display:inline-block;min-width:200px', text: (x.d.cause || []).join('; ')}),
-          chg(x.o, x.n, 'real'), chg(x.o, x.n, 'profit'), arrow(x.o, x.n, 'real'), arrow(x.o, x.n, 'profit'), arrow(x.o, x.n, 'sale'),
-          fxWhen(x.c.created_at) + ' IST'].map((v, i) => el('td', {class: i >= 2 && i <= 6 ? 'num' : null}, v)))), [2, 3, 4, 5, 6]);
+          el('span', {style: 'display:inline-block;min-width:160px', text: (x.d.cause || []).join('; ')}),
+          chg(x.o, x.n, 'real'), chg(x.o, x.n, 'profit'), arrowCell(x.o, x.n, 'real'), arrowCell(x.o, x.n, 'profit'), arrowCell(x.o, x.n, 'sale'),
+          (() => { const w = fxWhen(x.c.created_at), i = w.indexOf(', '); return i < 0 ? w + ' IST' : el('span', {}, el('span', {style: 'white-space:nowrap', text: w.slice(0, i + 1)}), ' ', el('span', {style: 'white-space:nowrap', text: w.slice(i + 2) + ' IST'})); })()].map((v, i) => el('td', {class: i >= 2 && i <= 6 ? 'num' : null}, v)))), [2, 3, 4, 5, 6]);
   return card(title, `${what} Last sent ${fxWhen(cors[0].created_at)} IST. Tap a day to open it.`, body,
     el('p', {class: 'note', text: '"new" marks a day not read yet; "—" is a figure that could not be worked out (nothing priced, or no costing day), never a zero. The last 31 days are checked every hour the daily run runs (10:40 to 16:40 IST); the card keeps the last 30 corrections sent. The phone notice for a correction names the days only.'}));
 }
@@ -177,7 +178,7 @@ function pageMasters() {
 
 async function drawImport(box) {
   const ps = await sbRows('fm_import_proposals', (q) => q.select('id, created_at, fp, proposal').order('id', {ascending: false}).limit(1));
-  box.className = '';
+  box.className = 'fxpage';   // 18 Nov 2026: cards keep the page's 16 px gap
   if (!ps.length) { box.replaceChildren(card('First import', 'Waiting for the first read', el('p', {class: 'note', text: 'The proposal is built after the next read of the fabric sheet (hourly from 10:40, or Check now on Fabric health).'}))); return; }
   const P = ps[0], p = P.proposal, keep = new Map();
   const names = new Map(p.yarns.map((y) => [y.src_id, y.fields.name || y.src_id]));
@@ -252,7 +253,7 @@ async function drawMasters(box) {
   const on = fxSet.analysis_on === true;
   const sw = fxIsOwner() ? el('button', {type: 'button', class: on ? 'ghost' : 'primary', text: on ? 'Switch the analysis off' : 'Switch the analysis on', onclick: async () => {
     try { await fxRpc('fm_set_analysis', {p_on: !on}); await fxSettings(); fxNavRealisation(); render(); } catch (e) { am.className = 'err'; am.textContent = sbErr(e); } }}) : el('span', {class: 'note', text: 'Only Divyam can switch it on.'});
-  box.className = '';
+  box.className = 'fxpage';   // 18 Nov 2026: cards keep the page's 16 px gap
   box.replaceChildren(
     el('div', {class: 'kpis'},
       el('div', {class: 'card kpi'}, el('div', {class: 'label', text: 'Fabrics'}), el('div', {class: 'val', text: String(frows.length)}), el('div', {class: 'note', text: `first import ${FX.imp ? dfmt(String(FX.imp.accepted_at).slice(0, 10)) : '—'}`})),
@@ -360,7 +361,7 @@ function drawLinks(box, sug) {
   });
   const seg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Styles shown'}, [['unlinked', `Unlinked (${unlinked.length})`], ['all', `All (${rows.length})`]].map(([v, t]) =>
     el('button', {type: 'button', 'aria-pressed': FXLINKS === v ? 'true' : 'false', text: t, onclick: () => { FXLINKS = v; drawLinks(box, sug); }})));
-  box.className = '';
+  box.className = 'fxpage';   // 18 Nov 2026: cards keep the page's 16 px gap
   box.replaceChildren(card('Head-group links', `Suggestions from ${fxWhen(sug.created_at)} · one greige and one RFD fabric per head group and loom width (case 18). ★ marks a fabric carrying a code from the group's style names.`,
     el('div', {class: 'toolbar'}, seg), items.length ? el('div', {}, items) : el('div', {class: 'empty', text: FXLINKS === 'unlinked' ? 'Every head group the looms ran is linked.' : 'No head groups yet: they come from the loom data.'})));
 }
@@ -432,7 +433,7 @@ async function drawApprovals(box) {
     });
     out.push(card('History', 'Everything approved, rejected, undone or imported, newest first', table(['When', 'What', 'Detail', 'From', 'By', ''], rows)));
   }
-  box.className = '';
+  box.className = 'fxpage';   // 18 Nov 2026: cards keep the page's 16 px gap
   box.replaceChildren(...out);
   collapseTables(box);
 }
@@ -725,12 +726,14 @@ function drawRealisation0(box, pend) {
   const avgPrior = (k, costed) => { const v = prior.map((d) => dayVal(d, k, costed)).filter(ok); return v.length ? v.reduce((a, x) => a + x, 0) / v.length : null; };
   const lk = (x) => !ok(x) ? '—' : (x < 0 ? '−₹' : '₹') + (Math.abs(x) / 1e5).toFixed(2);
   const spk = (vals, label) => last7.length > 1 ? el('div', {}, spark(vals, {aria: `${label}, last ${last7.length} days`, title: `${label}: ` + last7.map((d, i) => `${dfmt(d)} ${ok(vals[i]) ? lk(vals[i]) + ' lakh' : '—'}`).join(' · ')}),
-    el('div', {class: 'spk'}, el('span', {text: dfmt(last7[0])}), el('span', {text: `${last7.length} days`}), el('span', {text: dfmt(last7.at(-1))}))) : null;
+    el('div', {class: 'spk'}, el('span', {text: dfmt(last7[0])}), el('span', {}, `${last7.length} days`, el('br'), '₹ lakh'), el('span', {text: dfmt(last7.at(-1))}))) : null;
   const tile = (label, t, k, ppk, ldk, costed, d, sp, sub) => {
     const has = costed ? t.costed_ld : t.priced_ld;   // nothing priced: a gap, never ₹0
-    return el('div', {class: 'card kpi', style: t.coverage == null || t.coverage < FX_COVER_MIN ? 'opacity:.55' : null}, el('div', {class: 'label', text: label}),
+    // 18 Nov 2026: fxkpi = a column with the line pinned to the foot, so the four lines and their dates sit level
+    return el('div', {class: 'card kpi fxkpi', style: t.coverage == null || t.coverage < FX_COVER_MIN ? 'opacity:.55' : null}, el('div', {class: 'label', text: label}),
       el('div', {class: 'val'}, has ? lk(t[k]) : '—', has ? el('small', {text: 'lakh'}) : null),
-      el('div', {class: 'note', text: has ? `${fxPaise(t[ppk])} paise/pick · ${fxMoney(t[ldk])} per loom per day${sub ? ' · ' + sub : ''}` : (costed && t.priced_ld ? 'no costing day yet' : 'nothing priced')}), d, sp);
+      el('div', {class: 'note', text: has ? `${fxPaise(t[ppk])} paise/pick · ${fxMoney(t[ldk])} per loom per day${sub ? ' · ' + sub : ''}` : (costed && t.priced_ld ? `no costing for ${dfmt(asOf)} yet: profit shows once that day's costing file is read${sp ? '. The line shows the days that have it' : ''}` : 'nothing priced')}), d,
+      sp ? el('div', {class: 'kfoot'}, sp) : null);
   };
   const dl = (k, costed) => { const c = dayVal(asOf, k, costed); return ok(c) ? delta(c, avgPrior(k, costed), true, (x) => '₹' + (x / 1e5).toFixed(2), ' lakh') : null; };
   const spv = (k, costed) => spk(last7.map((d) => dayVal(d, k, costed)), k === 'sale' ? 'Sale value' : k === 'real' ? 'Realisation' : 'Profit');
@@ -775,7 +778,7 @@ function drawRealisation0(box, pend) {
     table(['', ['Rupees', '₹']], [['Charged to the looms (cost per pick without B grade × every woven pick, plus B grade)', fxMoney(R.charged)],
       ['The plant\'s folded cost for the same days (folded cost per pick × A-grade folded picks)', fxMoney(R.plant)], ['Difference', fxMoney(R.diff)]], [1]),
     el('p', {class: 'note', text: `They differ when folding runs behind or ahead of weaving: the folded cost is per folded pick and is charged here on every woven pick, as decided. Net B grade loss in the period ${fxMoney(R.bnet)}, all of it charged: to each loom for its own register metres, the rest over every pick of its day.${R.noreg ? ` ${R.noreg} day${R.noreg === 1 ? ' has' : 's have'} no B grade register, so that B grade is spread over all picks.` : ''}`}));
-  box.className = '';
+  box.className = 'fxpage';   // 18 Nov 2026: cards keep the page's 16 px gap
   box.replaceChildren(
     bar,
     el('p', {class: 'note', text: `Masters as of ${FX.M.version ? fxWhen(FX.M.version.at) : '—'} · ${FX_BASIS_NOTE[FXBASIS]}`}),
@@ -786,7 +789,7 @@ function drawRealisation0(box, pend) {
       tile('Profit', DT, 'profit', 'profit_pp', 'profit_ld', true, dl('profit', true), spv('profit', true)),
       tile('Realisation, month to date', MT, 'real', 'real_pp', 'real_ld', false, el('span', {class: 'delta flat', text: `${dfmt(MP.from)} to ${dfmt(asOf)} · profit ${MT.costed_ld ? fxMoney(MT.profit) : '—'}`}),
         last7.length > 1 ? (() => { const v = last7.map((d) => { const t = mtdOf(d); return t.priced_ld ? t.real_ld : null; }); return el('div', {}, spark(v, {aria: 'Month-to-date realisation per loom per day, last days', title: 'Month to date, ₹ per loom per day: ' + last7.map((d, i) => `${dfmt(d)} ${fxMoney(v[i])}`).join(' · ')}),
-          el('div', {class: 'spk'}, el('span', {text: dfmt(last7[0])}), el('span', {text: '₹/loom/day'}), el('span', {text: dfmt(last7.at(-1))}))); })() : null)),
+          el('div', {class: 'spk'}, el('span', {text: dfmt(last7[0])}), el('span', {}, `${last7.length} days`, el('br'), '₹/loom/day'), el('span', {text: dfmt(last7.at(-1))}))); })() : null)),
     el('p', {class: 'note', text: `${dfmt(asOf)}: ${fxLakh(DT.picks)} lakh picks in ${DT.loomdays} loom-days, ${DT.priced_ld} priced. The tiles are the day picked at the top (and its month to date); each card below has its own period.`}),
     fxCoverageCard(cov, fxPerBar('cov', redraw, null, fxWk('cov', end))),
     trendCard,
@@ -900,15 +903,15 @@ function fxByCard(box, fabPending, rows, range, grow, cols, nums, redraw) {
   const fig = (g) => prof ? g.profit_ld : ppk ? g.real_pp : g.real_ld;
   G.sort((a, b) => (fig(b) ?? -1e18) - (fig(a) ?? -1e18));
   const nm = (k) => hg ? String(k).replace('|', ' · ') + ' cm' : 'Loom ' + k, name = (g) => nm(g.key);
-  const B = G.filter((g) => ok(fig(g))), shown = FXBY_ALL ? B : B.slice(0, 15);
+  const B = G.filter((g) => ok(fig(g)));   // 18 Nov 2026: every bar ranked on the Sorting basis, the first 15 drawn
   const have = new Set(G.map((g) => String(g.key))), noRef = RR ? [...G0.values()].filter((g) => !have.has(String(g.key)) && ok(fig(g))) : [];
   const seg = (lab, opts, cur, set) => el('div', {class: 'seg', role: 'group', 'aria-label': lab}, opts.map(([v, x]) => el('button', {type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', text: x, onclick: () => { set(v); redraw(); }})));
   const plant = fcSum(src), pv = fig(plant);
   const rl = FX_REF[ref].toLowerCase(), at = RR ? ` at ${rl} effective RPM` : '', sub = `${range.label} · ${FXBASIS}${at}`;
   const now = (g) => { const g0 = G0.get(g.key); return g0 ? ff(fig(g0)) : '—'; };
-  const bars = B.length ? signedBars(shown.map((g) => ({label: name(g), v: fig(g), text: ff(fig(g)), onClick: () => fxDaysPanel(name(g), sub, g.rows),
+  const bars = B.length ? signedBars(B.map((g) => ({label: name(g), v: fig(g), text: ff(fig(g)), onClick: () => fxDaysPanel(name(g), sub, g.rows),
     title: `${name(g)}: ${fl}${at} ${ff(fig(g))}${ppk ? '' : ' per loom per day'}${RR ? ` (as run ${now(g)})` : ''} over ${prof ? g.costed_ld : g.priced_ld} loom-days · ${ppk ? `${fxMoney(g.real_ld)} per loom per day` : `${fxPaise(prof ? g.profit_pp : g.real_pp)} paise/pick`}. Click for its loom-days.`})),
-    {aria: `${prof ? 'Profit' : 'Realisation'} ${unit}${at} ${hg ? 'by head group' : 'by loom'}`, sortId: `fx-by-${hg ? 'hg' : 'loom'}-${FXBYK}`, fmt: ff, axis: ppk ? `paise realisation per pick${at}` : `₹ ${fl} per loom per day${at}`, labelW: hg ? 170 : 90, ref: ok(pv) ? {v: pv, label: `Plant ${ff(pv)}`} : null})
+    {aria: `${prof ? 'Profit' : 'Realisation'} ${unit}${at} ${hg ? 'by head group' : 'by loom'}`, sortId: `fx-by-${hg ? 'hg' : 'loom'}-${FXBYK}`, limit: FXBY_ALL ? 0 : 15, sortDir: 'a', nameLabel: hg ? 'Head group' : 'Loom', sortLabel: prof ? 'Profit per loom per day' : ppk ? 'Realisation per pick' : 'Realisation per loom per day', fmt: ff, axis: ppk ? `paise realisation per pick${at}` : `₹ ${fl} per loom per day${at}`, labelW: hg ? 170 : 90, ref: ok(pv) ? {v: pv, label: `Plant ${ff(pv)}`} : null})
     : el('div', {class: 'empty', text: RR && G0.size && !G.length ? `No ${hg ? 'head group' : 'loom'} in this period has a ${rl} effective RPM${ref === 'tg' ? ' (set target RPMs on Targets)' : ''}.` : prof ? 'Nothing costed in this period yet: switch to Realisation, or see Coverage.' : 'Nothing priced in this period: see Coverage.'});
   const trs = G.map((g) => {
     if (!hg) return grow(el('span', {}, loomLink(g.key, range.to, 'Loom ' + g.key), RR ? el('div', {class: 'note', text: `as run ${now(g)}${ppk ? '' : '/loom/day'}`}) : null), g, false, 'Loom ' + g.key, sub);
@@ -916,7 +919,7 @@ function fxByCard(box, fabPending, rows, range, grow, cols, nums, redraw) {
     const mark = g.rows.some((r) => r.fabric != null && fabPending(r.fabric));   // a change to its fabric or yarns waits in Approvals
     return grow(el('span', {}, hgLink(h, w, range.to), el('div', {class: 'note', text: `${w} cm${RR ? ` · as run ${now(g)}${ppk ? '' : '/loom/day'}` : tg ? ` · target ${fxMoney(tg.ld)}/loom/day at ${f0(tg.erpm)} effective RPM · now ${fxMoney(g.real_ld)}` : ''}`})), g, mark, name(g), sub);
   });
-  return card(hg ? 'By head group' : 'By loom', `${range.label} · highest ${fl}${ppk ? '' : ' per loom per day'}${at} first${RR ? ` · bars and table at each loom-day's ${rl} effective RPM × its own run + stop minutes, at its own paise per pick${prof ? ' (cost per pick held at the day\'s)' : ''}` : ''} · click a bar or row for its loom-days`,
+  return card(hg ? 'By head group' : 'By loom', `${range.label} · ${fl}${ppk ? '' : ' per loom per day'}${at} · in the Sorting basis order${RR ? ` · bars and table at each loom-day's ${rl} effective RPM × its own run + stop minutes, at its own paise per pick${prof ? ' (cost per pick held at the day\'s)' : ''}` : ''} · click a bar or row for its loom-days`,
     fxPerBar('by', redraw, null, (() => {   // Round D: the figure the card's switches show, valued as the card values it
       const figL = (L) => { const t = fcSum(RR ? fxRefRows(L, ref).rows : L); return prof ? (t.costed_ld ? t.profit_ld : null) : ppk ? (t.priced ? t.real_pp : null) : (t.priced_ld ? t.real_ld : null); };
       return wkPill(wkBy(fxWkRows(fxEnd()), fxEnd(), (r) => r.date, figL, 'up'),   // the day at the top, as every other card, whatever period is picked
@@ -926,7 +929,7 @@ function fxByCard(box, fabPending, rows, range, grow, cols, nums, redraw) {
     el('div', {class: 'toolbar'}, seg('Valued at', Object.entries(FX_REF), ref, (v) => prefSet('fx_by_ref', v))),
     bars,
     noRef.length ? el('p', {class: 'note', text: `No ${rl} effective RPM, so left out of the bars and the table: ${noRef.map((g) => nm(g.key)).join(', ')}.`}) : null,
-    B.length > 15 ? el('button', {class: 'link', type: 'button', text: FXBY_ALL ? 'Show the top 15' : `Show all ${B.length}`, onclick: () => { FXBY_ALL = !FXBY_ALL; redraw(); }}) : null,
+    B.length > 15 ? el('button', {class: 'link', type: 'button', text: FXBY_ALL ? 'Show the first 15' : `Show all ${B.length} ${hg ? 'head groups' : 'looms'}`, onclick: () => { FXBY_ALL = !FXBY_ALL; redraw(); }}) : null,
     table([hg ? 'Head group' : 'Loom', ...cols.slice(1)], trs, nums));
 }
 
@@ -990,7 +993,6 @@ function fxHgTotalCell(date, w, hg, looms) {
   return el('td', {class: 'num', 'data-sort': String(Math.round(T.rs))}, el('div', {class: 'mv'}, el('div', {class: 'v', text: fxMoney(T.rs)}),
     el('div', {class: 'ref', text: T.full ? `${looms} × ${fxMoney(h.real_ld)}` : `${T.priced} of ${looms} looms priced`, title: T.full ? null : 'Only the priced looms are counted; the rest are a gap in the realisation analysis, not guessed'})));
 }
-const fxHgSort = (date, w, hg) => { const h = fxOn() && fxAll() && hg !== 'Unassigned' ? fxHgPp(date, w, hg) : null; return h ? (h.profit_pp ?? h.real_pp ?? -1e18) : -1e18; };
 // A money cell beside an existing figure: rupees, or a "not priced" pill (a gap, never ₹0); '…' while the masters load.
 function fxRsCell(rs, o) {
   if (!fxOn()) return null;
@@ -1045,19 +1047,19 @@ function fxBreakEvenChart(date) {
     return {g, h, w, v: !g.priced ? null : hg ? g.real_ld : g.real, label: hg ? `${h} · ${w}` : `Loom ${g.key}`};
   });
   const priced = G.filter((x) => x.v != null).sort((a, b) => a.v - b.v), gaps = G.filter((x) => x.v == null);
-  const shown = FXBE_ALL ? priced : priced.slice(0, 15), below = be == null ? 0 : priced.filter((x) => x.v < be).length;
-  const bars = priced.length ? signedBars(shown.map((x) => ({label: x.label, v: x.v, text: fxMoney(x.v), color: be != null && x.v < be ? 'var(--bad)' : 'var(--bar)',
+  const below = be == null ? 0 : priced.filter((x) => x.v < be).length;
+  const bars = priced.length ? signedBars(priced.map((x) => ({label: x.label, v: x.v, text: fxMoney(x.v), color: be != null && x.v < be ? 'var(--bad)' : 'var(--bar)',
     onClick: () => hg ? openHg(x.h, x.w, date) : openLoom(x.g.key, date),
     title: hg ? `${x.h}, ${x.w} cm: ${fxMoney(x.v)} realisation per loom-day over ${x.g.priced_ld} loom-day${x.g.priced_ld === 1 ? '' : 's'} · ${fxPaise(x.g.real_pp)} paise/pick${be != null ? ` · ${x.v >= be ? fxMoney(x.v - be) + ' above' : fxMoney(be - x.v) + ' below'} break-even` : ''}`
       : `Loom ${x.g.key} (${x.h}, ${x.w} cm): ${fxMoney(x.v)} realisation · ${fxPaise(x.g.real_pp)} paise/pick · ${fxLakh(x.g.priced)} lakh picks${x.g.coverage < 1 - 1e-9 ? ` · ${fxPct(x.g.coverage)} priced` : ''}${be != null ? ` · ${x.v >= be ? fxMoney(x.v - be) + ' above' : fxMoney(be - x.v) + ' below'} break-even` : ''}`})),
-    {aria: `Realisation ${hg ? 'per loom-day by head group' : 'by loom'} against break-even, least first`, fmt: fxMoney, axis: hg ? '₹ realisation per loom-day' : '₹ realisation in the day', labelW: hg ? 150 : 90, ref: be != null ? {v: be, label: `Break-even ${fxMoney(be)}`} : null})
+    {aria: `Realisation ${hg ? 'per loom-day by head group' : 'by loom'} against break-even`, limit: FXBE_ALL ? 0 : 15, sortDir: 'a', nameLabel: hg ? 'Head group' : 'Loom', sortLabel: hg ? 'Realisation per loom-day' : 'Realisation in the day', fmt: fxMoney, axis: hg ? '₹ realisation per loom-day' : '₹ realisation in the day', labelW: hg ? 150 : 90, ref: be != null ? {v: be, label: `Break-even ${fxMoney(be)}`} : null})
     : el('div', {class: 'empty', text: 'Nothing priced on this day: see Coverage on the Realisation tab.'});
   return el('div', {style: 'margin-top:14px'},
     el('h3', {text: `Loom realisation against break-even${hg ? ', head-group-wise' : ''}`}),
     el('div', {class: 'toolbar'}, bvSeg('a-real'), el('span', {class: 'note', text: be != null ? `${dfmt(date)} · break-even ${fxMoney(be)} a loom · ${below} of ${priced.length} ${hg ? 'head groups' : 'looms'} below it` : `${dfmt(date)} · no costing day yet, so no break-even line`})),
     bars,
     priced.length ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), 'below break-even'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar)'}), 'at or above it'), be != null ? el('span', {class: 'lg'}, legendShape('dash'), 'break-even') : null) : null,
-    priced.length > 15 ? el('button', {class: 'link', type: 'button', text: FXBE_ALL ? 'Show the lowest 15' : `Show all ${priced.length}`, onclick: () => { FXBE_ALL = !FXBE_ALL; render(); }}) : null,
+    priced.length > 15 ? el('button', {class: 'link', type: 'button', text: FXBE_ALL ? 'Show the first 15' : `Show all ${priced.length} ${hg ? 'head groups' : 'looms'}`, onclick: () => { FXBE_ALL = !FXBE_ALL; render(); }}) : null,
     el('p', {class: 'note', text: `Realisation = sale value at prevailing rate less standard yarn cost, As sold (the Realisation tab), ${hg ? 'per loom-day of the head group' : 'for each loom\'s whole day'}. Break-even = the day's total cost${cost != null ? ` (${fxMoney(cost)}: expenses ${fxMoney(cd.total)} + cut piece loss ${fxMoney(cd.cut || 0)}, Costing)` : ''} ÷ ${running} loom${running === 1 ? '' : 's'} running. A loom below the line does not earn its share of the day's conversion cost.${gaps.length ? ` Not priced: ${gaps.map((x) => x.label).join(', ')}.` : ''}`}));
 }
 // Quality tab (12 Nov 2026): each loom's own realisation in its head group's drill-down, beside its running figures.
@@ -1150,7 +1152,7 @@ function fxErpmRealCard(recs) {
   const hg = bv('erpm-real') === 'hg';
   const refOfY = (y) => ok(y.tg) ? y.tg : y.bm;   // sorted on the target, the benchmark where no target RPM is set
   let rows;
-  if (!hg) rows = L.filter((y) => !y.gap && ok(y.now)).map((y) => ({x: y.r.x, v: y.now, bm: y.bm, best: y.best, tg: y.tg, ex: ok(refOfY(y)) ? Math.max(0, refOfY(y) - y.now) : 0, sk: ok(refOfY(y)) ? refOfY(y) - y.now : -1e18,
+  if (!hg) rows = L.filter((y) => !y.gap && ok(y.now)).map((y) => ({x: y.r.x, v: y.now, bm: y.bm, best: y.best, tg: y.tg, ref: refOfY(y), ex: ok(refOfY(y)) ? Math.max(0, refOfY(y) - y.now) : 0, sk: ok(refOfY(y)) ? refOfY(y) - y.now : -1e18,
     tip: `Loom ${y.r.x.loom} · ${y.r.x.hg} · ${y.r.x.width} cm: ${fxMoney(y.now)} now · benchmark ${fxMoney(y.bm)} · best ${fxMoney(y.best)} · target ${fxMoney(y.tg)} · ${fxPaise(y.pp)} paise/pick`}));
   else {
     const by = new Map();
@@ -1158,20 +1160,19 @@ function fxErpmRealCard(recs) {
     const mean = (Y, f) => { const v = Y.map(f).filter(ok); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
     rows = [...by.values()].map((Y) => {
       const x0 = Y[0].r.x, v = mean(Y, (y) => y.now), bm = mean(Y, (y) => y.bm), best = mean(Y, (y) => y.best), tg = mean(Y, (y) => y.tg), ref = ok(tg) ? tg : bm;
-      return {label: `${x0.hg} · ${x0.width}`, v, bm, best, tg, ex: ok(ref) ? Math.max(0, ref - v) : 0, sk: ok(ref) ? ref - v : -1e18, open: () => openHg(x0.hg, x0.width, D.latest),
+      return {label: `${x0.hg} · ${x0.width}`, v, bm, best, tg, ref, ex: ok(ref) ? Math.max(0, ref - v) : 0, sk: ok(ref) ? ref - v : -1e18, open: () => openHg(x0.hg, x0.width, D.latest),
         tip: `${x0.hg}, ${x0.width} cm, per loom-day over ${Y.length} priced loom${Y.length === 1 ? '' : 's'}: ${fxMoney(v)} now · benchmark ${fxMoney(bm)} · best ${fxMoney(best)} · target ${fxMoney(tg)}`};
     });
   }
   rows.sort((a, b) => b.sk - a.sk || (a.x ? a.x.loom - b.x.loom : a.label.localeCompare(b.label)));
-  const shown = hg || FXER_ALL ? rows : rows.slice(0, 25);
-  const top = Math.max(1, ...shown.map((r) => Math.max(r.v || 0, r.bm || 0, r.best || 0, r.tg || 0))), [, , ticks] = niceRange(0, top), every = ticks.length > 1 ? ticks[1] - ticks[0] : top;
+  const top = Math.max(1, ...rows.map((r) => Math.max(r.v || 0, r.bm || 0, r.best || 0, r.tg || 0))), [, , ticks] = niceRange(0, top), every = ticks.length > 1 ? ticks[1] - ticks[0] : top;
   const noTg = rows.filter((r) => !ok(r.tg)).length, gaps = L.filter((y) => y.gap).length;
-  return card(`${title}, ${hg ? 'by head group' : 'by loom'}`, `${dfmt(D.latest)} · ₹ of realisation in the day at each effective RPM · biggest shortfall to target first`,
+  return card(`${title}, ${hg ? 'by head group' : 'by loom'}`, `${dfmt(D.latest)} · ₹ of realisation in the day at each effective RPM · in the Sorting basis order`,
     el('div', {class: 'toolbar'}, bvSeg('erpm-real')),
-    rows.length ? refBars(shown, {step: every / 2, labelEvery: every, axis: `₹ realisation ${hg ? 'per loom-day' : 'in the day'} (sale value less yarn)`, axisShort: '₹ realisation', aria: `Realisation ${hg ? 'by head group' : 'per loom'}: now against benchmark, best and target`, dec: 0, exSign: '−', fmt: (v) => Math.round(v).toLocaleString('en-IN'), tick: (v) => v >= 1000 ? (v / 1000).toLocaleString('en-IN') + 'k' : String(v)})
+    rows.length ? refBars(rows, {limit: hg || FXER_ALL ? 0 : 25, step: every / 2, labelEvery: every, axis: `₹ realisation ${hg ? 'per loom-day' : 'in the day'} (sale value less yarn)`, axisShort: '₹ realisation', aria: `Realisation ${hg ? 'by head group' : 'per loom'}: now against benchmark, best and target`, dec: 0, exSign: '−', fmt: (v) => Math.round(v).toLocaleString('en-IN'), tick: (v) => v >= 1000 ? (v / 1000).toLocaleString('en-IN') + 'k' : String(v)})
       : el('div', {class: 'empty', text: 'No loom with a head group is priced on this day: see Coverage on the Realisation tab.'}),
     rows.length ? chartLegend('realisation', '−n after the value = rupees short of the target (the benchmark where no target is set)') : null,
-    !hg && rows.length > 25 ? el('button', {class: 'link', type: 'button', text: FXER_ALL ? 'Show the top 25' : `Show all ${rows.length} looms`, onclick: () => { FXER_ALL = !FXER_ALL; render(); }}) : null,
+    !hg && rows.length > 25 ? el('button', {class: 'link', type: 'button', text: FXER_ALL ? 'Show the first 25' : `Show all ${rows.length} looms`, onclick: () => { FXER_ALL = !FXER_ALL; render(); }}) : null,
     el('p', {class: 'note', text: `Each figure is production × realisation per pick: the effective RPM (now, benchmark, best, or target = ${f0(ERPM_TGT * 100)}% of the target RPM) × the loom's run + stop minutes on the day × its panna factor, on the costing basis, × that loom-day's realisation per pick (As sold, the Realisation tab). There is no separate realisation target. ${hg ? 'Head-group-wise is the average per priced loom-day. ' : ''}${noTg ? `${noTg} ${hg ? 'head group' : 'loom'}${noTg === 1 ? ' has' : 's have'} no target RPM, so ${noTg === 1 ? 'it is' : 'they are'} sorted on the benchmark. ` : ''}${gaps ? `${gaps} loom${gaps === 1 ? ' is' : 's are'} not priced and left out.` : ''}`}));
 }
 function fxMixNote(date) {
@@ -1244,13 +1245,16 @@ function fxBeamTable(beams, recs) {
   const dc = (r) => el('span', {class: r.timed < r.days || r.priced < r.timed ? 'pill warn' : 'note', style: 'white-space:normal', text: `${r.timed} of ${r.days} days with warp minutes · ${r.priced} priced`});
   const hrs = (r) => r.min == null ? '—' : f1(r.min / 60), lk = (r) => r.picks == null ? '—' : fxLakh(r.picks);
   // On a phone (below 560 px) one block per beam carrying the column names, so nothing scrolls sideways (Round W).
+  // 18 Nov 2026: the phone blocks carry the same Sorting basis as the table's columns (Realisation lost, highest first, by default)
   const body = window.matchMedia('(max-width: 560px)').matches
-    ? el('div', {class: 'beamlist'}, rows.map((r) => el('div', {style: 'padding:10px 0;border-top:1px solid var(--line, #ddd)'},
+    ? sortableChart('beam-loss-phone', rows, [{v: 'beam', label: 'Beam', get: (r) => r.b.beam, d: 'a'}, {v: 'loom', label: 'Loom', get: (r) => r.b.loom, d: 'a'},
+      {v: 'min', label: 'Warp stops', get: (r) => r.min}, {v: 'picks', label: 'Picks lost on warp stops', get: (r) => r.picks}, {v: 'rs', label: 'Realisation lost', get: (r) => r.rs},
+      {v: 'days', label: 'Days counted', get: (r) => r.timed}], (RR) => el('div', {class: 'beamlist'}, RR.map((r) => el('div', {style: 'padding:10px 0;border-top:1px solid var(--line, #ddd)'},
         el('div', {}, el('strong', {text: 'Beam ' + r.b.beam}), ' · ', loomLink(r.b.loom, r.b.last, 'Loom ' + r.b.loom)),
         el('div', {class: 'note', text: `${r.b.hg} · ${r.b.width} cm · ${f2(r.b.rate)} breaks /100k picks`}),
         el('div', {}, 'Realisation lost: ', rsC(r)),
         el('div', {text: `Warp stops: ${hrs(r)} h · Picks lost on warp stops: ${lk(r)} lakh`}),
-        el('div', {}, 'Days counted: ', dc(r)))))
+        el('div', {}, 'Days counted: ', dc(r))))), {b: 'rs', d: 'd'})
     : table(['Beam', 'Loom', ['Warp stops', 'h on this beam'], ['Picks lost on warp stops', 'lakh'], ['Realisation lost', '₹'], 'Days counted'],
       rows.map((r) => [r.b.beam, el('span', {}, loomLink(r.b.loom, r.b.last, 'Loom ' + r.b.loom), el('div', {class: 'note', text: `${r.b.hg} · ${r.b.width} cm · ${f2(r.b.rate)} /100k`})),
         hrs(r), lk(r), rsC(r), dc(r)]), [2, 3, 4]);
@@ -1316,8 +1320,8 @@ function fxTargetsCard() {
     inputs[k] = {w, hg, inMix};
     const gap = tg && T.priced_ld ? T.real_ld - tg.ld : null;
     return [el('span', {}, hgLink(hg, w, latest), el('div', {class: 'note', text: w + ' cm'})),
-      T.priced_ld ? el('span', {}, fxMoney(T.real_ld), el('div', {class: 'note', text: `${T.priced_ld} priced loom-days · profit ${fxMoney(T.profit_ld)}`})) : el('span', {class: 'pill muted', text: 'not priced'}),
-      tg ? el('span', {}, fxMoney(tg.ld), el('div', {class: 'note', text: `at ${f0(tg.erpm)} effective RPM`})) : el('span', {class: 'note', text: T.priced_ld ? 'no target RPM' : '—'}), gap == null ? '—' : el('span', {class: gap >= 0 ? 'up-good' : 'up-bad', text: `${gap >= 0 ? '+' : '−'}${fxMoney(Math.abs(gap)).replace('₹', '₹')}`}),
+      T.priced_ld ? sortAs(el('span', {}, fxMoney(T.real_ld), el('div', {class: 'note', text: `${T.priced_ld} priced loom-days · profit ${fxMoney(T.profit_ld)}`})), T.real_ld) : el('span', {class: 'pill muted', text: 'not priced'}),
+      tg ? sortAs(el('span', {}, fxMoney(tg.ld), el('div', {class: 'note', text: `at ${f0(tg.erpm)} effective RPM`})), tg.ld) : sortAs(el('span', {class: 'note', text: T.priced_ld ? 'no target RPM' : '—'}), null), gap == null ? '—' : el('span', {class: gap >= 0 ? 'up-good' : 'up-bad', 'data-sort': String(gap), text: `${gap >= 0 ? '+' : '−'}${fxMoney(Math.abs(gap)).replace('₹', '₹')}`}),
       String(now.get(k) || 0), inMix];
   });
   const msg = el('span', {class: 'meta'});

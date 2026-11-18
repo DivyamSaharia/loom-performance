@@ -555,3 +555,9 @@ dialog.nsheet::backdrop{background:rgba(0,0,0,.35)}
 .sugg.nlist .k{grid-row:1 / span 2}.sugg.nlist .nl{white-space:normal}.sugg.nlist .s{grid-column:2;margin-left:0;text-align:left;white-space:normal}
 .navhit{outline:2px solid var(--accent);outline-offset:3px;border-radius:14px}
 .navnote{margin:6px 0 10px}
+/* 18 Nov 2026: Realisation and the fabric screens keep the page's gap between cards; the Realisation tiles pin their
+   7-day line to the foot so the four lines sit level; the Filter tables box spans the content like the cards. */
+.fxpage{display:grid;gap:16px}.fxpage>*{min-width:0}
+.card.kpi.fxkpi{display:flex;flex-direction:column}.fxkpi .kfoot{margin-top:auto;padding-top:6px}
+.fxkpi .spk{gap:6px;align-items:flex-start}.fxkpi .spk>span{white-space:nowrap}.fxkpi .spk>span:nth-child(2){text-align:center;line-height:1.25}
+.filters{max-width:none}

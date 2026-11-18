@@ -318,7 +318,7 @@ function bgradeSection(cur) {
   const rsTot = Object.values(lrs).reduce((a, x) => a + x, 0), missTot = Object.values(lmiss).reduce((a, x) => a + x, 0);
   const hgTot = Object.values(lm).reduce((a, x) => a + x, 0);
   const lr = Object.entries(lm).sort((a, c) => c[1] - a[1] || String(a[0]).localeCompare(String(c[0]), undefined, {numeric: true}));
-  const lwCard = card('Loom-wise B grade', `${BGHG || NA} · ${span} · highest first`,
+  const lwCard = card('Loom-wise B grade', `${BGHG || NA} · ${span}`,
     hgOpts.length ? el('div', {class: 'toolbar'}, el('label', {for: 'bghg', text: 'Head group'}), hs) : null,
     lr.length ? table(['#', 'Loom', ['B-grade metres produced', 'm'], ['Rupee impact', '₹ B grade loss'], ['Share of B-grade metres produced', `% of ${BGHG}`]],
       [...lr.flatMap(([l, m], i) => {
@@ -342,10 +342,10 @@ function bgradeSection(cur) {
   const remarks = {};
   for (const e of E) { const k = e.remark || '(no remark)'; const o = remarks[k] = remarks[k] || {k, n: 0, m: 0}; o.n += 1; o.m += e.m; }
   const cr = (bq.cats || Object.keys(cats)).map((c) => cats[c]).filter(Boolean).sort((a, c) => c.m - a.m);
-  out.append(card('B-grade reasons', `${span} · grouped from the register's remarks · most metres first`,
+  out.append(card('B-grade reasons', `${span} · grouped from the register's remarks`,
     cr.length ? hbars(cr.map((o) => ({label: o.c, v: o.m, color: 'var(--bar)', text: `${f0(o.m)} m · ${totB ? (100 * o.m / totB).toFixed(0) + '%' : NA}`,
       title: `${o.c}: named on ${o.n} entr${o.n === 1 ? 'y' : 'ies'} covering ${f0(o.m)} m, ${totB ? (100 * o.m / totB).toFixed(1) + '%' : NA} of the ${f0(totB)} m of B grade`})),
-      {aria: 'B-grade reasons, metres', axis: 'B-grade metres where the reason is named', fmt: f0, labelW: 140}) : null,
+      {aria: 'B-grade reasons, metres', axis: 'B-grade metres where the reason is named', fmt: f0, labelW: 140, nameLabel: 'Reason', sortLabel: 'B-grade metres where named'}) : null,
     cr.length ? table(['Reason', ['Entries', 'count'], ['B grade where named', 'm'], ['Share of B grade', '%']], cr.map((o) => [o.c, String(o.n), f0(o.m), totB ? (100 * o.m / totB).toFixed(1) + '%' : NA]), [1, 2, 3])
       : el('p', {class: 'empty', text: `${NA}: no B-grade register entries in this period.`}),
     cr.length ? table(['Remark as written', ['Entries', 'count'], ['B grade', 'm']], Object.values(remarks).sort((a, c) => c.m - a.m).map((o) => [o.k, String(o.n), f0(o.m)]), [1, 2]) : null,
@@ -402,7 +402,7 @@ function pageCosting() {
     // folded
     const fb = b.folded;
     if (fb) s.append(card('Folded cost per pick', 'Cost of A-grade folded picks: OPEX plus cut-piece loss, over picks folded',
-      table(['Step', ['Effect', 'paise per pick']], [[dfmt(b.prev_date), pn(fb.prev, 2)], ['Picks folded (timing of folding)', sg(fb.folding)], ['OPEX', sg(fb.opex)], ['Cut-piece loss', sg(fb.cut)], [dfmt(cur.date), el('b', {text: pn(fb.now, 2)})]], [1]),
+      el('div', {class: 'nosort'}, table(['Step', ['Effect', 'paise per pick']], [[dfmt(b.prev_date), pn(fb.prev, 2)], ['Picks folded (timing of folding)', sg(fb.folding)], ['OPEX', sg(fb.opex)], ['Cut-piece loss', sg(fb.cut)], [dfmt(cur.date), el('b', {text: pn(fb.now, 2)})]], [1])),   // a bridge from one day to the next: its steps are not a list to sort
       el('p', {class: 'note', text: `${f0(fb.folded_m)} m were folded against ${f0(fb.produced_m)} m produced, so folded cost per pick can move the other way from cost per pick on a day when folding runs ahead of or behind production.`})));
   }
 
@@ -502,9 +502,9 @@ function pageCosting() {
       hgRows.map((h) => [el('span', {}, el('b', {text: h.hg}), el('div', {class: 'note', text: h.names.join(', ')})), `${f0(h.dm)} / ${f0(h.nm)}`, f0(h.tm), pv[h.hg] ? ((h.tm - pv[h.hg].tm) >= 0 ? '+' : '−') + f0(Math.abs(h.tm - pv[h.hg].tm)) : 'new', pn(h.pp, 2), pc(h.share), pn(h.looms, 2), f0(h.mpl), ok(h.conv) ? pn(h.conv, 2) : '—']), [1, 2, 3, 4, 5, 6, 7, 8]),
     el('p', {class: 'note', text: `Converting cost per metre = the day's cost per pick (${pn(cur.cpp, 2)} paise) × the quality's picks per inch, so it differs between groups only through picks per inch. A quality running on both widths counts once. Click a point on a chart below to open another day.`}),
     (() => { const R = hgRows.filter((h) => ok(h.conv) && h.hg !== 'Unassigned').sort((a, c) => c.conv - a.conv || a.hg.localeCompare(c.hg));
-      return R.length ? el('div', {}, el('h4', {class: 'trh', text: 'Converting cost per metre, highest first'}),
+      return R.length ? el('div', {}, el('h4', {class: 'trh', text: 'Converting cost per metre'}),
         hbars(R.map((h) => ({label: h.hg, v: h.conv, color: 'var(--bar)', text: '₹' + pn(h.conv, 2), title: `${h.hg}: ₹${pn(h.conv, 2)} a metre = ${pn(cur.cpp, 2)} paise × ${pn(h.ppi, 1)} picks per inch · ${f0(h.tm)} m today`})),
-          {aria: 'Converting cost per metre by head group', axis: '₹ per metre', fmt: (v) => pn(v, 2), labelW: 150})) : null; })()));
+          {aria: 'Converting cost per metre by head group', axis: '₹ per metre', fmt: (v) => pn(v, 2), labelW: 150, nameLabel: 'Head group', sortLabel: 'Converting cost per metre'})) : null; })()));
   const hgNames = [...new Set(cDays().slice(-30).flatMap((d) => d.hg.map((h) => h.hg)))].sort();
   if (!hgNames.includes(CHSEL)) CHSEL = (cur.hg[0] || {}).hg || hgNames[0];
   const hsel = el('select', {id: 'chg', 'aria-label': 'Head group'}, hgNames.map((n) => el('option', {value: n, text: n, selected: n === CHSEL ? true : null})));

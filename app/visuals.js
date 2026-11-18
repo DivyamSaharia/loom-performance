@@ -212,8 +212,12 @@ function rangeBar(o) {
 }
 
 // Ranked bars with a sort bar (12 Nov 2026): Name and Value, plus any o.sortBases [{v, label, get}]. o.nosort: none.
+// 18 Nov 2026: o.nameLabel / o.sortLabel name the two bases after what they are ("Loom", "Warp breaks per 100k picks");
+// o.limit draws only the first n rows after sorting, so a basis ranks every row, not just the n drawn; o.sortDir is the
+// default order of the value basis ('d' highest first, 'a' lowest first: worst first either way).
 function barBases(o, valLabel) {
-  return [{v: 'name', label: 'Name', get: (r) => r.label}, {v: 'val', label: valLabel || o.sortLabel || 'Value', get: (r) => ok(r.v) ? r.v : null}, ...(o.sortBases || [])];
+  return [{v: 'name', label: o.nameLabel || 'Name', get: (r) => r.label, d: 'a'}, {v: 'val', label: valLabel || o.sortLabel || 'Value', get: (r) => ok(r.v) ? r.v : null}, ...(o.sortBases || [])];
 }
-function hbars(rows, o = {}) { return o.nosort || rows.length < 3 ? hbars0(rows, o) : sortableChart(o.sortId || o.aria || 'hbars', rows, barBases(o), (R) => hbars0(R, o)); }
-function signedBars(rows, o = {}) { return o.nosort || rows.length < 3 ? signedBars0(rows, o) : sortableChart(o.sortId || o.aria || 'sbars', rows, barBases(o), (R) => signedBars0(R, o)); }
+const barCut = (R, o) => o.limit ? R.slice(0, o.limit) : R;
+function hbars(rows, o = {}) { return o.nosort || rows.length < 3 ? hbars0(barCut(rows, o), o) : sortableChart(o.sortId || o.aria || 'hbars', rows, barBases(o), (R) => hbars0(barCut(R, o), o), {b: 'val', d: o.sortDir || 'd'}); }
+function signedBars(rows, o = {}) { return o.nosort || rows.length < 3 ? signedBars0(barCut(rows, o), o) : sortableChart(o.sortId || o.aria || 'sbars', rows, barBases(o), (R) => signedBars0(barCut(R, o), o), {b: 'val', d: o.sortDir || 'd'}); }

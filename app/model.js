@@ -99,7 +99,8 @@ function table(headers, rows, numCols = []) {
   const t = el('table');
   t.append(el('thead', {}, el('tr', {}, headers.map((h, i) => Array.isArray(h) ? th(h[0], h[1], numCols.includes(i)) : th(h, null, numCols.includes(i))))));
   const tb = el('tbody');
-  for (const r of rows) tb.append(r.nodeType ? r : el('tr', {}, r.map((c, i) => el('td', {class: numCols.includes(i) ? 'num' : null}, c))));
+  // a cell element carrying data-sort hands it to its td, so the table sorts on that figure (18 Nov 2026)
+  for (const r of rows) tb.append(r.nodeType ? r : el('tr', {}, r.map((c, i) => el('td', {class: numCols.includes(i) ? 'num' : null, 'data-sort': c && c.dataset && c.dataset.sort != null ? c.dataset.sort : null}, c))));
   t.append(tb);
   return el('div', {class: 'tablebox'}, t);
 }
@@ -129,7 +130,7 @@ function sortAll() {
 }
 const sortGet = (k) => sortAll()[k] || null;
 function sortPut(k, v) {
-  const all = {...sortAll()}; if (v && v.b) all[k] = v; else delete all[k];
+  const all = {...sortAll()}; if (v && v.b) all[k] = v; else delete all[k];   // {b: 'none'} = "As shown" picked over a default
   const keys = Object.keys(all); if (keys.length > 120) delete all[keys[0]];
   try { localStorage.setItem('w2-sort', JSON.stringify(all)); } catch (e) {}
   if (typeof prefSet === 'function') try { prefSet('sort', all); } catch (e) {}
@@ -162,33 +163,89 @@ function pickSelect(o) {
   return el('div', {class: 'trsearch pick', title: o.label}, o.label ? el('span', {class: 'pl', text: o.label}) : null, inp, list);
 }
 // The sort bar: basis picker + Ascending / Descending. st: {b, d: 'a' | 'd'}; bases [{v, label}] with '' = as shown.
+// st.b 'none' (or '') = as shown. A picked basis starts on its own natural order (o.d of the basis, else Descending).
 function sortBar(bases, st, set) {
-  const b = st && st.b || '', d = st && st.d === 'a' ? 'a' : 'd';
+  const b = st && st.b && st.b !== 'none' ? st.b : '', d = st && st.d === 'a' ? 'a' : 'd';
   const dir = (v, t) => el('button', {type: 'button', 'aria-pressed': d === v && b ? 'true' : 'false', disabled: b ? null : true, text: t, onclick: () => set({b, d: v})});
   return el('div', {class: 'toolbar sortbar', 'data-nofold': '1'},
-    pickSelect({label: 'Sorting basis', aria: 'Sorting basis', placeholder: 'Search a column', value: b, items: [{v: '', label: 'As shown'}, ...bases], onPick: (v) => set({b: v, d: v === b ? d : (st && st.d) || 'd'})}),
+    pickSelect({label: 'Sorting basis', aria: 'Sorting basis', placeholder: 'Search a column', value: b, items: [{v: '', label: 'As shown'}, ...bases.map(({v, label, sub}) => ({v, label, sub}))],
+      onPick: (v) => { const B = bases.find((x) => x.v === v); set({b: v || 'none', d: v === b ? d : (B && B.d) || 'd'}); }}),
     el('div', {class: 'seg', role: 'group', 'aria-label': 'Sort order'}, dir('a', '↑ Ascending'), dir('d', '↓ Descending')));
 }
 const MON = {jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12};
 // A cell's sort value: {n} for a number or date, {t} for words, null for a gap.
+// The text a cell sorts on: its data-sort (on the td, or on its one element child), else its own text without the small
+// print under it (.note, .hint), so "₹130" over "0.006 paise/pick" sorts as 130, not 1300.006 (18 Nov 2026).
+function sortText(n) {
+  let t = '';
+  for (const c of n.childNodes) t += c.nodeType === 3 ? c.textContent + ' ' : c.nodeType === 1 && !(c.classList.contains('note') || c.classList.contains('hint')) ? sortText(c) + ' ' : ' ';
+  return t;
+}
+function sortAs(c, v) { const n = c && c.nodeType ? c : el('span', {text: c == null ? '' : String(c)}); n.dataset.sort = v == null || (typeof v === 'number' && !isFinite(v)) ? '' : String(v); return n; }
 function sortVal(td) {
   if (!td) return null;
-  const t = (td.dataset && td.dataset.sort != null ? td.dataset.sort : td.textContent).replace(/\s+/g, ' ').trim();
+  const kid = td.dataset && td.dataset.sort == null && td.childElementCount === 1 && td.firstElementChild.dataset.sort != null ? td.firstElementChild.dataset.sort : null;
+  const own = td.dataset && td.dataset.sort != null ? td.dataset.sort : kid != null ? kid : td.childNodes ? sortText(td) : td.textContent;
+  const t = (own.trim() || td.dataset && td.dataset.sort != null || kid != null ? own : td.textContent).replace(/\s+/g, ' ').trim();   // a cell that is all small print sorts on it
   if (!t || /^(—|–|-|not priced|n\/a|no reference|no figure)$/i.test(t)) return null;
-  const dm = t.match(/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b(?: (\d{4}))?/i);
-  if (dm) return {n: (+(dm[3] || 2026)) * 10000 + MON[dm[2].toLowerCase()] * 100 + +dm[1]};
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);   // 2026-11-10, 2026-11-18 13:07 (18 Nov 2026)
+  if (iso) return {n: (+iso[1] * 10000 + +iso[2] * 100 + +iso[3]) * 10000 + (iso[4] ? +iso[4] * 100 + +iso[5] : 0)};
+  const dm = t.match(/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b(?: (\d{4}))?(?:,? (\d{1,2}):(\d{2})\s*(am|pm)?)?/i);
+  if (dm) { const hh = dm[4] ? (+dm[4] % 12) + (/pm/i.test(dm[6] || '') ? 12 : 0) : 0;
+    return {n: ((+(dm[3] || 2026)) * 10000 + MON[dm[2].toLowerCase()] * 100 + +dm[1]) * 10000 + (dm[4] ? (dm[6] ? hh : +dm[4]) * 100 + +dm[5] : 0)}; }
   const nm = t.match(/^[+]?(?:₹\s?)?([−-])?\s?(?:₹\s?)?(\d[\d,]*(?:\.\d+)?)/);
   if (nm) return {n: (nm[1] ? -1 : 1) * parseFloat(nm[2].replace(/,/g, ''))};
   return {t: t.toLowerCase()};
 }
+// Gaps last; in a column of figures, a worded cell ("no rate in force", "pick or reed space") goes after the figures in
+// both directions, like a gap (18 Nov 2026: it used to jump to the top on Descending).
 function sortCmp(a, b, desc) {
   if (!a && !b) return 0; if (!a) return 1; if (!b) return -1;
-  let c;
-  if (a.n != null && b.n != null) c = a.n - b.n;
-  else if (a.n != null) c = -1; else if (b.n != null) c = 1;
-  else c = a.t.localeCompare(b.t, undefined, {numeric: true});
+  if ((a.n != null) !== (b.n != null)) return a.n != null ? -1 : 1;
+  const c = a.n != null ? a.n - b.n : a.t.localeCompare(b.t, undefined, {numeric: true});
   return desc ? -c : c;
 }
+// A table's default sort (18 Nov 2026, Divyam: worst first): sortDefault(tablebox, 'Heading:d', 'Other heading:a', ...),
+// the first heading present wins (owner-only columns). Used until the person picks a basis (or "As shown").
+function sortDefault(box, ...specs) { const t = box && (box.tagName === 'TABLE' ? box : box.querySelector('table')); if (t) t.dataset.sortdef = specs.join('|'); return box; }
+// 'Label:d' or 'Label#unit:a' (unit for headings that repeat, e.g. Realisation ₹ and Realisation paise/pick). A heading
+// whose rows are all gaps is passed over for the next one.
+function sortDefCol(t, heads, rows) {
+  for (const sp of sortSpecs(t)) {
+    const m = sp.match(/^(.*?)(?:#(.*))?:([ad])$/); if (!m) continue;
+    const i = heads.findIndex((h) => headLabel(h).toLowerCase() === m[1].toLowerCase() && (!m[2] || ((h.querySelector('.unit') || {}).textContent || '').toLowerCase() === m[2].toLowerCase()));
+    if (i < 0 || (rows && !rows.some((r) => sortVal(r.children[i])))) continue;
+    return {b: String(i), d: m[3]};
+  }
+  return null;
+}
+function sortSpecs(t) {
+  if (t.dataset.sortdef) return t.dataset.sortdef.split('|');
+  const c = t.closest('.card,details'), h = c && c.querySelector('h3,h2'), title = h ? h.textContent.trim() : '';
+  const hit = SORT_DEFS.find(([re]) => re.test(title));
+  return hit ? hit.slice(1) : [];
+}
+// Default sorting basis per table, by card title (18 Nov 2026, Divyam: worst first; dates newest first). The first
+// heading present (and not all gaps) wins, so owner-only columns fall back for other roles. Not listed = as shown.
+const SORT_DEFS = [
+  [/^RPM · /, 'Lost:d'], [/^Efficiency · /, 'Picks short:d'], [/^CFM · /, 'Excess:d'], [/^Pressure · /, 'Excess:d'],
+  [/^Gap to the reference, by head group/, 'Loom realisation gap#₹ total in the day:a', 'Eff. RPM:a'],
+  [/^Current vs reference$/, 'Profit:a', 'Looms:d', 'Realisation:a', 'Loom:a'],
+  [/^Reference vs running CFM/, 'Worth:d', 'Excess:d', 'Excess air:d'],
+  [/^Reference vs running effective RPM/, 'Lost realisation:d', 'Shortfall:d', 'Gained if fixed:d'],
+  [/^Reference vs running pressure/, 'Excess:d', 'Energy saved:d'],
+  [/^(Total CFM by day|Picks by day|Floor by day|Days|File health|Corrections)$/, 'Date:d', 'Day:d'],
+  [/^Head groups holding the floor up/, 'Days at top:d'],
+  [/^Powered down on /, 'Powered down:d'], [/^Consistently low efficiency/, 'Below line:d'],
+  [/^By quality$/, 'Rate:d'], [/^Loom-wise: /, 'Rate:d'], [/^Flagged looms/, 'Rate:d'], [/^Qualities breaking/, 'Median rate:d'],
+  [/^Break rate by beam|^Realisation lost on each beam/, 'Realisation lost:d', 'Warp stops:d'],
+  [/^Why cost per pick moved/, 'Effect:d'], [/^Fixed against variable cost/, 'Amount:d'],
+  [/^Production by quality head group/, 'Total:d'], [/^B grade by head group$/, 'B grade:d'], [/^B grade share by head group/, 'Period:d'],
+  [/^Loom-wise B grade/, 'B-grade metres produced:d'], [/^B-grade reasons/, 'B grade where named:d', 'B grade:d'],
+  [/^Month to date$/, 'Month total:d'], [/^By loom$|^By head group$/, 'Profit#₹/loom/day:a', 'Realisation#paise/pick:a'],
+  [/^Realisation targets/, 'Now vs target:a'], [/^Coverage$/, 'Picks:d'], [/^Files$/, 'Checked:d'],
+];
+const headLabel = (h) => (h.firstChild && h.firstChild.nodeType === 3 ? h.firstChild.textContent : h.textContent).trim();
 function sortTables(root) {
   if (!root) return;
   for (const t of root.querySelectorAll('.tablebox>table,.heatbox>table')) {
@@ -206,12 +263,13 @@ function sortTables(root) {
     main.forEach((r, i) => { if (r.dataset.o == null) r.dataset.o = i; });
     let bar = box.previousElementSibling && box.previousElementSibling.classList.contains('sortbar') ? box.previousElementSibling : null;
     if (!bar) {
-      const bases = heads.map((h, i) => ({v: String(i), label: (h.firstChild && h.firstChild.nodeType === 3 ? h.firstChild.textContent : h.textContent).trim(), sub: (h.querySelector('.unit') || {}).textContent || ''})).filter((x) => x.label);
-      const set = (v) => { sortPut(k, v.b ? v : null); const nb = sortBar(bases, sortGet(k), set); bar.replaceWith(nb); bar = nb; sortTables(box.parentElement); collapseTables(box.parentElement, false); };
-      bar = sortBar(bases, sortGet(k), set);
+      const def = sortDefCol(t, heads, main);
+      const bases = heads.map((h, i) => ({v: String(i), label: headLabel(h), sub: (h.querySelector('.unit') || {}).textContent || '', d: def && def.b === String(i) ? def.d : 'd'})).filter((x) => x.label);
+      const set = (v) => { sortPut(k, v.b ? v : null); const nb = sortBar(bases, sortGet(k) || sortDefCol(t, heads, main), set); bar.replaceWith(nb); bar = nb; sortTables(box.parentElement); collapseTables(box.parentElement, false); };
+      bar = sortBar(bases, sortGet(k) || def, set);
       box.before(bar);
     }
-    const st = sortGet(k), col = st && st.b !== '' && st.b != null ? +st.b : -1;
+    const st = sortGet(k) || sortDefCol(t, heads, main), col = st && st.b && st.b !== 'none' ? +st.b : -1;
     const order = main.slice().sort(col < 0 || col >= heads.length ? (a, b) => a.dataset.o - b.dataset.o
       : (a, b) => sortCmp(sortVal(a.children[col]), sortVal(b.children[col]), st.d !== 'a') || a.dataset.o - b.dataset.o);
     if (order.every((r, i) => r === main[i])) continue;
@@ -224,16 +282,18 @@ function sortTables(root) {
 }
 // A ranked bar chart with its own sort bar. id: kept per chart; rows: the chart's rows; bases: [{v, label, get(row)}]
 // (numbers; null = gap, always last; a 'name' base may return a string); draw(rows) → the chart.
-function sortableChart(id, rows, bases, draw) {
+// def {b, d}: the chart's default basis (18 Nov 2026, worst first), used until the person picks one or "As shown".
+function sortableChart(id, rows, bases, draw, def) {
   const k = 'c:' + id, box = el('div', {class: 'sortchart'});
+  const cur = () => sortGet(k) || (def && bases.some((b) => b.v === def.b) ? def : null);
   const sorted = () => {
-    const st = sortGet(k), B = st && bases.find((b) => b.v === st.b);
+    const st = cur(), B = st && bases.find((b) => b.v === st.b);
     if (!B) return rows;
     const val = (r) => { const v = B.get(r); return v == null || (typeof v === 'number' && !isFinite(v)) ? null : typeof v === 'number' ? {n: v} : {t: String(v).toLowerCase()}; };
     return rows.map((r, i) => [r, i, val(r)]).sort((a, b) => sortCmp(a[2], b[2], st.d !== 'a') || a[1] - b[1]).map((x) => x[0]);
   };
   const paint = () => {
-    const bar = sortBar(bases.map((b) => ({v: b.v, label: b.label})), sortGet(k), (v) => { sortPut(k, v.b ? v : null); paint(); });
+    const bar = sortBar(bases.map((b) => ({v: b.v, label: b.label, sub: b.sub, d: b.d || (def && def.b === b.v ? def.d : 'd')})), cur(), (v) => { sortPut(k, v.b ? v : null); paint(); });
     box.replaceChildren(bar, draw(sorted()));
   };
   paint();
