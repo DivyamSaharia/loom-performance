@@ -174,6 +174,7 @@ function moveCard(cur) {
   const restE0 = (m.now_cpp - m.prev_cpp) - m.volume - top.reduce((a, l) => a + l.e, 0), restD = rest.reduce((a, l) => a + l.d, 0);
   // shown to 2 decimals and balanced, so the figures on screen add up to the change shown
   const Rb = balanced([m.volume, ...top.map((l) => l.e), restE0]), volE = Rb[0], topE = Rb.slice(1, -1), restE = Rb.at(-1);
+  if (typeof wkPut === 'function') wkPut('J7', {ref: refName, prev: m.prev_cpp, date: dfmt(cur.date), parts: [{n: 'Volume', e: volE}, ...top.map((l, i) => ({n: l.n, e: topE[i]})), {n: 'All other', e: restE}]});   // Round J
   const steps = [{label: refShort, v: m.prev_cpp, total: true}, {label: 'Volume', v: volE}, ...top.map((l, i) => ({label: l.n, v: topE[i]})), {label: 'All other', v: restE}, {label: dfmt(cur.date), v: m.now_cpp, total: true}];
   const typeOf = (n) => { if (n === 'CUT PIECE LOSS') return 'Quality loss'; const l = cur.lines.find((x) => x.n === n); return l ? COST.types[l.t] : '—'; };
   const rows = [[el('b', {text: 'Volume'}), `Picks ${pn(m.picks0, 2)} → ${pn(m.picks1, 2)} lakh (${sg((m.picks1 / m.picks0 - 1) * 100, 1)}%)`, sg(volE), 'Fixed cost spread over more or fewer picks'],
@@ -233,6 +234,7 @@ function bgradeSection(cur) {
     return {bm, fm, cp, bl, cl, tl: ok(bl) || ok(cl) ? (bl || 0) + (cl || 0) : null, cpf: ok(cm) && fm ? 100 * cm / fm : null, tpf: ok(cm) && ok(bm) && fm ? 100 * (bm + cm) / fm : null, pctF: ok(bm) && fm ? 100 * bm / fm : null, bp: ok(bl) && af ? 100 * bl / af : null, cpp: ok(cl) && af ? 100 * cl / af : null, tp: (ok(bl) || ok(cl)) && af ? 100 * ((bl || 0) + (cl || 0)) / af : null};
   };
   const A = day ? per([day]) : null, B = per(PB);
+  if (typeof wkPut === 'function') wkPut('J17', A && day ? {date: dfmt(day.date), af: day.afold, bl: A.bl, cl: A.cl, bm: A.bm, fm: A.fm} : null);   // Round J
   const na = (v, f) => ok(v) ? f(v) : NA;
   const pLabel = BGPER === 'mtd' ? 'Month to date' : BGPER === 'all' ? 'All days' : BGPER === 'range' ? 'Selected dates' : `${BGPER} days`;
   const seg = el('div', {class: 'seg', role: 'group', 'aria-label': 'B grade period'}, [[7, '7 days'], [14, '14 days'], ['mtd', 'Month to date'], ['all', 'All days'], ['range', 'Dates']].map(([v, t]) =>
@@ -287,6 +289,7 @@ function bgradeSection(cur) {
   for (const e of E) { const g = byHg[e.hg] = byHg[e.hg] || {hg: e.hg, m: 0, prod: 0, n: 0, looms: new Set()}; g.m += e.m; g.n += 1; if (e.loom != null) g.looms.add(e.loom); const v = eRs(e); if (ok(v)) g.rs = (g.rs || 0) + v; else g.miss = (g.miss || 0) + 1; }
   const hgR = Object.values(byHg).filter((g) => g.m > 0).map((g) => ({...g, pct: g.prod ? 100 * g.m / g.prod : null})).sort((a, c) => (c.pct ?? -1) - (a.pct ?? -1) || c.m - a.m);
   const totB = E.reduce((a, e) => a + e.m, 0);
+  if (typeof wkPut === 'function') wkPut('J18', hgR[0] && hgR[0].prod ? {hg: hgR[0].hg, m: hgR[0].m, prod: hgR[0].prod} : null);   // Round J
   out.append(card('B grade by head group', `${span} · ranked by B grade as a share of the head group's produced metres`,
     hgR.length ? table(['#', 'Head group', ['B grade', 'm'], ['Rupee impact', '₹ B grade loss'], ['Produced', 'm'], ['B grade share', '% of produced'], ['Share of all B grade', '%'], ['Entries', 'looms']],
       hgR.map((g, i) => [String(i + 1), bgHgBtn(g.hg), f0(g.m), rsOf(g.rs, g.miss), g.prod ? f0(g.prod) : NA, ok(g.pct) ? g.pct.toFixed(2) + '%' : NA, totB ? (100 * g.m / totB).toFixed(1) + '%' : NA, `${g.n} · ${g.looms.size}`]), [2, 3, 4, 5, 6, 7])
@@ -383,6 +386,19 @@ function pageCosting() {
 
   // ---- headline numbers
   const b = cur.bridge, pk = prev ? (cur.picks / prev.picks - 1) : null;
+  if (typeof wkPut === 'function') {   // Round J: the figures the tiles and cards below are drawn with, for their Working
+    const bg = cur.bgrade || {};
+    wkPut('J1', {total: cur.total, cut: cur.cut, picks: cur.picks}); wkPut('J2', {fcpp: cur.fcpp, afold: cur.afold, cut: cur.cut, bl: bg.loss, brev: bg.rev});
+    wkPut('J3:picks', {picks: cur.picks, prev: prev && prev.picks, prevDate: prev && dfmt(prev.date)}); wkPut('J3:total', {total: cur.total}); wkPut('J3:m', {metres: cur.metres, picks: cur.picks, looms: cur.looms});
+    wkPut('J4', {fixed: cur.fixed_amt, total: cur.total}); wkPut('J5', {amount: cur.mtd.amount, cut: cur.mtd.cut || 0, picks: cur.mtd.picks, days: cur.mtd.days});
+    wkPut('J6', cur.ly ? {ly: cur.ly.cpp, lyDate: dfmt(cur.ly.date), cpp: cur.cpp} : null);
+    const T = {}; for (const l of cur.lines) T[l.t] = (T[l.t] || 0) + l.a;
+    wkPut('J9', {types: ['fixed', 'attendance', 'output', 'lumpy'].filter((t) => t in T).map((t) => ({name: COST.types[t] || t, a: T[t]})), cut: cur.cut, picks: cur.picks});
+    wkPut('J10', {date: dfmt(cur.date), fixed: cur.fixed_amt, picks: cur.picks});
+    wkPut('J12', cur.power ? {units: cur.power.units, amount: cur.power.amount, picks: cur.picks} : null);
+    wkPut('J13', cur.labour ? {cost: cur.labour.cost, picks: cur.picks, looms: cur.looms} : null);
+    wkPut('J15', cur.stock ? {closing: cur.stock.closing, produced: cur.stock.produced, dispatch: cur.stock.dispatch} : null);
+  }
   s.append(el('div', {class: 'kpis'},
     kpiC('Cost per pick (incl. cut piece loss)', pn(cur.cpp, 2), 'paise', dlt(cur.cpp, prev && prev.cpp, false, (x) => x.toFixed(2), ' paise')),
     kpiC('Folded cost per pick', pn(cur.fcpp, 2), 'paise', dlt(cur.fcpp, prev && prev.fcpp, false, (x) => x.toFixed(2), ' paise')),
@@ -401,6 +417,7 @@ function pageCosting() {
   if (b) {
     // folded
     const fb = b.folded;
+    if (fb && typeof wkPut === 'function') wkPut('J8', {prev: fb.prev, folding: fb.folding, opex: fb.opex, cut: fb.cut, prevDate: dfmt(b.prev_date), date: dfmt(cur.date)});   // Round J
     if (fb) s.append(card('Folded cost per pick', 'Cost of A-grade folded picks: OPEX plus cut-piece loss, over picks folded',
       el('div', {class: 'nosort'}, table(['Step', ['Effect', 'paise per pick']], [[dfmt(b.prev_date), pn(fb.prev, 2)], ['Picks folded (timing of folding)', sg(fb.folding)], ['OPEX', sg(fb.opex)], ['Cut-piece loss', sg(fb.cut)], [dfmt(cur.date), el('b', {text: pn(fb.now, 2)})]], [1])),   // a bridge from one day to the next: its steps are not a list to sort
       el('p', {class: 'note', text: `${f0(fb.folded_m)} m were folded against ${f0(fb.produced_m)} m produced, so folded cost per pick can move the other way from cost per pick on a day when folding runs ahead of or behind production.`})));
@@ -461,6 +478,7 @@ function pageCosting() {
   if (CLQ) narrow();
   const {P: PLn, pre: lnPre} = per('line');
   const lv = (d, k) => { const l = d.lines.find((x) => x.n === CLINE); return l ? l[k] : null; };
+  if (typeof wkPut === 'function') wkPut('J11', {date: dfmt(cur.date), n: CLINE, a: lv(cur, 'a'), picks: cur.picks});   // Round J
   s.append(card('Any single expense line', 'Day amount and paise per pick', el('div', {class: 'toolbar'}, el('label', {for: 'clfind', text: 'Line'}), lfind, lsel, lmsg), perBar('line'),
     el('div', {class: 'trgrid'}, el('div', {}, el('h4', {class: 'trh', text: cWeekly('line', PLn.length) ? '₹ a day, average of the week' : '₹ a day'}), dayChart('line', PLn, lnPre, {aria: CLINE + ' amount', fmt: (v) => rs(v), onPick}, [{name: CLINE + (cWeekly('line', PLn.length) ? ' (₹, average a day)' : ' (₹)'), get: (d) => lv(d, 'a')}])),
       el('div', {}, el('h4', {class: 'trh', text: 'Paise per pick'}), dayChart('line', PLn, lnPre, {aria: CLINE + ' per pick', fmt: (v) => pn(v, 2), onPick}, [{name: CLINE + ' (paise per pick)', get: (d) => lv(d, 'pp'), agg: 'w', w: wPk}]))),
@@ -493,6 +511,7 @@ function pageCosting() {
   const ag = Object.values(agg).sort((a, c) => c.tm - a.tm), totM = ag.reduce((a, g) => a + g.tm, 0), totP = ag.reduce((a, g) => a + g.pp, 0);
   const vb = (v, t) => el('button', {type: 'button', 'aria-pressed': CHGV === v ? 'true' : 'false', text: t, onclick: () => { CHGV = v; try { localStorage.setItem('w2-cost-hgview', v); } catch (e) {} render(); }});
   const hgSeg = el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Production view'}, vb('today', 'Today'), vb('mtd', 'Month to date')));
+  if (typeof wkPut === 'function') { const h = CHGV === 'mtd' ? null : hgRows.find((x) => ok(x.conv) && x.hg !== 'Unassigned'); wkPut('J14', h ? {hg: h.hg, tm: h.tm, ppi: h.ppi, cpp: cur.cpp} : null); }   // Round J
   if (CHGV === 'mtd') s.append(card('Production by quality head group', `${dfmt(ym + '-01')} – ${dfmt(cur.date)} · month to date · whole plant, both widths together · sorted by metres`, hgSeg,
     table(['Head group', ['Metres', 'day / night'], ['Total', 'm'], ['Share', '% of metres'], ['Picks', 'lakh'], ['Share', '% of picks'], ['Average looms', 'a day'], ['Metres per loom-day', 'm']],
       ag.map((g) => [el('span', {}, el('b', {text: g.hg}), el('div', {class: 'note', text: [...g.names].join(', ')})), `${f0(g.dm)} / ${f0(g.nm)}`, f0(g.tm), pc(g.tm / totM), pn(g.pp, 2), pc(totP ? g.pp / totP : null), pn(g.loomdays / (cur.mtd.days || 1), 1), f0(g.tm / (g.loomdays || 1))]), [1, 2, 3, 4, 5, 6, 7]),
@@ -631,6 +650,8 @@ function sheetCheckCards(cur) {
   // (b) plant vs corrected, line by line
   const rec = scRecomputed().find((x) => x.date === d) || null;
   const V = day && day.plant ? sheetPlantVs(day.plant, rec, adj) : null;
+  if (typeof wkPut === 'function') { const r = V && (V.rows.find((x) => x.state === 'differ') || V.rows.find((x) => x.state !== 'gap'));   // Round J
+    wkPut('J19', r ? {what: `${r.line}, ${r.fig}`, file: r.plant, calc: r.corr, exp: r.exp, unit: r.unit, agree: r.state === 'agree'} : null); }
   const xc = !!V && V.rows.some((r) => r.exp === null || (ok(r.exp) && Math.abs(r.exp) >= SC_TOL[r.unit]));
   const fix = COST.pfix && ok(COST.pfix.paise) ? `${pn(COST.pfix.paise, 0)} paise a pick off the POWER line` : 'the POWER correction';
   out.push(card('Plant vs corrected', `${dfmt(d)} · Plant file = costing.xlsx as uploaded · Recomputed = the corrected costing ("As entered" view)`,
@@ -647,6 +668,7 @@ function sheetCheckCards(cur) {
   if (!M) out.push(card(ttl, sub, el('p', {class: 'empty', text: `— ${fileNote || 'no plant file for this day'}.`})));
   else {
     const T = M.total, xm = !!adj || Math.abs(M.comp || 0) >= SC_TOL.rs;
+    if (typeof wkPut === 'function') wkPut('J20', T.state === 'gap' ? null : {file: T.file, correct: T.correct});   // Round J
     const ex = (r) => xm ? [scExpCell(r, 'rs'), scLeftCell(r, 'rs')] : [];
     const rows = [...M.lines.map((r) => [r.line, rs2(r.file), rs2(r.correct), scDiffCell(r, 'rs'), ...ex(r)]),
       ...M.expected.map((r) => [r.line, rs2(r.file), rs2(r.correct), scDiffCell(r, 'rs'), ...ex(r)]),
@@ -687,6 +709,8 @@ function dayRulesCard(d, adj, dp, R) {
       adj.missing.length ? el('p', {class: 'err', text: `— Not worked out: the plant's costing.xlsx for ${adj.missing.map(dfmt).join(', ')} has not been read. Nothing is guessed.`}) : null,
       el('div', {class: 'nosort'}, table(['What', 'Basis', ['Amount', '₹']], rows, [2])));   // rows are figures, not a list to sort
   }
+  if (typeof wkPut === 'function') { const r = dp && dp.rows && dp.rows.find((x) => x.state !== 'gap');   // Round J
+    wkPut('J21', r ? {line: r.line, expected: r.expected, added: r.added, prevDate: dfmt(dp.from)} : null); }
   if (dp) {
     const head = `The double pay for ${dfmt(dp.from)} in ${dfmt(d)}'s PROGRESSIVE`;
     if (!dp.rows) body.push(el('h4', {class: 'trh', text: head}), el('p', {class: 'empty', text: `— Not checked: ${dp.why}.`}));
@@ -743,6 +767,9 @@ function cfmMoneyCard(day, date) {
   const body = [];
   if (c && day) {
     const saved = (day.now - day.after) * 1440;
+    if (typeof wkPut === 'function') { const kwh = saved * c.kwhFt3, r = kwh * c.rate;   // Round J: the tiles below, for their Working
+      wkPut('E2:kwh', {ft3: saved, kwhFt3: c.kwhFt3}); wkPut('E2:rs', {kwh, rate: c.rate}); wkPut('E2', {kwh, rate: c.rate}); wkPut('A8:cfm', {rs: r, picks: day.cpk}); wkPut('E2:month', {rs: r});
+      wkPut('E3:day', {date: dfmt(c.date), kwh: c.kwh, rate: c.rate, rupees: c.rupees}); }
     body.push(moneyKpis(c, saved * c.kwhFt3, saved * c.kwhFt3, day.cpk, `${wLabel()} looms on ${dfmt(date)}`));
     body.push(el('p', {class: 'note', text: `Saved air ${f0(saved)} ft³ a day × ${f2(c.kwhFt3 * 1000)} kWh per 1,000 ft³ (${f1(c.kwhKm3)} kWh per 1,000 m³) × ₹${f2(c.rate)} a unit. Cost per pick saved = rupees saved ÷ the same looms' picks that day, in paise. Picks are fabric picks ÷ 39.37, the costing sheet's basis, so it compares with the Costing tab's cost per pick. In the tables it is per loom or per head group, over that loom's or head group's own picks.`}));
   }
@@ -765,6 +792,8 @@ function compPowerCard() {
     CPWPER === 'range' ? rngCtl(allRows.map((r) => r.d), render) : null, rows.length ? el('span', {class: 'note', text: `${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} days`}) : null,
     // Round D: energy per air, the week's kWh ÷ the week's air (each day weighted by its air), to the day shown on the loom tabs
     wkPill(wkMean(allRows.map((r) => ({date: r.d, v: r.c.kwhKm3, w: r.c.ft3})), D.latest, (r) => r.v, (r) => r.w, 'down'), {what: 'Energy per air', fmt: f1, unit: 'kWh per 1,000 m³'})) : null;
+  if (last && typeof wkPut === 'function') { const c = last.c, d = dfmt(last.d);   // Round J
+    wkPut('E3:kwh', {date: d, kwh: c.kwh}); wkPut('E3:cost', {date: d, kwh: c.kwh, rate: c.rate, rupees: c.rupees}); wkPut('E3:air', {kwh: c.kwh, ft3: c.ft3}); wkPut('E3:rsair', {rupees: c.rupees, ft3: c.ft3}); }
   return card('Compressor power', 'Power (Compressor) from the costing sheet, against the floor\'s air',
     last ? el('div', {class: 'kpis'}, kpiC('Compressor energy', f0(last.c.kwh), 'kWh', dfmt(last.d)), kpiC('Cost', rs(last.c.rupees), '', `₹${f2(last.c.rate)} a unit`), kpiC('Energy per air', f1(last.c.kwhKm3), 'kWh per 1,000 m³', `${f2(last.c.kwhFt3 * 1000)} kWh per 1,000 ft³`), kpiC('Cost per air', rs(last.c.rsFt3 * 1000), 'per 1,000 ft³', null)) : null,
     bar, rows.length > 1 ? lineChart({dates: rows.map((r) => r.d), aria: 'Compressor energy per 1,000 m³ of air', fmt: f1, series: [{name: 'kWh per 1,000 m³', vals: rows.map((r) => r.c.kwhKm3)}]}) : el('p', {class: 'note', text: allRows.length > 1 ? 'Pick a longer period: the line needs two days with a compressor reading.' : 'The trend line starts once a second day with a compressor reading is in.'}));
@@ -773,6 +802,9 @@ function pressureMoneyCard(pp) {
   const c = compDay(D.latest);
   const body = [];
   if (c && ok(pp.total) && pp.total > 0) {
+    if (typeof wkPut === 'function') { const kwh = pp.total * c.kwh, r = kwh * c.rate;   // Round J
+      wkPut('G3:kwh', {frac: pp.total, kwh: c.kwh}); wkPut('G3:rs', {kwh, rate: c.rate}); wkPut('A8:press', {rs: r, picks: floorPicks(c.date)}); wkPut('G3:month', {rs: r});
+      wkPut('G3:day', {date: dfmt(c.date), kwh: c.kwh, rate: c.rate, rupees: c.rupees}); }
     body.push(moneyKpis(c, pp.total * c.kwh, pp.total * c.kwh, floorPicks(c.date), `all looms, both widths, on ${dfmt(c.date)}`));
     body.push(el('p', {class: 'note', text: `${f1(pp.total * 100)}% of the compressor's ${f0(c.kwh)} kWh: ${f1(pp.fix * 100)}% from bringing the compressor down from its set point (${f2(COMP_SP)} kgf/cm²) to the ${f2(pp.now)} today's floor needs, and ${f1(pp.looms * 100)}% from the looms brought to their reference (${f2(pp.after)} needed after the work). ${POWER_PCT}% of compressor energy per 1 kgf/cm² (editable on the Targets tab). Cost per pick saved = rupees saved ÷ the whole floor's picks that day (fabric picks ÷ 39.37, the costing sheet's basis), in paise. A pressure saving is a whole-compressor saving, so the tables use the whole floor's picks too.`}));
   } else if (c && ok(pp.total)) body.push(el('p', {class: 'note', text: 'The compressor already runs at or below the set point needed, and no loom sits above its reference pressure, so there is nothing to save.'}));
@@ -797,6 +829,7 @@ function compTrendBlock(s, dates) {
   if (!ds.length) return card('Compressor cost of this air', 'from the costing sheet, from 7 Nov 2026', el('p', {class: 'note', text: 'No day in this period has a compressor reading yet.'}));
   const mine = (d) => (D.loomdays || []).filter((x) => x.date === d && x.run > 0 && (s.kind === 'loom' ? x.loom === s.loom : String(x.width) === String(s.w) && x.hg === s.hg));
   const air = ds.map((r) => mine(r.d).reduce((a, x) => a + x.cfm * x.run, 0));
+  if (typeof wkPut === 'function') { const i = ds.length - 1; wkPut('E6', {date: dfmt(ds[i].d), ft3: air[i], rsFt3: ds[i].c.rsFt3, what: s.kind === 'loom' ? 'loom' : 'head group'}); }   // Round J
   return card('Compressor cost of this air', 'Whole-floor compressor energy per ft³ × this ' + (s.kind === 'loom' ? 'loom' : 'head group') + '\'s air, per day',
     lineChart({dates: ds.map((r) => r.d), aria: 'Compressor cost of this air per day', fmt: rs, series: [{name: 'Cost of the air (₹ a day)', vals: ds.map((r, i) => air[i] * r.c.rsFt3)}]}),
     lineChart({dates: ds.map((r) => r.d), aria: 'Compressor energy per 1,000 cubic metres', fmt: f1, series: [{name: 'Floor compressor kWh per 1,000 m³', vals: ds.map((r) => r.c.kwhKm3)}]}),
@@ -867,6 +900,10 @@ function tcActionTiles(kpi) {
   if (!COST) { const why = `costing not loaded yet: press Refresh (the round arrow); if it stays, ${tcNext()}`;
     return [kpi('Target cost per pick', '—', '', null, why), kpi('Folding shortage', '—', '', null, why)]; }
   const date = D.latest, tc = tcRun(date), out = [];
+  if (typeof wkPut === 'function') {   // Round J: the five steps, for the Working of the tile and the card
+    const NM = {cfm: 'every loom at its target CFM', press: 'the compressor at the set point needed', picks: 'every loom at its target effective RPM', added: 'costs that grow with the extra picks', quality: 'no B grade and no cut pieces'};
+    wkPut('B3', tc.ok ? {c0: tc.c0, steps: tc.steps.map((x) => ({pp: x.pp, name: NM[x.id] || x.id})), left: tc.steps.filter((x) => !ok(x.pp)).map((x) => NM[x.id] || x.id).join(', ')} : null);
+  }
   const t = tc.ok
     ? kpi('Target cost per pick', pn(tc.cpp, 2), 'paise', el('span', {class: 'delta ' + (tc.cpp < tc.c0 ? 'up' : 'flat'), text: `now ${pn(tc.c0, 2)} · ${tcPp(tc.cpp - tc.c0)} paise`}),
       `As entered · ${tc.cover.full} of ${tc.cover.looms} looms with every target${tcGapText(tc).length ? ' · ' + tcGapText(tc).length + ' part' + (tcGapText(tc).length === 1 ? '' : 's') + ' left out' : ''}`,
@@ -877,6 +914,7 @@ function tcActionTiles(kpi) {
   t.addEventListener('click', go); t.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
   out.push(t);
   const fs = tcShort(date);
+  if (typeof wkPut === 'function') wkPut('B4', ok(fs.s) ? {A: fs.A, B: fs.B, C: fs.C, P: fs.P, days: fs.days, of: fs.of} : null);   // Round J
   out.push(ok(fs.s)
     ? kpi('Folding shortage', f1(fs.s * 100), '%', null, `month to date, ${fs.days} of ${fs.of} days (${dfmt(fs.from)}–${dfmt(fs.to)}) · picks woven but not folded as A grade, B grade or cut pieces`)
     : kpi('Folding shortage', '—', '', null, fs.of ? `no day this month has all its figures yet (${fs.out.map((o) => `${dfmt(o.date)}: ${o.why}`).slice(0, 2).join('; ')}). Next: ${tcNext()}.` : `no costing day this month up to ${dfmt(date)} yet. Next: ${tcNext()}.`));
@@ -925,7 +963,7 @@ function tcCard() {
   const cell = (v, fmt) => ok(v) ? fmt(v) : '—';
   const phone = window.matchMedia('(max-width: 560px)').matches;
   const tot = R.reduce((a, o) => ({cfm: a.cfm + (o.cfmRs || 0), E: a.E + (o.E || 0), dM: a.dM + (o.dM || 0), ef: a.ef + o.effect}), {cfm: 0, E: 0, dM: 0, ef: 0});
-  if (!R.length) return card(TC_CARD, `${dfmt(date)} · target cost per pick, step by step`, steps, el('p', {class: 'empty', text: `No loom ran on ${dfmt(date)}, so there is no loom to bring to its targets. Pick another day with the day picker.`}));
+  if (!R.length) return card(TC_CARD, `${dfmt(date)} · target cost per pick, step by step`, steps, el('p', {class: 'empty', text: `No loom ran on ${dfmt(date)}, so there is no loom to bring to its targets. Pick another day with the date chip at the top of the page.`}));
   const heads = [hg ? 'Head group' : 'Loom', hg ? ['Looms', 'ran'] : null, ['CFM saving', '₹'], ['Extra picks', 'lakh'], ['Extra metres', 'm'], ['Effect on cost per pick', 'paise']].filter(Boolean);
   const body = phone
     ? sortableChart('tc-' + (hg ? 'hg' : 'loom'), R, [{v: 'name', label: hg ? 'Head group' : 'Loom', get: (o) => hg ? o.hgs[0] : o.loom, d: 'a'}, ...(hg ? [{v: 'looms', label: 'Looms', get: (o) => o.looms.length}] : []),

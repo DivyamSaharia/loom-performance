@@ -134,6 +134,11 @@ function priorityList(n = 5) {
 }
 function priorityCard() {
   const P = priorityList(5);
+  if (typeof wkPut === 'function') {   // Round J: the top loom, for its Working (cost valuation; owner: realisation)
+    const o = P.rows[0], real = o && o.pickBy === 'realisation';
+    wkPut('B6', o ? {loom: o.x.loom, by: o.pickBy, picks: o.lakh * 1e5, pp: o.lakh > 0 ? 100 * o.rsPicks / (o.lakh * 1e5) : null, rsPicks: o.pickBy ? o.rsPicks : null, ft3: o.ft3, rsFt3: P.cc ? P.cc.rsFt3 : null, rsAir: P.cc ? o.rsAir : null, press: o.press, rsPress: P.cc ? o.rsPress : null} : null);
+    wkPut('K12', real ? {loom: o.x.loom, picks: o.lakh * 1e5, pp: 100 * o.rsPicks / (o.lakh * 1e5)} : null);
+  }
   const sk = P.skipped.length ? el('p', {class: 'note co-skip', text: `${P.skipped.length} loom${P.skipped.length === 1 ? '' : 's'} left out: head group changed in the last 2 shifts (${P.skipped.map((c) => `loom ${c.loom}, shift ${c.shift}`).join('; ')}). ${P.skipped.length === 1 ? 'It comes' : 'They come'} back once 2 shifts pass on the new head group.`}) : null;
   if (!P.rows.length) return card('Work on these first', dfmt(D.latest), el('p', {class: 'empty', text: P.skipped.length ? 'No other loom is off its reference today.' : 'No loom is off its reference today. Nothing to chase.'}), sk, typeof fxBreakEvenChart === 'function' ? fxBreakEvenChart(D.latest) : null);
   // 12 Nov 2026 (Divyam): why as short points, impact as a total in rupees with its breakdown.
@@ -175,6 +180,13 @@ function pageActions() {
   const spk = (vals, fmt, label) => last7.length > 1 ? el('div', {}, spark(vals, {aria: `${label}, last ${last7.length} days`, title: `${label}: ` + last7.map((d, i) => `${dfmt(d)} ${fmt(vals[i])}`).join(' · ')}),
     el('div', {class: 'spk'}, el('span', {text: dfmt(last7[0])}), el('span', {text: `${last7.length} days`}), el('span', {text: dfmt(last7.at(-1))}))) : null;
   const sp = (k, fmt, label) => spk(K7.map((r) => r.k ? r.k[k] : null), fmt, label);
+  if (day && typeof wkPut === 'function') {   // Round J: the figures the tiles are drawn with, for their Working
+    const L0 = (D.loomdays || []).filter((x) => x.date === D.latest && inW(x.width) && x.run > 0), A0 = agg(L0);
+    if (A0) { wkPut('A1', {fpicks: A0.fpicks, days: 1}); wkPut('A2:eff', {run: A0.run, tot: A0.run + A0.stop}); wkPut('A2:rpm', {picks: A0.picks, run: A0.run});
+      wkPut('A3', {air: A0.air, fpicks: A0.fpicks}); wkPut('B1:cfm', {air: A0.air, run: A0.run}); wkPut('B1:total', {air: A0.air}); }
+    wkPut('B1:off', {min: (D.util || []).filter((u) => u.date === D.latest && inW(u.width)).reduce((a, u) => a + u.off, 0)});
+    wkPut('A6', pr ? {now: day.picks_l, prev: pr.picks_l, n: priorDates().length, dp: 2, unit: 'lakh'} : null);
+  }
   if (day) {
     kp.append(
       kpi('Picks', f2(day.picks_l), 'lakh', delta(day.picks_l, pr && pr.picks_l, true, (x) => x.toFixed(2), ' lakh'), null, sp('picks_l', f2, 'Picks, lakh')),
@@ -186,6 +198,7 @@ function pageActions() {
       kpi('Powered down', f1(day.off_h), 'loom-h', delta(day.off_h, pr && pr.off_h, false, (x) => x.toFixed(1), ' h'), null, sp('off_h', f1, 'Powered down, loom-hours')));
     const fl = (D.pressure.floor || []).slice(-1)[0];
     const fm = new Map((D.pressure.floor || []).map((f) => [f.date, f.floor]));
+    if (fl && typeof wkPut === 'function') wkPut('B1:floor', {floor: fl.floor, loom: fl.loom, hg: fl.hg});
     if (fl) kp.append(kpi('Floor pressure', f2(fl.floor), 'kgf/cm²', el('span', {class: 'delta flat', text: `both widths · loom ${fl.loom}, ${fl.hg}`}), null, spk(last7.map((d) => fm.has(d) ? fm.get(d) : null), f2, 'Floor pressure, kgf/cm²')));
     if (typeof fxActionTiles === 'function') kp.append(...fxActionTiles(kpi, last7, spk));   // 12 Nov 2026: realisation per pick (owner) and cost per pick
     if (typeof tcActionTiles === 'function') kp.append(...tcActionTiles(kpi));   // Round F: target cost per pick, folding shortage (+ owner: target realisation and profit)
@@ -198,6 +211,13 @@ function pageActions() {
   if (un.length) s.append(assignCard(un));
 
   const A = actionLists();
+  if (typeof wkPut === 'function') {   // Round J: the first loom of each card, for its Working
+    const r = A.rpm[0], e = A.eff[0], c = A.cfm[0], q = A.press[0];
+    wkPut('B8:rpm', r ? {loom: r.x.loom, ref: r.now + r.gap, now: r.now, run: r.x.run, pf: pf(r.x.width, r.x.hg)} : null);
+    wkPut('B8:eff', e ? {loom: e.x.loom, line: EFF_BAD(), tot: e.x.run + e.x.stop, run: e.x.run, rpm: e.x.rpm, pf: pf(e.x.width, e.x.hg)} : null);
+    wkPut('B8:cfm', c ? {loom: c.x.loom, now: c.now, ref: c.now - c.gap, tol: S().tol_air_pct} : null);
+    wkPut('B8:press', q ? {loom: q.x.loom, now: q.now, ref: q.now - q.gap} : null);
+  }
   const lostRpm = A.rpm.reduce((a, r) => a + r.impact, 0), lostEff = A.eff.reduce((a, r) => a + r.impact, 0);
   const exCfm = A.cfm.reduce((a, r) => a + r.gap, 0);
   s.append(el('div', {class: 'split'},
@@ -336,7 +356,12 @@ function pageQuality() {
   const money = typeof fxOn === 'function' && fxOn();
   const groups = [...by.entries()].map(([k, recs]) => ({k, w: recs[0].width, hg: recs[0].hg, recs, A: agg(recs)})).filter((g) => g.A)
     .sort((a, b) => (a.hg === 'Unassigned') - (b.hg === 'Unassigned') || a.w.localeCompare(b.w) || b.A.picks - a.A.picks);
+  if (typeof wkPut === 'function') { wkPut('C2', null); wkPut('C3', null); wkPut('C4', null); }   // Round J: filled by the first head group drawn
   s.append(qualityHeat(groups.filter((g) => g.hg !== 'Unassigned')));
+  { const g = groups.find((x) => x.hg !== 'Unassigned'), b = g && bench(g.w, g.hg), t = g && (tgt(g.w, g.hg) || {});   // Round J: A5, the first head group's RPM
+    let rv = !g ? null : QREF === 'tgt' ? t.rpm : QREF === 'best' ? bestVal(g.w, g.hg, 'rpm') : b && b.rpm, nm = REF_NAME[QREF];
+    if (g && !ok(rv) && b && ok(b.rpm)) { rv = b.rpm; nm = 'benchmark'; }
+    if (typeof wkPut === 'function') wkPut('A5', g && ok(rv) ? {hg: g.hg, what: 'RPM', now: g.A.rpm, ref: rv, name: nm, tol: S().tol_rpm_pct || 3, hi: true, dp: 0} : null); }
   MREF = QREF;   // 12 Nov 2026: one reference at a time in this card (reset below)
   const t = el('table');
   // 13 Nov 2026 (Divyam): the money columns sit right after Looms ran, with Total loom realisation (looms ran × ₹ per loom).
@@ -419,6 +444,11 @@ function qualityHeat(groups) {
         title: `${g.hg}, ${g.w} cm · ${label} ${fmt(now)} ${unit} against ${R.name} ${fmt(R.v)} (${txt}). Click to open the head group.`,
         onClick: () => openHg(g.hg, g.w, D.latest)};
     })]}));
+  if (typeof wkPut === 'function') {   // Round J: C1, the first cell of the grid that has a reference
+    let c1 = null;
+    for (const g of groups) { for (const [m, label, , hi] of HEAT_M) { const now = nowOf(g.A, m), R = heatRef(g, m, QHM); if (!R.none && ok(now) && ok(R.v)) { c1 = {hg: g.hg, what: label, now, ref: R.v, name: R.name, dp: m === 'main' || m === 'warp' ? 2 : m === 'rpm' || m === 'erpm' ? 0 : 1}; break; } } if (c1) break; }
+    wkPut('C1', c1);
+  }
   const nT = groups.filter((g) => { const t = tgt(g.w, g.hg); return t && (ok(t.rpm) || ok(t.cfm) || ok(t.main)); }).length;
   const b = (v, text) => el('button', {type: 'button', 'aria-pressed': QHM === v ? 'true' : 'false', text, onclick: () => { QHM = v; try { localStorage.setItem('w2-heat-ref', v); } catch (e) {} render(); }});
   return card('Gap to the reference, by head group', `% of the ${HEAT_REF[QHM]} · ${dfmt(D.latest)} · ${wLabel()}`,
@@ -562,6 +592,12 @@ function pagePressure() {
   const owner = typeof fxIsOwner === 'function' && fxIsOwner();
   const noM = owner ? 'no margin row: add setpoint_margin_kgf to the Config sheet Settings tab' : 'no margin set: tell the owner';
   const cc = compDay(D.latest), pk = cc ? floorPicks(cc.date) : 0, rsDay = ok(pp.total) && cc ? pp.total * cc.kwh * cc.rate : null;
+  if (typeof wkPut === 'function') {   // Round J: the four tiles, for their Working
+    wkPut('G1:now', looms.length ? {floor: floorNow, loom: fl ? fl.loom : (looms.find((l) => l.main === floorNow) || {}).loom} : null);
+    wkPut('G1:after', looms.length ? {floor: floorNew, held: holders.length ? holders[0].loom : null} : null);
+    wkPut('G2', looms.length ? {now: floorNow, after: floorNew, m: M} : null);
+    wkPut('G3', looms.length ? {sp: COMP_SP, now: floorNow, after: floorNew, m: M, rule: POWER_PCT} : null);
+  }
   const kp = (label, big, unit, note) => el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'big'}, ...big, el('small', {text: unit})), note ? el('div', {class: 'note', text: note}) : null));
   const sumBox = el('div', {class: 'kpis'},
     kp('Floor now', [f2(floorNow)], 'kgf/cm²', fl ? `loom ${fl.loom}, ${fl.hg}` : ''),
@@ -612,6 +648,7 @@ function pagePressure() {
       const r1 = saving(floorNow, only);
       return {l0, L, hi, avg, only, r1};
     }).sort((a, b) => b.hi - a.hi);
+    if (typeof wkPut === 'function') wkPut('G5', rows[0] ? {hg: rows[0].l0.hg, floor: rows[0].only} : null);   // Round J
     body = table(['Head group', ['Looms', 'ran'], ['Highest now', 'kgf/cm²'], ['Average now', 'kgf/cm²'], ['Reference', `kgf/cm², ${REF_NAME[PMODE]}`], ['Floor if only this quality is fixed', 'kgf/cm²'], ['Energy saved', '% of compressor, from the looms'], ['Worth', '₹ a day · paise per pick, from the looms']],
       rows.map((r) => [el('span', {}, hgLink(r.l0.hg, r.l0.width, D.latest), el('div', {class: 'note', text: r.l0.width + ' cm'})), r.L.length, f2(r.hi), f2(r.avg), refCell(PMODE, r.l0.bm, r.l0.best, r.l0.tg, f2, () => bmBtn(f2(r.l0.bm), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg))), () => bmBtn(f2(r.l0.best), r.l0.width, r.l0.hg, pkey(bench(r.l0.width, r.l0.hg)), {kind: 'best'})),
         r.only < floorNow - 1e-9 ? el('b', {text: f2(r.only)}) : f2(r.only), !ok(r.r1) ? '—' : r.r1 > 0 ? f1(r.r1 * 100) : '0', !ok(r.r1) ? '—' : r.r1 > 0 ? moneyOne(r.r1) : '0']), [1, 2, 3, 4, 5, 6, 7]);
@@ -636,6 +673,7 @@ function pagePressure() {
 // showing how far the floor (and so the compressor set point) drops at each step. Uses the reference switched above.
 function floorLadderCard(looms, floorNew) {
   const F = floorLadder(looms.map((l) => ({loom: l.loom, hg: l.hg, width: l.width, main: l.main, ref: l.ref})), 5);
+  if (typeof wkPut === 'function') { const st = F.steps && F.steps[0]; wkPut('G4', st ? {loom: st.loom, from: st.from, to: st.to, before: st.before, floor: st.floor, drop: st.drop} : null); }   // Round J
   if (!ok(F.now)) return card('Floor ladder', null, el('div', {class: 'empty', text: 'No loom pressure for this day.'}));
   const items = [{label: 'Now', v: F.now, total: true, tip: `Floor now ${f2(F.now)} kgf/cm²`},
     ...F.steps.map((st, i) => ({label: `${i + 1}. Loom ${st.loom}`, v: -st.drop, tip: `Step ${i + 1}: loom ${st.loom} (${st.hg}) from ${f2(st.from)} to ${f2(st.to)}; floor ${f2(st.before)} → ${f2(st.floor)}`})),
@@ -743,6 +781,8 @@ function pageCfm() {
   const above = recs.filter((r) => ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref));
   const noRef = recs.filter((r) => !ok(r.ref)).length;
   const saved = day ? day.now - day.after : null, pct = day && day.now ? 100 * saved / day.now : null;
+  if (typeof wkPut === 'function') { const w = day ? {air: day.air, after: day.after * 1440, date: dfmt(D.latest)} : null;   // Round J
+    for (const k of ['E1:now', 'E1:after', 'E1:saved', 'E1:pct', 'E5']) wkPut(k, w); }
   const kp = (label, big, unit, note) => el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'big'}, ...big, el('small', {text: unit})), note ? el('div', {class: 'note', text: note}) : null));
   s.append(card('If every loom ran at its reference CFM', (CMODE === 'bm' ? 'Head group benchmark' : REF_NOTE[CMODE]) + ' at each loom\'s own RPM',
     el('div', {class: 'toolbar'}, mode),
@@ -773,6 +813,8 @@ function pageCfm() {
   let body;
   if (CVIEW === 'loom') {
     const fp = floorPicks(D.latest);   // 12 Nov 2026: paise per pick on the whole floor's picks, so the rows add up to the plant's saving
+    if (typeof wkPut === 'function') { const r = sorted.find((y) => ok(y.bm)), b = r && (bench(r.x.width, r.x.hg) || {});   // Round J: benchmark CFM of the first loom
+      wkPut('A3:bm', r ? {loom: r.x.loom, hg: r.x.hg, apk: b.apk, pf: pf(r.x.width, r.x.hg), rpm: r.x.rpm} : null); }
     const totRs = cc ? sorted.reduce((a, r) => a + (r.ex > 0.05 ? r.ex * r.x.run * cc.rsFt3 : 0), 0) : null;
     body = table(['Loom', 'Head group', ['RPM', 'picks/min'], ['Now', 'CFM'], ['Reference', `CFM, ${REF_NAME[CMODE]}`], ['Excess', 'CFM over reference'], ['Air', 'ft³/1,000 picks'], ['Excess air', 'ft³ in the day'], ['Worth', '₹ a day · paise per pick of plant cost'], 'Status'],
       [...sorted.map((r) => {
@@ -882,6 +924,17 @@ function pageErpm() {
   const below = recs.filter((r) => ok(r.ref) && r.x.erpm < r.ref - tolRpm(r.ref));
   const noRef = recs.filter((r) => !ok(r.ref)).length;
   const lk = (p) => f2(p / PICK_LAKH);
+  if (typeof wkPut === 'function') {   // Round J: the tiles and the reference table, for their Working
+    const L0 = (D.loomdays || []).filter((x) => x.date === D.latest && inW(x.width) && x.run > 0), A0 = agg(L0);
+    const T = L0.map((x) => ({x, r: erpmRefs(x)})).filter((o) => o.r.gain > 0).sort((a, b) => b.r.gain - a.r.gain)
+      .map((o) => ({loom: o.x.loom, ref: o.r.after, now: o.x.erpm, min: o.x.run + o.x.stop, pf: pf(o.x.width, o.x.hg)}));
+    wkPut('A2:erpm', A0 ? {picks: A0.picks, tot: A0.run + A0.stop} : null);
+    wkPut('F1:now', day ? {now: day.now} : null); wkPut('F1:after', day ? {now: day.now, gain: day.gain} : null); wkPut('F1:gain', day ? {gain: day.gain, terms: T} : null);
+    const r0 = recs.slice().sort((a, b) => b.ex - a.ex || a.x.erpm - b.x.erpm || a.x.loom - b.x.loom).find((r) => ok(r.ref));
+    wkPut('F2', r0 ? {loom: r0.x.loom, ref: r0.ref, now: r0.x.erpm, min: r0.x.run + r0.x.stop, pf: pf(r0.x.width, r0.x.hg)} : null);
+    const o = r0 && money && typeof fxLd === 'function' ? fxLd(r0.x.date, r0.x.loom, r0.x.hg) : null;
+    wkPut('F2m', o && o.real_pp != null && r0.ex > 0.5 ? {loom: r0.x.loom, picks: r0.gain / 39.37, pp: o.real_pp} : null);
+  }
   const kp = (label, big, unit, note) => el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'big'}, ...big, el('small', {text: unit})), note ? el('div', {class: 'note', text: note}) : null));
   s.append(card('If every loom ran at its reference effective RPM', EMODE === 'bm' ? 'Head group benchmark (90th percentile)' : EMODE === 'tgt' ? `Target (${f0(ERPM_TGT * 100)}% of target RPM) where you set one, benchmark otherwise` : REF_NOTE[EMODE],
     el('div', {class: 'toolbar'}, mode),
@@ -962,6 +1015,9 @@ function pageUtil() {
   const offLong = U.filter((u) => u.off >= OFF_LONG).sort((a, b) => b.off - a.off);
   const offShort = U.filter((u) => u.off >= 60 && u.off < OFF_LONG).length;
   const money = typeof fxOn === 'function' && fxOn();   // R2: idle hours as realisation forgone (owner, analysis on)
+  if (typeof wkPut === 'function') { const u = offLong[0], r = u && money && typeof fxIdleRs === 'function' ? fxIdleRs(u.loom, u.date, u.off) : null;   // Round J
+    wkPut('H1', u ? {loom: u.loom, run: u.run, stop: u.stop, off: u.off} : null);
+    wkPut('H2', r && r.rs != null ? {loom: u.loom, off: u.off, rpm: r.rpm, pf: r.pf, pp: r.pp} : null); }
   s.append(card(`Powered down on ${dfmt(D.latest)} · ${offLong.length} loom${offLong.length === 1 ? '' : 's'}`, `${OFF_LONG / 60} h or more out of 24 h. ${offShort} more loom${offShort === 1 ? ' was' : 's were'} off between 1 and ${OFF_LONG / 60} h. A loom missing from a shift file counts as powered down for that shift.`,
     offLong.length ? table(['Loom', 'Head group', ['Powered down', 'h'], ['Run', 'h'], ['Stopped', 'h'], ...(money ? [['Realisation forgone', '₹, at its current quality']] : []), 'Off on earlier days'],
       offLong.map((u) => {
@@ -988,6 +1044,7 @@ function pageUtil() {
     }
   }
   bad.sort((a, b) => b.gap - a.gap);
+  if (typeof wkPut === 'function') wkPut('H3', bad[0] ? {loom: bad[0].loom, effs: bad[0].win.map((x) => x.eff), low: bad[0].low.length, line: f0(EFF_BAD())} : null);   // Round J
   s.append(card(`Consistently low efficiency · ${bad.length} loom${bad.length === 1 ? '' : 's'}`, (D.complete_days || []).length < LOW_EFF_WINDOW ? `${(D.complete_days || []).length} days of history so far; the window fills to ${LOW_EFF_WINDOW} days as uploads come in.` : `Below ${f0(EFF_BAD())}% on at least 3 of each loom's last ${LOW_EFF_WINDOW} running days`,
     bad.length ? table(['Loom', 'Head group', ['Days low', `of last ${LOW_EFF_WINDOW}`], ['Average efficiency', '%'], ['Below line', 'points'], ['Latest day', '%'], ['Warp breaks', 'avg /100k picks']],
       bad.map((r) => [el('span', {}, loomLink(r.loom, r.cur.date), el('div', {class: 'note', text: `${r.cur.width} cm ${r.cur.type}`})), el('span', {}, hgLink(r.cur.hg, r.cur.width, r.cur.date), r.beam ? el('div', {}, el('span', {class: 'pill info', text: 'likely beam'})) : null),
@@ -1042,6 +1099,8 @@ function warpBeamCards(dates) {
   const inP = new Set(dates), cur = currentBeams(recs);
   const beams = beamStats(recs).filter((b) => ok(b.rate) && cur.get(b.loom) === b.beam && b.dates.some((d) => inP.has(d)));
   const over = beams.filter((b) => b.rate > beamLine(b.width, b.hg)).length;
+  if (typeof wkPut === 'function') { const b = beams.slice().sort((a, c) => c.rate - a.rate)[0];   // Round J: the beam breaking most
+    wkPut('I2', b ? {beam: b.beam, loom: b.loom, warp: b.warp, picks: b.picks, days: b.days, line: beamLine(b.width, b.hg)} : null); }
   if (bv('warp') === 'hg') return [warpHgCard(recs, dates, beams)];   // 12 Nov 2026: head-group-wise
   const c1 = card('Break rate by beam', `${beams.length} beam${beams.length === 1 ? '' : 's'} still on the loom · rate over each beam's whole run · in the Sorting basis order`,
     el('div', {class: 'toolbar'}, bvSeg('warp')),
@@ -1076,6 +1135,7 @@ function pageWarp() {
   const L = (D.loomdays || []).filter((x) => dates.includes(x.date) && inW(x.width) && x.run >= 60);
   const A = agg(L);
   const day = agg(latestRecs()), wk = agg((D.loomdays || []).filter((x) => (D.complete_days || []).slice(-7).includes(x.date) && inW(x.width) && x.run >= 60));
+  if (typeof wkPut === 'function') { wkPut('I1:day', day ? {what: `every loom on ${dfmt(D.latest)}`, warp: day.warp, picks: day.picks} : null); wkPut('I1:week', wk ? {what: 'the last 7 days', warp: wk.warp, picks: wk.picks} : null); }   // Round J
   s.append(el('div', {class: 'kpis'},
     el('div', {class: 'card kpi'}, el('div', {class: 'label', text: `Warp breaks on ${dfmt(D.latest)}`}), el('div', {class: 'val'}, f0(day && day.warp), el('small', {text: 'breaks'})), el('div', {class: 'note', text: f2(day && day.warpRate) + ' per 100k picks'})),
     el('div', {class: 'card kpi'}, el('div', {class: 'label', text: 'Last 7 days'}), el('div', {class: 'val'}, f0(wk && wk.warp), el('small', {text: 'breaks'})), el('div', {class: 'note', text: f2(wk && wk.warpRate) + ` per 100k picks · ${Math.min(7, (D.complete_days || []).length)} days`}))));
@@ -1115,6 +1175,7 @@ function pageWarp() {
     for (const x of q.recs) { if (!byL.has(x.loom)) byL.set(x.loom, []); byL.get(x.loom).push(x); }
     const rows = [...byL.entries()].map(([loom, recs]) => ({loom, recs, A: agg(recs), beams: [...new Set(recs.map((x) => x.beam).filter(Boolean))]})).sort((a, b) => b.A.warp - a.A.warp);
     const med = (bench(q.w, q.hg) || {}).warp_med;
+    if (typeof wkPut === 'function') wkPut('I1', rows[0] ? {what: `Loom ${rows[0].loom}`, warp: rows[0].A.warp, picks: rows[0].A.picks, med} : null);   // Round J
     grp.append(card(`Loom-wise: ${q.hg}, ${q.w} cm`, WPER === 'day' ? dfmt(D.latest) : WPER === 'range' ? rngNote(days0()) : 'Last 7 days',
       el('div', {class: 'toolbar'}, el('label', {for: 'warp-q', text: 'Quality'}), sel),
       table(['Loom', ['Warp breaks', 'total'], ['Rate', 'per 100k picks'], ['vs head group', '× median'], ['Efficiency', '%'], ['Days', 'ran'], 'Beam'],

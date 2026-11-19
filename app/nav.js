@@ -288,7 +288,7 @@ $('#q-clear').addEventListener('click', () => { clearSearch(); qIn.focus(); });
 const NAV_HEADS = ['.card>.cardhead>h3', '.card>summary>h3', 'h3.sechead'];
 const NAV_MONEY = /realis|profit|sale value/i;
 const NAV_STATIC = {
-  realisation: ['Corrections', 'Coverage', 'Trend', 'By loom / By head group', 'Per pick: sale value to profit', 'By width', "Cost charged against the plant's costing", 'How it is worked out'],
+  realisation: ['Corrections', 'Coverage', 'Trend', 'By loom / By head group', 'Per pick: sale value to profit', 'By width', "Cost charged against the plant's costing"],
   data: ['Last 30 days', 'Files per day', 'Backup age', () => canEdit() ? 'Reload data' : null, 'Days', 'Files', 'Other alerts', 'Settings in use'],
   links: ['Head-group links'], masters: ['Fabrics', 'Yarns', 'Switches', 'History'], approvals: [],
   fabric: ['Fabrics', 'About this read', 'Recent reads'], access: ['Requests', 'People', 'Add someone directly']};
@@ -297,19 +297,28 @@ const NAV_ALT = {'By loom / By head group': ['By loom', 'By head group'],
 const navGrp = (t) => (GROUPS.find((g) => g[1].includes(t)) || ['', []])[0];
 const navTabSub = (t) => 'in ' + navGrp(t);   // a tab's second line: its side-menu group
 const navTabs = () => GROUPS.flatMap((g) => g[1]).filter(tabAllowed);
-let NIDX = null, NIDX_T = 0, NAV_QUIET = false;
+let NIDX = null, NIDX_T = 0, NAV_QUIET = false, NAV_BUSY = false;
 const navSig = () => [D, typeof COST !== 'undefined' ? COST : null, ME && ME.role, fxAnalysisOn(), typeof FX !== 'undefined' ? FX : null];
 const navFresh = () => { const g = navSig(); return !!NIDX && NIDX.sig.every((v, i) => v === g[i]); };
 function navIndex() {
   if (!D) return [];
   if (navFresh()) return NIDX.items;
+  NAV_BUSY = true;
+  try { return navIndex0(); } finally { NAV_BUSY = false; }
+}
+// A Working entry is named by its tile or card as last drawn (wkScan in working.js): the built index follows the screen.
+function navRelabel() {
+  if (!NIDX || NAV_BUSY) return;
+  for (const it of NIDX.items) if (it.wk && typeof wkLabel === 'function' && wkName(it.wk)) it.label = 'Working: ' + wkLabel(it.wk);
+}
+function navIndex0() {
   const items = [], saved = TAB, plant = isPlant();
   for (const t of navTabs()) {
     items.push({id: 't:' + t, k: 'Tab', label: TITLES[t], sub: navTabSub(t)});
     let names = [];
     if (NAV_STATIC[t]) names = NAV_STATIC[t].map((x) => typeof x === 'function' ? x() : x).filter(Boolean);
     else {
-      try { TAB = t; const sec = PAGES[t](); names = [...sec.querySelectorAll(NAV_HEADS.join(','))].filter((h) => !h.closest('tr.drillrow')).map((h) => navCardName(h.textContent)); }
+      try { TAB = t; const sec = PAGES[t](); if (typeof wkScan === 'function') wkScan(sec, t, null, true); names = [...sec.querySelectorAll(NAV_HEADS.join(','))].filter((h) => !h.closest('tr.drillrow')).map((h) => navCardName(h.textContent)); }
       catch (e) { names = []; } finally { TAB = saved; }
     }
     const seen = new Set();
@@ -320,6 +329,8 @@ function navIndex() {
     }
   }
   for (const g of guideSections()) if (!(plant && NAV_MONEY.test(g.title))) items.push({id: 'g:' + g.id, k: 'Guide', label: g.title, sub: 'Guide · ' + g.grp, gid: g.id});
+  // Round J: "Working: <name>" for every = mark this role can see (owner entries for the owner only; no money for the plant view)
+  if (typeof wkSearchItems === 'function') for (const w of wkSearchItems()) if (!(plant && NAV_MONEY.test(w.label))) items.push(w);
   NIDX = {sig: navSig(), items, by: new Map(items.map((x) => [x.id, x]))};
   return items;
 }
@@ -344,7 +355,7 @@ function navGoCard(t, name) {
   const look = () => {
     if (TAB !== t) return;
     const h = navFindHead(name);
-    if (!h) { if (Date.now() < until) setTimeout(look, 250); else navNote(`“${name}” is not on ${TITLES[t]} for the day shown: pick another day with the day picker, or look the card up in the Guide.`); return; }
+    if (!h) { if (Date.now() < until) setTimeout(look, 250); else navNote(`“${name}” is not on ${TITLES[t]} for the day shown: pick another day with the date chip at the top of the page, or look the card up in the Guide.`); return; }
     const c = h.closest('.card') || h;
     if (c.tagName === 'DETAILS') c.open = true;
     const hh = c.querySelector(':scope>.cardhead>h3');   // the fold state a fresh page has not applied yet counts too
@@ -365,7 +376,7 @@ function navResolve(r) {
   const p = r.id.slice(0, r.id.indexOf(':') + 1), v = r.id.slice(p.length), plant = isPlant();
   if (plant && NAV_MONEY.test(String(r.label || ''))) return null;
   if (p === 't:') return tabAllowed(v) ? {id: r.id, k: 'Tab', label: TITLES[v], sub: navTabSub(v)} : null;
-  if (p === 'c:' || p === 'g:') { const it = NIDX && NIDX.by.get(r.id); return it || null; }
+  if (p === 'c:' || p === 'g:' || p === 'w:') { const it = NIDX && NIDX.by.get(r.id); return it || null; }   // w: a Working entry (Round J)
   if (p === 'l:') return (D.machine || {})[+v] ? {id: r.id, k: 'Loom', label: `Loom ${+v}`, sub: r.sub || '', go: () => openLoom(+v, D.latest)} : null;
   if (p === 'rl:') return (D.machine || {})[+v] ? {id: r.id, k: 'Trends', label: `Loom ${+v} · all trends`, sub: r.sub || '', go: () => openTrends({kind: 'loom', loom: +v})} : null;
   const [w, ...h] = v.split('|'), hg = h.join('|');

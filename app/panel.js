@@ -152,6 +152,7 @@ function openBm(w, hg, m, opts = {}) {
 // Benchmark, best and target for every metric of one quality, against a day's figures (A = agg of loom-days or null).
 function benchSummary(w, hg, A, nowLabel, opts = {}) {
   const b = bench(w, hg) || {}, t = tgt(w, hg) || {};
+  if (typeof wkPut === 'function') wkPut('A4', wkBench(w, hg, 'rpm'));   // Round J: the RPM benchmark, for its Working
   // R2 (11 Nov 2026): a "Gap worth" column for the owner with the analysis on (fxGapWorth); absent for everyone else
   const G = typeof fxGapWorth === 'function' ? fxGapWorth(w, hg, A, opts.date || D.latest, opts.loom) : null;
   const gw = (k) => !G ? null : G.loading ? el('span', {class: 'note', text: '…'}) : (G[k] != null ? G[k] : '—');

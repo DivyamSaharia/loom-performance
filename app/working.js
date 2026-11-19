@@ -1,0 +1,452 @@
+// W2 Looms · app/working.js — Round J (18 Nov 2026): the Working. A small "=" mark after a tile label or a card title opens
+// a sheet for that figure: In words, With this day's figures, Result, When it shows "—", and a folded example with made-up
+// figures. One of the classic scripts index.html loads in order; they share one scope (no modules, no build step).
+//
+// How it fits together:
+//  - WK: the text of every entry (content approved by Divyam, 18 Nov 2026: claude/2026-11-18_how-it-is-calculated-guide-
+//    content.md, sections 5 and 6). The text is public (it ships in this script), so its examples use made-up figures only.
+//  - WK_AT: where each mark goes (tab, tile label or card title) and which entries it opens.
+//  - wkPut(id, figures): each screen hands over the figures it drew with; WKL[id] (calc.js) or WKLF[id] (fabric_calc.js)
+//    turns them into the line with the day's own figures and the result, worked from those figures the way the tile shows it.
+//  - Roles: an entry marked own: 'fx' (money from the fabric side) or 'own' (the Sheet checks) is the owner's only: no mark,
+//    no search entry and no Guide link for any other role, and never for the plant view.
+'use strict';
+const WKD = {};   // the figures each screen drew with, by entry id (filled at draw time, also by the search index's off-screen draw)
+const wkPut = (id, d) => { WKD[id] = d; return d; };
+const wkOwner = () => typeof fxIsOwner === 'function' && fxIsOwner() && !isPlant();
+// next steps in plain words, per role (the owner never reads "tell the owner")
+const wkNext = (t) => String(t || '')
+  .replace(/\{day\}/g, () => typeof TAB !== 'undefined' && TAB === 'costing' ? 'the list labelled Day at the top of the Costing tab' : 'the date chip at the top of the page')   // Costing has its own day control
+  .replace(/\{next\}/g, () => wkOwner() ? 'see Files per day on Data health' : 'tell the owner')
+  .replace(/\{tgt\}/g, () => typeof canEdit === 'function' && canEdit() ? 'set one on Targets' : 'tell the owner')
+  .replace(/\{sp\}/g, () => typeof canEdit === 'function' && canEdit() ? 'type it on the Compressor set point tile on Pressure' : 'tell the owner')
+  .replace(/\{hg\}/g, () => typeof canEdit === 'function' && canEdit() ? 'give it one there' : 'tell the owner')
+  .replace(/\{margin\}/g, () => wkOwner() ? 'add the set point margin (the setpoint_margin_kgf row) to the Config sheet Settings tab' : 'tell the owner');
+const MADE_UP = 'Made-up figures, not plant data; shown rounded and worked unrounded, so the last digits can differ a little. Each example says which reference it uses (benchmark or target). As on a real day, the made-up costing file (94,000 picks, 2,150 m) and the loom data (94,061 picks, 2,154 m) differ slightly. ';
+
+// ---------------------------------------------------------------- the entries (sections 5 and 6 of the guide content)
+// t: the entry's own heading, shown where one sheet holds several entries (a mark is named by its tile or card, wkName) ·
+// w: in words · g: when it shows "—" (empty = the default gap rule) · x: example with made-up figures ·
+// own: 'fx' | 'own' (owner only) · sec: the Guide section it links to · fn: the WKL / WKLF function (default: the id) ·
+// words: true = a rule or a count, no line with the day's figures
+const WK_GAP = 'When the day has no figures for it, or what it divides by is zero. It never shows 0 in place of a missing figure.';
+const WK = {
+  // ---- A. ideas used on every tab
+  A1: {t: 'Picks', sec: 'g-start', w: 'Fabric picks = machine picks × panels (2 on a 280 cm loom weaving double panna). Picks = fabric picks ÷ 39.37, shown in lakh. A metre is 39.37 inches, so picks ÷ 39.37 = metres × picks per inch: the costing sheet\'s production picks.',
+    x: 'Loom 3 on a 280 cm loom, double panna: 7,77,600 machine picks × 2 = 15,55,200 fabric picks ÷ 39.37 = 39,502 picks. The floor: 37,03,200 fabric picks ÷ 39.37 = 94,061 picks = 0.94 lakh.'},
+  A6: {t: 'Compared with the earlier days\' average', sec: 'g-actions', w: 'The day\'s figure less the same figure for the complete days before it (up to 7). Picks, air and hours are an average a day; RPM, efficiency and air per 1,000 picks are worked from those days\' totals.', g: 'When there is no earlier complete day: the tile says "no prior days". Next: pick a later day with {day}.',
+    x: 'Picks on the day 0.94 lakh; the 7 days before made 6.72 lakh, 0.96 lakh a day: ▼ −0.02 lakh.'},
+  'A2:eff': {t: 'Efficiency', fn: 'A2e', sec: 'g-start', w: 'Minutes run ÷ (minutes run + minutes stopped) × 100. For a head group or the floor the minutes are added up first, never an average of the looms\' own efficiencies.',
+    x: 'Loom 1 ran 1,200 minutes and stood 240: 1,200 ÷ 1,440 × 100 = 83.3%. The floor: 3,816 ÷ 4,320 × 100 = 88.3%.'},
+  'A2:rpm': {t: 'Speed while running', fn: 'A2r', sec: 'g-start', w: 'RPM = machine picks ÷ minutes run. For a head group or the floor the picks and minutes are added up first, never an average of the looms\' own RPM.',
+    x: 'Loom 1: 9,60,000 machine picks ÷ 1,200 minutes = 800 RPM. The floor: 29,25,600 ÷ 3,816 = 767 RPM.'},
+  'A2:erpm': {t: 'Effective RPM now', fn: 'A2x', sec: 'g-erpm', w: 'Effective RPM = machine picks ÷ (minutes run + minutes stopped), which is RPM × efficiency ÷ 100: speed and stoppages together. Totals are divided, never an average of the looms.',
+    x: 'Loom 1: 9,60,000 machine picks ÷ 1,440 minutes = 666.7 effective RPM. The floor: 29,25,600 ÷ 4,320 = 677.2 effective RPM.'},
+  A3: {t: 'Air per 1,000 picks', sec: 'g-cfm', w: 'Air drawn (ft³) ÷ fabric picks × 1,000. CFM = air drawn ÷ minutes run.',
+    x: 'Loom 1 drew 30 CFM for 1,200 minutes = 36,000 ft³: 36,000 ÷ 9,60,000 × 1,000 = 37.5 ft³ per 1,000 picks.'},
+  'A3:bm': {t: 'Reference vs running CFM', fn: 'A3b', sec: 'g-cfm', g: 'When no loom that ran has a head group with an air benchmark yet: a loom with no reference stays as it ran. Next: nothing to do where the head group is new, its benchmark appears by itself once it has complete days of running; where a style has no head group yet (Needs a head group on Actions), {hg}.', w: 'Benchmark CFM = the head group\'s benchmark air per 1,000 picks × panels × the loom\'s own RPM ÷ 1,000, so a loom is not rewarded for running slow. The table on this card compares each loom with it (or with best or target, as the switch shows).',
+    x: 'Loom 1, benchmark 31 ft³ per 1,000 picks at its own 800 RPM: 31 × 1 × 800 ÷ 1,000 = 24.8 CFM. Loom 3, double panna at 600 RPM: 32 × 2 × 600 ÷ 1,000 = 38.4 CFM.'},
+  A4: {t: 'Benchmark, best and target', fn: 'D1', sec: 'g-bench', g: 'When the head group has no RPM benchmark yet. Next: nothing to do, it appears by itself once the head group has complete days of running (loom-days of 720 minutes or more).', w: 'A benchmark is a good day this quality has already done on this width. For RPM and effective RPM it is the figure only about 1 loom-day in 10 beats (the 90th percentile); for air and main pressure, the figure only about 1 in 10 does better (the 10th percentile); for warp breaks, the middle loom-day (the median). A loom-day is one loom\'s record for one day; only loom-days of 720 minutes or more on the head group (the quality the loom weaves) count, from all history, nothing left out. To find it, the loom-days are put in order and counted 90% (or 10%) of the way along; when that falls between two loom-days, it takes that share of the way from one to the other. Best = the single best loom-day. Target effective RPM = 93% of the target RPM. A benchmark is "provisional" until it rests on 15 loom-days, on 5 dates, from 2 looms.',
+    x: 'Another quality, with five loom-days at 780, 800, 820, 840 and 900 RPM: 90% of the way along the 4 steps between them is 3.6 steps, so 0.6 of the way from 840 to 900: 840 × 0.4 + 900 × 0.6 = 876 RPM. Air at 30, 31, 33, 35 and 36 ft³ per 1,000 picks: 10% of the way along is 0.4 steps, so 0.4 of the way from 30 to 31: 30 × 0.6 + 31 × 0.4 = 30.4 ft³ per 1,000 picks. A target RPM of 900 gives a target effective RPM of 837.'},
+  A5: {t: 'The ▼ ▲ marks and the gap', sec: 'g-quality', g: 'Where the head group has no best or no target, the benchmark stands in and says so; with no benchmark either, the cell shows "—". Next: for a target, {tgt}; a benchmark appears once the head group has complete days of running.', w: 'A figure is marked ▼ (too low) or ▲ (too high) when it is worse than its reference by more than the tolerance: 3% for RPM and effective RPM, 5% for air, 0.1 kgf/cm² for pressure (the owner\'s settings). The gap beside the reference is now − reference. On the heat grid the gap is a % of the reference.',
+    x: 'Loom 1 (Alpha) at 800 RPM against its benchmark of 880: the tolerance is 3% of 880 = 26.4, so anything under 853.6 is marked ▼. Gap 800 − 880 = −80 RPM.'},
+  A7: {t: 'This week vs last week', sec: 'g-trends', w: 'This week = the 7 days to the day shown; last week = the 7 before (rolling, not Monday to Sunday). Each week\'s figure uses the card\'s own formula: a per-pick figure counts each day by the picks it made, so a busy day counts more than a short one, rates are worked from the week\'s totals, picks, metres and stock are an average a day. A week with days missing says "n of 7 days" and uses the days it has. Green is better, red worse, grey neither.', g: 'When a week has no day at all. Next: pick a later day, or check again after the daily run; if it stays empty, {next}.',
+    x: 'Cost per pick. This week has 3 days: (25.0 paise × 0.94 lakh picks + 24.0 × 1.00 + 26.0 × 0.90) ÷ 2.84 lakh = 24.96 paise (3 of 7 days). Last week has 2: (24.5 × 1.00 + 25.5 × 0.80) ÷ 1.80 = 24.94 paise (2 of 7 days). Change +0.02 paise, red because cost rose.'},
+  'A8:cfm': {t: 'Cost per pick saved', fn: 'A8', sec: 'g-cfm', w: 'Rupees saved a day ÷ picks × 100, in paise. Picks are the floor\'s (fabric picks ÷ 39.37, the costing sheet\'s basis), so it compares with the Costing tab\'s cost per pick; in the tables each row uses the same floor picks, so the rows add up to the total.', g: 'When there is no compressor reading on or before the day, or no picks that day. Next: {next}.',
+    x: '₹215 saved a day ÷ 94,061 picks × 100 = 0.229, shown as 0.23 paise per pick.'},
+  // ---- B. Actions
+  'B1:cfm': {t: 'Average CFM per loom', fn: 'B1c', sec: 'g-actions', w: 'The floor\'s air (ft³) ÷ the minutes the looms ran, added up over the looms: an average weighted by run time.',
+    x: '1,23,480 ft³ ÷ 3,816 minutes run = 32.4 CFM.'},
+  'B1:total': {t: 'Total CFM consumption', fn: 'B1t', sec: 'g-actions', w: 'The floor\'s air in the day (ft³) ÷ 1,440 minutes: the 24-hour average draw of every loom together.',
+    x: '1,23,480 ft³ ÷ 1,440 minutes = 85.75, shown as 86 CFM.'},
+  'B1:off': {t: 'Powered down', fn: 'B1o', sec: 'g-utilisation', w: 'For each loom, 1,440 − minutes run − minutes stopped (under 10 minutes counts as 0), added up, in loom-hours. A loom missing from a shift file counts as powered down for that shift.',
+    x: 'A loom that ran 900 minutes and stood 180 was off 1,440 − 900 − 180 = 360 minutes = 6.0 loom-hours.'},
+  'B1:floor': {t: 'Floor pressure', fn: 'B1f', sec: 'g-pressure', w: 'The highest main pressure any loom ran at that day, both widths: one compressor serves the whole floor, so it must supply at least that.',
+    x: 'Looms at 4.5, 4.1 and 4.4 kgf/cm²: the floor is 4.5 kgf/cm², set by loom 1.'},
+  'B2:fold': {t: 'Folded cost per pick', fn: 'J2', sec: 'g-actions', w: 'The Costing tab\'s folded cost per pick for the same day: (OPEX + B grade loss + cut piece loss − B grade revenue) ÷ A-grade folded picks. OPEX is the costing sheet\'s OPEX row: the day\'s operating expenses, the running costs before B grade and cut pieces.', g: 'When that day\'s costing file is not uploaded yet: {next}.',
+    x: '(₹22,700 + ₹200 + ₹600 − ₹100) ÷ 86,000 A-grade folded picks × 100 = 27.21 paise.'},
+  'B2:real': {t: 'Realisation per pick', fn: 'B2r', own: 'fx', sec: 'g-realisation', w: 'The day\'s realisation ÷ its priced picks × 100 (As sold). It equals each head group\'s own realisation per pick weighted by its share of the picks.', g: 'When nothing is priced that day: see Coverage on the Realisation tab.',
+    x: '₹20,794 ÷ 94,061 picks × 100 = 22.11 paise. Alpha has 58% of the picks at 28.53 paise, Beta 42% at 13.24 paise: 58% × 28.53 + 42% × 13.24 = 22.11 paise.'},
+  B3: {t: 'Target cost per pick', sec: 'g-actions', w: 'The day\'s cost per pick, As entered (the plant\'s power units as typed in its costing file, without the power correction), if every loom that ran hit its targets. Five steps, in order, so they add up: (1) every loom at its target CFM, at the compressor\'s kWh and ₹ a unit; (2) the compressor at the set point needed with every loom at its target main pressure, on the air left after step 1; (3) every loom at its target effective RPM: no rupee is saved, the same fixed costs are shared over more picks; (4) the costs that grow with the extra picks: the compressor power for them, warping and transport at the day\'s rate per metre, packing at the month to date rupees per metre; extra metres = extra picks ÷ the quality\'s picks per metre (the same number as its picks per inch, because these picks are fabric picks ÷ 39.37); (5) no B grade and no cut pieces. Effect on cost per pick (the loom table) = (− the loom\'s CFM saving + its added costs − today\'s cost per pick × its extra picks) ÷ the target day\'s picks; with the pressure step and step 5, the rows add up to the change on the tile.',
+    g: 'The whole tile when that day\'s costing is not uploaded ({next}). A loom with no target ({tgt}), no CFM reading or no picks per metre for its quality is a gap for that part, counted in Coverage. No compressor reading, set point or margin leaves that step out and says so. Next: for the set point, {sp}; for the margin, {margin}; for the reading, {next}.',
+    x: 'Now 25.00 paise. Step 1 −0.240 paise (every loom at its target CFM: 8,712 ft³ less = 28.22 kWh × ₹8; the CFM tab\'s 8,314 ft³ is against the benchmark); step 2 −0.089 paise (set point 5.0 → the 4.6 needed with every loom at its target main pressure, floor 4.2 + 0.4 margin: 0.4 × 7% of the kWh left); step 3 −2.523 paise (10,707 extra picks share the same ₹23,191); step 4 +0.561 paise (247.5 m more: warping ₹0.50 and transport ₹0.20 a metre, packing ₹0.30 a metre, compressor power ₹340); step 5 −0.764 paise (the B grade expense line ₹200 and cut piece loss ₹600 taken as 0). 25.00 − 3.05 = 21.95 paise.'},
+  B4: {t: 'Folding shortage', sec: 'g-actions', w: 'Month to date, up to the day shown: 1 − (A-grade folded picks + B grade picks + cut piece picks) ÷ production picks. B grade picks = each register entry\'s metres × its quality\'s picks per inch (from the entry\'s day, else the latest earlier day that quality ran: a taka folded late). Cut piece picks = cut metres × the floor\'s average picks per inch (production picks ÷ metres). Days left out of costing are not counted.',
+    g: 'When no day this month has all its figures. A day missing one is left out and the tile says "n of m days". Next: {next}.',
+    x: 'A-grade folded 86,000 picks; B grade 20 m × 40 picks per inch = 800 picks; cut pieces 10 m × 43.72 picks per inch (94,000 picks ÷ 2,150 m) = 437 picks. 1 − 87,237 ÷ 94,000 = 7.2%, 1 of 1 days.'},
+  'B5:real': {t: 'Target realisation per pick', fn: 'B5r', own: 'fx', sec: 'g-actions', w: 'The sum of (each loom-day\'s target picks × its own realisation per pick) ÷ the sum of target picks, As sold, both widths. Target picks = its picks + its extra picks at the target effective RPM (Target cost per pick, step 3). Each loom keeps its own quality\'s rate, so only the mix moves.',
+    g: 'When no loom that ran is both priced and has a target RPM: see Coverage on the Realisation tab and set targets on Targets.',
+    x: 'Loom 1: 30,614 target picks at 28.53 paise; loom 2: 30,614 at 28.53 paise; loom 3: 43,540 at 13.24 paise. Target 22.17 paise (now 22.11 paise).'},
+  'B5:profit': {t: 'Target profit per pick', fn: 'B5p', own: 'fx', sec: 'g-actions', w: 'Target realisation per pick − target folded cost per pick. Target folded cost = (OPEX − the CFM and pressure savings + the added costs of Target cost per pick) ÷ (target production picks × (1 − folding shortage, month to date)). OPEX = the corrected costing\'s folded cost per pick × A-grade folded picks − (B grade loss + cut piece loss − B grade revenue). No B grade and no cut pieces, so no loom B grade charge.',
+    g: 'When there is no costing for the day ({next}), no folding shortage yet (no costing day this month has all its figures: {next}), or no target realisation per pick (see the Target realisation per pick tile beside it for what it needs).',
+    x: 'OPEX = 27.21 paise × 86,000 − (₹200 + ₹600 − ₹100) = ₹22,700. (OPEX ₹22,700 − CFM saving ₹225.77 − pressure saving ₹83.28 + added costs ₹587.67) ÷ (1,04,707 target production picks × (1 − 7.19%)) × 100 = 23.65 paise, the target folded cost per pick. 22.17 paise − 23.65 paise = −1.47 paise. The 1,04,707 is the costing file\'s 94,000 picks + the 10,707 extra picks; Target realisation per pick counts the looms\' own picks, 94,061 + 10,707 = 1,04,768, because the loom data and the costing file differ by 61 picks on this day.'},
+  B6: {t: 'Work on these first', sec: 'g-actions', w: 'Three costs a day for each loom, added up. One: its lost picks × the cost per pick of the expense lines that are paid whether or not the loom weaves (fixed per day, and staff paid by attendance), from the latest costing day up to that day. Two: the air it draws over its reference × the compressor\'s rupees per ft³. Three: its step of the floor ladder, the compressor rupees saved when this loom\'s main pressure comes down to its reference and the floor drops with it (the Floor ladder card on Pressure shows the steps). Lost picks = (the RPM it should reach − its RPM) × minutes run, plus the minutes it is short of the efficiency line × its RPM; the two together × panels ÷ 39.37. The RPM it should reach is its benchmark or its target, the higher of the two when it misses both. A loom whose head group changed in the last 2 shifts is left out and listed under the card.',
+    g: 'When no loom is off its reference the card says so and there is nothing to work: nothing to do. With no costing day up to that date the card ranks by lost picks instead. Next: {next}. Without a compressor set point or margin the pressure rupees are a gap. Next: for the set point, {sp}; for the margin, {margin}.',
+    x: 'Loom 1 misses its target of 900 RPM: (900 − 800) × 1,200 minutes run = 1,20,000, plus 96 minutes short of the 90% line × 800 RPM = 76,800; together 1,96,800 ÷ 39.37 = 4,999 picks × 10.64 paise = ₹532. Air 5.2 CFM over × 1,200 minutes = 6,240 ft³ × ₹25.92 per 1,000 ft³ = ₹162. Pressure: its step drops the floor 0.1 kgf/cm², 0.7% of 400 kWh × ₹8 = ₹22. Total ₹716 a day.'},
+  K12: {g: 'When the loom-day is not priced it keeps the cost valuation and the card says so. Next: see Coverage on the Realisation tab for what to link or price.', t: 'Lost picks, valued at realisation', own: 'fx', sec: 'g-actions', w: 'For the owner, a lost pick on a priced loom-day is valued at that loom-day\'s realisation per pick (As sold, its own quality) in place of the cost per pick, so a loom on a dearer cloth ranks higher. A loom-day that is not priced keeps the cost valuation and says so.',
+    x: 'Loom 1: 4,999 lost picks × 28.53 paise = ₹1,426 in place of ₹532; with air and pressure, ₹1,610 a day.'},
+  B7: {t: 'Loom realisation against break-even', own: 'fx', sec: 'g-actions', w: 'Break-even per loom = (total expenses + cut piece loss) ÷ looms running that day. Each loom\'s bar is its realisation for the day.', g: 'When the day shown has no costing yet, there is no break-even line on the chart. A loom-day that is not priced is listed under the chart, never drawn as ₹0. Next: {next}; see Coverage on the Realisation tab for what is not priced.',
+    x: '(₹22,900 + ₹600) ÷ 3 = ₹7,833 a loom. Loom 1 ₹6,956 (below), loom 2 ₹8,607 (above), loom 3 ₹5,231 (below).'},
+  'B8:rpm': {t: 'RPM (looms below their reference)', fn: 'B8r', sec: 'g-actions', w: 'Listed when below the benchmark by more than 3% of it, or below the target by more than 3% of the target. Gap = the higher missed reference − RPM. Lost = gap × minutes run × panels ÷ 39.37, in lakh picks.',
+    x: 'Loom 1 against its target of 900 RPM (the higher of the two references it misses; its benchmark is 880): (900 − 800) × 1,200 minutes run ÷ 39.37 = 3,048 picks = 0.030 lakh picks lost.'},
+  'B8:eff': {t: 'Efficiency (looms below the line)', fn: 'B8e', sec: 'g-actions', w: 'Listed below the efficiency line (90% unless the owner\'s settings say otherwise). Minutes short = the line × (minutes run + stopped) − minutes run. Picks short = minutes short × RPM × panels ÷ 39.37.',
+    x: 'Loom 1 against the 90% efficiency line: 0.9 × 1,440 − 1,200 = 96 minutes short × 800 RPM ÷ 39.37 = 1,951 picks = 0.020 lakh picks short.'},
+  'B8:cfm': {t: 'CFM (looms above their reference)', fn: 'B8c', sec: 'g-actions', w: 'Listed when above the benchmark CFM by more than 5% of it, or above the target by more than 5% of the target. Excess = CFM − the lower missed reference.',
+    x: 'Loom 1: 30 CFM is over its benchmark CFM 24.8 + 5% (1.24) and over its target 26 + 5% (1.3): 30 − 24.8, the lower of the two, = 5.2 CFM.'},
+  'B8:press': {t: 'Pressure (looms above their reference)', fn: 'B8p', sec: 'g-actions', w: 'Listed when the day\'s highest main pressure is more than 0.1 kgf/cm² above the benchmark or the target. Excess = day max − the lower missed reference. "sets floor" marks the loom the compressor must serve.',
+    x: 'Loom 1: 4.5 − 4.0 (its target, the lower of its two references; its benchmark is 4.1) = 0.5 kgf/cm², and it sets the floor.'},
+  // ---- C. Quality
+  C1: {t: 'Gap to the reference, by head group', sec: 'g-quality', w: 'Each cell: (the head group\'s figure − its reference) ÷ the reference × 100, + above, − below. The colour is full at 10% or more. Efficiency is against the efficiency line, warp breaks against the head group\'s median rate, and CFM is compared at the RPM the head group ran.', g: 'A cell with no reference is grey and says why: no benchmark yet, no best, or no target. Next: a benchmark and a best appear by themselves once the head group has complete days of running; for a target, {tgt}.',
+    x: '800 RPM against a benchmark of 880: (800 − 880) ÷ 880 × 100 = −9.1%, coloured 91% of full red.'},
+  C2: {g: 'When the head group is not priced (the "not priced" pill). Next: see Coverage on the Realisation tab for what to link or price.', t: 'Total loom realisation', own: 'fx', sec: 'g-quality', w: 'Looms that ran × the head group\'s realisation per loom-day. When fewer looms are priced than ran, only the priced looms are counted and the cell says so.',
+    x: 'Alpha: 2 looms × ₹7,782 = ₹15,563.'},
+  C3: {g: 'When the head group is not priced (the "not priced" pill), or the day has no costing yet. Next: see Coverage on the Realisation tab for what to link or price. For the costing day, see Files per day on Data health.', t: 'Over conversion (the pill)', own: 'fx', sec: 'g-quality', w: '(Realisation − conversion cost) ÷ conversion cost, over the costed loom-days. Conversion cost = the day\'s folded cost per pick without its B grade part × picks.',
+    x: 'Alpha: (realisation ₹15,563 − conversion cost ₹14,782, its 54,559 picks × 27.09 paise) ÷ ₹14,782 = +5%.'},
+  C4: {t: 'Loom realisation gap', own: 'fx', sec: 'g-quality', w: 'The loom-days\' realisation less the same loom-days re-worked at the reference effective RPM: reference effective RPM × (minutes run + stopped) × panels ÷ 39.37 × their realisation per pick.', g: 'When nothing is priced. Next: see Coverage on the Realisation tab. Or when there is no reference of that kind. Next: {tgt}.',
+    x: 'Loom 1 against its target: 837 × 1,440 ÷ 39.37 = 30,614 picks × 28.53 paise = ₹8,733. Now ₹6,956. Gap −₹1,777.'},
+  // ---- D. Benchmarks
+  D1: {t: 'Benchmark of the quality picked', sec: 'g-benchmarks', g: 'When the head group has no benchmark for this metric yet: it appears once the head group has complete days of running. Next: pick another quality in the list.', w: 'The figure this card ranks: a good day this quality has already done. For RPM and effective RPM, the figure only about 1 loom-day in 10 beats (the 90th percentile); for air and pressure, the figure only about 1 in 10 does better (the 10th percentile); for warp breaks, the middle loom-day (the median). A loom-day is one loom\'s record for one day; only those of 720 minutes or more count, from all history. The loom-days are put in order and counted 90% (or 10%) of the way along; when that falls between two loom-days, it takes that share of the way from one to the other. The two loom-days either side are listed below with their shares.',
+    x: 'Another quality, with five loom-days at 780, 800, 820, 840 and 900 RPM: 90% of the way along the 4 steps between them is 3.6 steps, so 0.6 of the way from 840 to 900: 840 × 0.4 + 900 × 0.6 = 876 RPM.'},
+  // ---- E. CFM
+  'E1:now': {t: 'Total CFM now', fn: 'E1n', sec: 'g-cfm', w: 'The air of every loom that ran ÷ 1,440 minutes: the 24-hour average draw.', x: '1,23,480 ft³ ÷ 1,440 = 85.75 CFM.'},
+  'E1:after': {t: 'Total CFM after the work', fn: 'E1a', sec: 'g-cfm', w: 'Each loom above its reference CFM brought down to it (looms below stay as they ran), × its minutes run, added up, ÷ 1,440. The reference follows the Benchmark / Best / Target switch; a loom with no head group or benchmark stays as it is.', x: 'Loom 1 30 → 24.8 CFM, loom 3 40 → 38.4 CFM, loom 2 stays: 79.98 CFM in all.'},
+  'E1:saved': {t: 'Air saved', fn: 'E1s', sec: 'g-cfm', w: 'Total CFM now − total CFM after the work; × 1,440 minutes = ft³ a day.', x: '85.75 − 79.98 = 5.77 CFM = 8,314 ft³ a day.'},
+  'E1:pct': {t: 'Compressor energy saved', fn: 'E1p', sec: 'g-cfm', w: 'Air saved ÷ air now × 100: on a variable-speed compressor energy follows air.', x: '8,314 ÷ 1,23,480 × 100 = 6.7%.'},
+  'E2:kwh': {t: 'Energy saved', fn: 'E2k', sec: 'g-cfm', w: 'Air saved a day × the compressor\'s kWh per ft³ that day (its Power (Compressor) kWh ÷ the floor\'s air).', g: 'When there is no compressor reading on or before the day; when only the day itself has none, the latest earlier reading is used and the card names its date. Next: {next}.', x: '8,314 ft³ × 3.24 kWh per 1,000 ft³ = 26.9 kWh a day.'},
+  'E2:rs': {t: 'Money saved', fn: 'E2r', sec: 'g-cfm', w: 'Energy saved × the compressor\'s ₹ a unit that day.', x: '26.9 kWh × ₹8.00 = ₹215 a day.'},
+  'E2:month': {t: 'In a month', fn: 'E2m', sec: 'g-cfm', w: 'Money saved a day × 30, at that day\'s level.', x: '₹215.43 a day × 30 days = ₹6,463.'},
+  'E3:day': {t: 'Compressor, that day', fn: 'E3d', sec: 'g-cfm', w: 'The costing sheet\'s Power (Compressor) line for the day used: its kWh, ₹ a unit and rupees, read as entered.', g: 'When the costing sheet has no Power (Compressor) line on or before the day. Next: {next}.', x: '400 kWh at ₹8.00 a unit = ₹3,200.'},
+  'E3:kwh': {t: 'Compressor energy', fn: 'E3k', sec: 'g-cfm', w: 'The costing sheet\'s Power (Compressor) kWh on the latest day with a reading.', g: 'When the costing sheet has no Power (Compressor) line for any day yet. Next: {next}.', x: '400 kWh.'},
+  'E3:cost': {t: 'Cost', fn: 'E3d', sec: 'g-cfm', w: 'The costing sheet\'s Power (Compressor) rupees on the latest day with a reading.', g: 'When the costing sheet has no Power (Compressor) line for any day yet. Next: {next}.', x: '₹3,200 at ₹8.00 a unit.'},
+  'E3:air': {t: 'Energy per air', fn: 'E3e', sec: 'g-cfm', w: 'Compressor kWh ÷ the floor\'s air that day, per 1,000 m³ (1 ft³ = 0.0283168 m³) and per 1,000 ft³.', g: 'When the costing sheet has no Power (Compressor) line for any day yet. Next: {next}.', x: '400 kWh ÷ 1,23,480 ft³ = 3.24 kWh per 1,000 ft³ = 114.4 kWh per 1,000 m³.'},
+  'E3:rsair': {t: 'Cost per air', fn: 'E3a', sec: 'g-cfm', w: 'Compressor rupees ÷ the floor\'s air that day × 1,000.', g: 'When the costing sheet has no Power (Compressor) line for any day yet. Next: {next}.', x: '₹3,200 ÷ 1,23,480 ft³ × 1,000 = ₹25.92 per 1,000 ft³ (shown rounded to the rupee).'},
+  E2: {t: 'What the CFM saving is worth', fn: 'E2r', sec: 'g-cfm', w: 'Air saved × the compressor\'s kWh per ft³ that day × its ₹ a unit. Cost per pick saved = rupees ÷ the floor\'s picks × 100. A month = × 30.', g: 'When there is no compressor reading on or before the day. Next: {next}.', x: '8,314 ft³ × 3.24 kWh per 1,000 ft³ = 26.9 kWh × ₹8 = ₹215 a day, 0.229 paise per pick (shown as 0.23).'},
+  E4: {g: 'When no loom below its benchmark RPM is priced. Next: see Coverage on the Realisation tab for what to link or price. When no loom is below its benchmark RPM there is nothing to gain: nothing to do.', t: 'Realisation gained at benchmark RPM', own: 'fx', sec: 'g-cfm', w: 'For each loom below its benchmark RPM: (benchmark RPM − RPM) × minutes run × panels ÷ 39.37 × its realisation per pick, added up. Shown beside the CFM and pressure savings, never added to them.',
+    x: 'Loom 1: (880 − 800) × 1,200 ÷ 39.37 = 2,438 picks × 28.53 paise = ₹696. Loom 3: (620 − 600) × 1,296 × 2 ÷ 39.37 = 1,317 picks × 13.24 paise = ₹174. Together ₹870 a day.'},
+  E5: {t: 'Total CFM by day', fn: 'E1s', sec: 'g-cfm', w: 'Total CFM now and after the work (as at the top of this tab) for each of the last 14 days, with today\'s references; the gap is the air the work would save.', x: 'On the made-up day: 85.75 − 79.98 = 5.77 CFM.'},
+  E6: {t: 'Compressor cost of this air', sec: 'g-cfm', w: 'The floor\'s compressor rupees per ft³ that day × the air this loom (or head group) drew. A share by air drawn, not a meter on the loom.', g: 'On a day with no compressor reading of its own: this chart never borrows an earlier day\'s. Next: {next}.',
+    x: 'Loom 1: 36,000 ft³ × ₹25.92 per 1,000 ft³ = ₹933 for the day.'},
+  // ---- F. Effective RPM
+  'F1:now': {t: 'Picks now', fn: 'F1n', sec: 'g-erpm', w: 'The fabric picks of every loom that ran ÷ 39.37, in lakh.', x: '37,03,200 ÷ 39.37 = 0.94 lakh.'},
+  'F1:gain': {t: 'Picks gained', fn: 'F1g', sec: 'g-erpm', w: 'For each loom below its reference effective RPM: (reference − effective RPM) × (minutes run + stopped) × panels, added up, ÷ 39.37. Looms already above stay as they ran. The reference follows the switch.',
+    x: 'Against the benchmark effective RPM (800 for Alpha, 560 for Beta). Loom 1: (800 − 666.7) × 1,440 minutes = 1,92,000; loom 3: (560 − 540) × 1,440 minutes × 2 panels = 57,600; together 2,49,600 fabric picks ÷ 39.37 = 6,340 picks = 0.06 lakh, +6.7%.'},
+  'F1:after': {t: 'Picks after the work', fn: 'F1a', sec: 'g-erpm', w: 'Picks now + picks gained.', x: '37,03,200 + 2,49,600 = 39,52,800 fabric picks ÷ 39.37 = 1.00 lakh.'},
+  F2: {t: 'Shortfall and Picks short', sec: 'g-erpm', w: 'Shortfall = reference − effective RPM. The table shows it with a minus for a loom below its reference (−133) and as 0 for a loom at or past it. Picks short = the shortfall × (minutes run + stopped) × panels ÷ 39.37, for a loom below its reference.',
+    x: 'Loom 1 against its benchmark effective RPM of 800: shortfall 800 − 666.7 = 133.3 effective RPM (shown as −133); 133.3 × 1,440 minutes ÷ 39.37 = 4,877 picks = 0.049 lakh.'},
+  F2m: {g: 'When the loom-day is not priced. Next: see Coverage on the Realisation tab for what to link or price.', t: 'Lost realisation', own: 'fx', sec: 'g-erpm', w: 'Picks short × that loom-day\'s realisation per pick (As sold).', x: 'Loom 1: 4,877 picks short × 28.53 paise = ₹1,391.'},
+  'F3:rs': {t: 'Realisation after the work', fn: 'F3r', own: 'fx', sec: 'g-erpm', w: 'Each priced loom\'s picks at its reference effective RPM (reference × minutes run and stopped × panels ÷ 39.37) × its own realisation per pick, added up. A loom already past its reference stays as it ran.', g: 'When no loom is priced that day. Next: see Coverage on the Realisation tab.',
+    x: 'At the benchmark effective RPM. Loom 1: 800 × 1,440 minutes ÷ 39.37 = 29,261 picks × 28.53 paise = ₹8,347; loom 2 stays ₹8,607; loom 3: 40,965 picks × 13.24 paise = ₹5,425. Together ₹22,379, which is ₹1,585 more than now.'},
+  'F3:pp': {t: 'Realisation per pick after the work', fn: 'F3p', own: 'fx', sec: 'g-erpm', w: 'Realisation after the work ÷ the picks after the work × 100. It moves only because the mix of picks shifts.', g: 'When no loom is priced that day. Next: see Coverage on the Realisation tab.', x: '₹22,379 ÷ 1,00,401 × 100 = 22.29 paise (now 22.11 paise).'},
+  // ---- G. Pressure
+  'G1:now': {t: 'Floor now', fn: 'G1n', sec: 'g-pressure', w: 'The highest main pressure of any loom that day, both widths.', x: 'Looms at 4.5, 4.1 and 4.4 kgf/cm²: floor 4.5 kgf/cm².'},
+  'G1:after': {t: 'Floor after the work', fn: 'G1a', sec: 'g-pressure', w: 'The highest main pressure once every loom above its reference is brought down to it (the rest as they ran). The reference follows the switch.', x: 'After the work: 4.1, 4.1 and 4.3 kgf/cm²; floor 4.5 → 4.3 kgf/cm², held by loom 3.'},
+  G2: {t: 'Compressor set point', sec: 'g-pressure', w: 'The tile shows the set point typed in for the compressor (typed by a person the owner has allowed to edit targets). Set point needed = floor + the margin the owner sets: now from the floor now, after the work from the floor after the work.', g: 'When no set point is typed ({sp}) or there is no margin ({margin}).',
+    x: 'Margin 0.4 kgf/cm²: 4.5 + 0.4 = 4.9 kgf/cm² needed now; 4.3 + 0.4 = 4.7 kgf/cm² after the work.'},
+  G3: {t: 'Compressor energy saved', sec: 'g-pressure', w: 'The rule\'s % of compressor energy per kgf/cm² (on Targets) × how far the compressor can come down, in two parts that add up. Part 1: from its set point to what today\'s floor needs. Part 2: from there to what the floor needs after the work. A part is 0 where the compressor is already at or below it, never negative.', g: 'When no set point is typed ({sp}) or there is no margin ({margin}); no compressor reading leaves out the rupees ({next}). Never 0 in their place.',
+    x: 'Set point 5.0 kgf/cm². Part 1: 5.0 → 4.9 kgf/cm² = 0.1 × 7% = 0.7%. Part 2: 4.9 → 4.7 kgf/cm² = 0.2 × 7% = 1.4%. 2.1% of 400 kWh = 8.4 kWh × ₹8 = ₹67 a day. Had the set point been 4.6, both parts would be 0.'},
+  'G3:kwh': {g: 'When no set point is typed or there is no margin, or there is no compressor reading on or before the day; never 0 in their place. Next: for the set point, {sp}; for the margin, {margin}; for the reading, {next}.', t: 'Energy saved', fn: 'G3k', sec: 'g-pressure', w: 'Compressor energy saved (%) × the compressor\'s kWh that day.', x: '2.1% × 400 kWh = 8.4 kWh a day.'},
+  'G3:rs': {g: 'When no set point is typed or there is no margin, or there is no compressor reading on or before the day; never 0 in their place. Next: for the set point, {sp}; for the margin, {margin}; for the reading, {next}.', t: 'Money saved', fn: 'E2r', sec: 'g-pressure', w: 'Energy saved × the compressor\'s ₹ a unit that day.', x: '8.4 kWh × ₹8 = ₹67 a day.'},
+  'G3:month': {g: 'When no set point is typed or there is no margin, or there is no compressor reading on or before the day; never 0 in their place. Next: for the set point, {sp}; for the margin, {margin}; for the reading, {next}.', t: 'In a month', fn: 'E2m', sec: 'g-pressure', w: 'Money saved a day × 30, at that day\'s level.', x: '₹67.20 a day × 30 days = ₹2,016.'},
+  'G3:day': {t: 'Compressor, that day', fn: 'E3d', sec: 'g-pressure', w: 'The costing sheet\'s Power (Compressor) line for the day used: kWh, ₹ a unit and rupees, read as entered.', x: '400 kWh at ₹8.00 = ₹3,200.'},
+  'A8:press': {g: 'When no set point is typed or there is no margin, or there is no compressor reading on or before the day; never 0 in their place. Next: for the set point, {sp}; for the margin, {margin}; for the reading, {next}.', t: 'Cost per pick saved', fn: 'A8', sec: 'g-pressure', w: 'Rupees saved a day ÷ the whole floor\'s picks × 100: a pressure saving is a whole-compressor saving, so the tables use the whole floor\'s picks too.', x: '₹67 ÷ 94,061 × 100 = 0.071 paise per pick.'},
+  G4: {t: 'Floor ladder', sec: 'g-pressure', w: 'Bring the loom setting the floor down to its reference, work the floor out again, repeat for up to five looms. "Energy saved so far" is part 2 of Compressor energy saved for the floor after that step. It stops when the loom at the floor cannot come down (no reference, or already at it).',
+    x: 'Against the benchmark. Step 1: loom 1, 4.5 → 4.1 kgf/cm², floor 4.4 kgf/cm², a drop of 0.1 kgf/cm², 0.7% of compressor energy so far. Step 2: loom 3, 4.4 → 4.3 kgf/cm², floor 4.3 kgf/cm², 1.4% so far. Loom 3 is now at its reference, so it stops. This is part 2 of Compressor energy saved only; part 1 (the set point 5.0 coming down to the 4.9 today\'s floor needs, 0.7%) is not in the ladder.'},
+  G5: {t: 'Floor if only this quality is fixed', sec: 'g-pressure', w: 'Floor after the work with only that head group\'s looms brought down to their reference (every other loom as it ran).', x: 'Alpha only, against the benchmark: loom 1 → 4.1 kgf/cm², floor 4.4 kgf/cm², 0.7% of compressor energy saved (part 2 only, as in the Floor ladder).'},
+  // ---- H. Utilisation
+  H1: {t: 'Powered down, loom by loom', sec: 'g-utilisation', w: 'The 1,440 minutes in the day − minutes run − minutes stopped, loom by loom; listed at 4 hours or more.', x: 'A loom that ran 900 and stood 180 minutes: 1,440 − 900 − 180 = 360 minutes = 6.0 hours.'},
+  H2: {t: 'Realisation forgone', own: 'fx', sec: 'g-utilisation', w: 'Powered-down minutes × the RPM the loom runs on its current quality × panels ÷ 39.37 × that quality\'s realisation per pick on this loom (the day\'s own, else the loom\'s latest priced day on it).', g: 'When the loom has no priced day on that quality. Next: see Coverage on the Realisation tab for what to link or price.',
+    x: '360 minutes × 800 RPM ÷ 39.37 = 7,315 picks × 28.53 paise = ₹2,087.'},
+  H3: {t: 'Consistently low efficiency', sec: 'g-utilisation', w: 'A loom below the efficiency line on at least 3 of its last 5 running days. "Average efficiency" is the plain average of those days\' efficiencies; "Below line" = the line − that average.', x: '84%, 86%, 91%, 85% and 92%: three days below 90%; average 87.6%; 2.4 points below the line.'},
+  // ---- I. Warp breaks
+  I1: {t: 'Rate and × median', sec: 'g-warp', w: 'Rate = warp breaks ÷ machine picks × 1,00,000. "× median" = the loom\'s rate ÷ its head group\'s median rate (the middle rate of all its loom-days). The beam line (the rate past which a beam is flagged) = 2 × the median, and never under 3 per 100k picks.', g: 'When the loom made no picks, or its head group has no median yet (the × median column): the median appears once the head group has a few days of running. Next: pick another day with {day}; if a loom shows no picks on a day it ran, {next}.',
+    x: 'Loom 1: 12 breaks ÷ 9,60,000 machine picks × 1,00,000 = 1.25 per 100k picks; ÷ a median of 1.0 = 1.3× the median; beam line the larger of 2 × 1.0 and 3 = 3.0 per 100k picks.'},
+  'I1:day': {t: 'Warp breaks on the day shown', fn: 'I1', sec: 'g-warp', w: 'The warp breaks of every loom that ran 60 minutes or more, added up; the rate under it = those breaks ÷ their machine picks × 1,00,000.', x: '38 breaks ÷ 29,25,600 machine picks × 1,00,000 = 1.30 per 100k picks.'},
+  'I1:week': {t: 'Last 7 days', fn: 'I1', sec: 'g-warp', w: 'The same over the last 7 complete days.', x: '250 breaks ÷ 2,04,00,000 machine picks × 1,00,000 = 1.23 per 100k picks.'},
+  I2: {t: 'Break rate by beam', sec: 'g-warp', w: 'The beam\'s warp breaks ÷ its machine picks × 1,00,000, over every day it has been on the loom. Only the beam each loom carries now is listed.',
+    x: '30 breaks in 10,00,000 picks one day and 12 in 9,60,000 the next: 42 ÷ 19,60,000 × 1,00,000 = 2.14 per 100k picks.'},
+  I3: {t: 'Realisation lost on each beam', own: 'fx', sec: 'g-warp', w: 'Each day\'s warp-stop minutes (the report\'s "Warp (min)") × the loom\'s RPM × panels ÷ 39.37 × that day\'s realisation per pick, added up. A day with no warp minutes is left out and counted in "Days counted".', g: 'When none of the beam\'s days has warp minutes (the minutes and picks), or none is priced (the rupees). Next: see Coverage on the Realisation tab for what is not priced.',
+    x: '25 warp minutes × 800 RPM ÷ 39.37 = 508 picks × 28.53 paise = ₹145; a second day with no warp minutes: "1 of 2 days with warp minutes · 1 priced".'},
+  // ---- J. Costing
+  J1: {t: 'Cost per pick (incl. cut piece loss)', sec: 'g-costing', w: '(Total expenses + cut piece loss) ÷ production picks, in paise, with the plant\'s power units as entered. B grade loss is not added.', g: 'When the day\'s costing file is not uploaded yet: {next}.',
+    x: '(₹22,900 + ₹600) ÷ 94,000 × 100 = 25.00 paise. Without the cut piece loss: 24.36 paise.'},
+  J2: {t: 'Folded cost per pick', sec: 'g-costing', w: '(OPEX + B grade loss + cut piece loss − B grade revenue) ÷ A-grade folded picks. OPEX is the costing sheet\'s OPEX row: the day\'s operating expenses, the running costs before B grade and cut pieces. The figure is the corrected costing\'s own.', g: 'When the day\'s costing file is not uploaded yet: {next}.',
+    x: '(₹22,700 + ₹200 + ₹600 − ₹100) ÷ 86,000 × 100 = 27.21 paise.'},
+  'J3:picks': {t: 'Picks (costing file)', fn: 'J3p', sec: 'g-costing', w: 'The costing file\'s production picks (metres × picks per inch), in lakh, with the % change on the previous costing day.', x: '0.94 against 1.00 lakh: (0.94 ÷ 1.00 − 1) × 100 = −6.0%.'},
+  'J3:total': {t: 'Total cost', fn: 'J3t', sec: 'g-costing', w: 'The costing file\'s total expenses (its total row, TOTAL AMOUNT), without the cut piece loss.', x: '₹22,900.'},
+  'J3:m': {t: 'Metres produced', fn: 'J3m', sec: 'g-costing', w: 'The costing file\'s metres produced. Picks per loom = production picks ÷ looms running.', x: '2,150 m; 94,000 ÷ 3 = 31,333 picks per loom.'},
+  J4: {t: 'Fixed per day', sec: 'g-costing', w: 'The rupees of the lines tagged "fixed per day" ÷ total expenses.', x: '₹4,000 ÷ ₹22,900 = 17.5%.'},
+  J5: {t: 'Month to date', sec: 'g-costing', w: '(The month\'s expenses + the month\'s cut piece loss) ÷ the month\'s picks. In the table a line\'s "Per pick, month" = its month total ÷ the month\'s picks.', x: 'Two days: (₹22,900 + ₹23,400 + ₹1,200) ÷ 1,94,000 × 100 = 24.48 paise. POWER: (₹8,000 + ₹8,300) ÷ 1,94,000 × 100 = 8.40 paise.'},
+  J6: {t: 'Same day last month', sec: 'g-costing', w: 'That date\'s cost per pick (incl. cut piece loss), and today\'s less it.', g: 'When that date has no costing day: the tab holds costing from its first month onward, so the same date a month earlier may not be there yet. Next: nothing to do, it fills in by itself once the tab holds that date; to compare now, pick a later day with {day}.', x: '24.00 paise a month ago, 25.00 now: +1.00 paise.'},
+  J7: {t: 'Why cost per pick moved', sec: 'g-costing', w: 'Volume = the comparison day\'s cost ÷ today\'s picks − the comparison day\'s cost ÷ its own picks: fixed cost spread over more or fewer picks. Each line = its change in rupees ÷ today\'s picks. They add up exactly to the change. Against an average, the comparison is the average day: each line\'s rupees and the picks averaged over those days.', g: 'On the first costing day, or a month\'s first day against an average: the card says which day to pick instead. Next: pick that day with {day}.',
+    x: '24.00 → 25.00 paise. The day before cost ₹24,000: volume ₹24,000 ÷ 94,000 − ₹24,000 ÷ 1,00,000 = +1.53 paise; POWER −₹300 ÷ 94,000 = −0.32 paise; STORES −₹200 ÷ 94,000 = −0.21 paise. Total +1.00 paise.'},
+  J8: {t: 'Folded cost per pick, step by step from the day before', sec: 'g-costing', w: 'Start = (the previous day\'s OPEX, the costing sheet\'s operating expenses row, + cut piece loss) ÷ its A-grade folded picks. "Picks folded (timing of folding)" = that same cost ÷ today\'s folded picks − the start. "OPEX" and "Cut-piece loss" = their change in rupees ÷ today\'s folded picks. This card leaves out the net B grade (B grade loss − B grade revenue), so its last line can differ from the Folded cost per pick tile, which includes it.',
+    x: 'Day before: (₹23,200 + ₹600) ÷ 90,000 = 26.44 paise. Picks folded: ₹23,800 ÷ 86,000 − 26.44 = +1.23 paise. OPEX: (₹22,700 − ₹23,200) ÷ 86,000 = −0.58 paise. Today 27.09 paise, where the tile shows 27.21 paise with the net B grade.'},
+  J9: {t: 'Cost per pick by cost type', sec: 'g-costing', w: 'Each cost type\'s rupees ÷ picks, in paise; the cut piece loss is its own layer. Together they make the headline cost per pick. "With lumpy lines spread over the month" swaps each lumpy line\'s day amount for its month average.',
+    x: 'Each ÷ 94,000 picks: fixed ₹4,000 → 4.26 paise; follows attendance ₹6,000 → 6.38 paise; follows output ₹10,350 → 11.01 paise; lumpy ₹2,550 → 2.71 paise; cut piece loss ₹600 → 0.64 paise. Total 25.00 paise.'},
+  J10: {t: 'Fixed-cost absorption', sec: 'g-costing', w: 'Fixed rupees ÷ picks, day by day: each extra lakh picks spreads the fixed cost thinner.', x: '₹4,000 ÷ 94,000 × 100 = 4.26 paise.'},
+  J11: {t: 'Any single expense line', sec: 'g-costing', w: 'The line\'s rupees ÷ picks, day by day.', x: 'Warping ₹1,075 ÷ 94,000 × 100 = 1.14 paise.'},
+  J12: {t: 'Power', sec: 'g-costing', w: 'Units per lakh picks = units ÷ picks in lakh. Power cost per pick = the rupees on the costing\'s power line (POWER, the plant\'s whole electricity bill) ÷ picks × 100, in paise.', x: '1,000 units ÷ 0.94 lakh = 1,064 units per lakh picks; ₹8,000 ÷ 94,000 × 100 = 8.51 paise.'},
+  J13: {t: 'Labour', sec: 'g-costing', w: 'Labour cost per pick = the labour lines\' rupees ÷ picks. Per running loom = the same rupees ÷ looms running.', x: '₹10,000 ÷ 94,000 × 100 = 10.64 paise; ₹10,000 ÷ 3 = ₹3,333 a loom.'},
+  J14: {t: 'Production by quality head group', sec: 'g-costing', w: 'Picks = metres × picks per inch. Share = its picks ÷ the day\'s picks. Metres per loom = metres ÷ its looms. Converting cost per metre = the day\'s cost per pick (incl. cut piece loss) × its picks per inch, so it differs between groups only through picks per inch.',
+    x: 'Alpha: 1,350 m × 40 picks per inch = 54,000 picks, 57.4% of the costing file\'s 94,000; converting cost 25.00 paise a pick × 40 picks per inch ÷ 100 = ₹10.00 a metre.'},
+  J15: {t: 'Stock and dispatch', sec: 'g-costing', w: 'Stock days = closing stock ÷ metres produced (the day\'s, or the month\'s average a day). Dispatch % = metres dispatched ÷ metres produced.', x: '12,900 ÷ 2,150 = 6.0 days; 1,720 ÷ 2,150 = 80%.'},
+  J16: {t: 'Closing stock at prevailing rate', own: 'fx', sec: 'g-costing', w: 'Closing stock × the month\'s sale value ÷ the month\'s metres woven (priced loom-days, As sold).', g: 'When no loom-day is priced this month ("not priced"). Next: see Coverage on the Realisation tab.',
+    x: '₹46,737 ÷ 2,154 m = ₹21.70 a metre; 12,900 m × ₹21.697 = ₹2,79,896.'},
+  J17: {t: 'Quality loss', sec: 'g-costing', w: 'Share of folded metres = B grade (or cut piece) metres ÷ folded metres. "Adds to cost per good pick" = the loss in rupees ÷ A-grade folded picks. Cut piece loss = cut metres × ₹60 a metre. (The cut piece loss per pick is over production picks in Cost per pick by cost type and over folded picks here, so the two differ.)',
+    x: 'B grade 20 m ÷ 1,960 m folded = 1.02%. B grade adds ₹200 ÷ 86,000 A-grade folded picks × 100 = 0.23 paise; cut pieces ₹600 ÷ 86,000 × 100 = 0.70 paise; together 0.93 paise.'},
+  J18: {t: 'B grade by head group', sec: 'g-costing', w: 'Share = the head group\'s B grade metres ÷ the metres it produced on register days. Rupee impact = each register entry\'s metres × its quality\'s rupees per metre in that day\'s B grade loss table in the plant\'s file (B.LOSS).', g: 'Rupee impact, when the day\'s B grade loss table was not read or has no line for the quality. Next: {next}.',
+    x: 'Alpha: 20 ÷ 1,350 = 1.48%; at ₹10 a metre, 20 × ₹10 = ₹200.'},
+  J19: {t: 'Plant vs corrected', own: 'own', sec: 'g-costing', w: 'Difference = the plant file\'s figure − the recomputed figure (Recomputed = the corrected costing, as the card says under its title). They agree within ₹0.50, 10 picks or 0.001 paise. Unexplained = difference − the part the day rules expect.', x: 'TOTAL AMOUNT ₹23,050 in the file against ₹22,900 recomputed: +₹150, differs. ₹22,900.30 against ₹22,900: agrees.'},
+  J20: {t: 'Month to date: file vs correct', own: 'own', sec: 'g-costing', w: 'Correct = the recomputed day amounts (the corrected costing\'s) added up from the 1st. The card lists the lines whose month total differs, and "rest" = what no line explains.', g: 'When a day of the month is missing; nothing is filled with 0. Next: see Files per day on Data health.',
+    x: 'A made-up two-day month of its own: the file says ₹24,500; the days are ₹12,300 + ₹12,000 = ₹24,300: +₹200, all of it in POWER, so the rest is 0.'},
+  J21: {t: 'Day rules: the previous day\'s double pay', own: 'own', sec: 'g-costing', w: 'For each double-pay line: expected = the previous day\'s single amount; added = today\'s running total before the day (the PROGRESSIVE column) − the previous day\'s month total (the TOTAL column); gap = added − expected.',
+    x: 'OPERATOR was ₹6,000 on a double-pay day, so ₹6,000 more is expected. The next PROGRESSIVE is ₹65,000 against a TOTAL of ₹60,000: ₹5,000 added. Gap −₹1,000.'},
+  J22: {t: 'Realisation against cost per pick', own: 'fx', sec: 'g-costing', w: 'Four lines a day, side by side, not a sum. Realisation per pick = the day\'s realisation ÷ its priced picks. Cost per pick = the Costing tile\'s. B grade loss per good pick = B grade loss ÷ A-grade folded picks. Profit per pick = realisation − the folded cost per pick without its B grade part − each loom\'s own B grade, over the costed picks; it uses the folded cost, not the cost per pick line.', g: 'When no loom-day in the period is priced. Next: see Coverage on the Realisation tab.',
+    x: 'Realisation 22.11 paise, cost per pick 25.00 paise, B grade loss 0.23 paise per good pick, and profit −5.09 paise: 22.11 − 27.09 (folded cost without its B grade part) − 0.11 (the looms\' own B grade).'},
+  // ---- K. Realisation (owner only, every entry)
+  K1: {g: 'When the fabric has no picks per inch, or its head group is not linked. Next: see Coverage on this tab for what to link or price.', on: 'loomday', t: 'Metres of one loom-day', own: 'fx', sec: 'g-realisation', w: 'Picks ÷ the fabric\'s picks per inch (PPI). Picks are fabric picks ÷ 39.37, so a 280 cm double panna loom counts both panels.', x: 'Loom 1: 24,384 picks ÷ 40 picks per inch = 609.6 m.'},
+  K2: {alt: true, on: 'loomday', t: 'Sale value, greige', own: 'fx', sec: 'g-realisation', w: 'Metres × the sale rate in force on the production date × (1 − VATAV, the discount taken off the sale price).', g: 'When the fabric has no sale rate in force, or its head group is not linked. Next: see Coverage on this tab for what to link or price.', x: '₹20.00 × (1 − 2%) = ₹19.60 a metre × 609.6 m = ₹11,948.'},
+  K3: {g: 'When the fabric has no sale rate in force, or its head group is not linked. Next: see Coverage on this tab for what to link or price.', alt: true, on: 'loomday', t: 'Sale value, RFD', own: 'fx', sec: 'g-realisation', w: 'Greige metres per RFD metre g = 1 ÷ (1 − RFD shortage; blank = 0%). Per RFD metre = price × (1 − VATAV − brokering) − processing × g − transport. Per greige metre = that ÷ g.', x: 'g = 1 ÷ 0.96 = 1.0417. ₹32 × 0.97 − ₹4 × 1.0417 − ₹0.50 = ₹26.37 an RFD metre = ₹25.32 a greige metre × 790 m = ₹20,003.'},
+  K4: {on: 'loomday', t: 'Standard yarn cost per metre', own: 'fx', sec: 'g-realisation', w: 'Warp grams per metre = ends × denier ÷ 9,000 × (1 + warp shortage). Weft grams per metre = picks per inch × reed space × denier ÷ 9,000 × (1 + weft shortage). Cost = grams ÷ 1,000 × the rate per kg, added up over the yarns. Standard, not consumed.', g: 'When a shortage is blank, or a yarn has no count or no rate. Next: see Coverage on the Realisation tab for the fabric to fix.',
+    x: 'Warp 3,000 × 75 ÷ 9,000 × 1.02 = 25.5 g × ₹200 a kg = ₹5.10. Weft 40 × 50 × 75 ÷ 9,000 × 1.03 = 17.17 g × ₹180 = ₹3.09. ₹8.19 a metre.'},
+  K5: {g: 'When the loom-day has no sale value or no standard yarn cost. Next: see Coverage on this tab for what to link or price.', on: 'loomday', t: 'Realisation of one loom-day', own: 'fx', sec: 'g-realisation', w: 'Sale value − standard yarn cost. Paise per pick = rupees ÷ picks × 100.', x: '₹19.60 − ₹8.19 = ₹11.41 a metre × 609.6 m = ₹6,956; ÷ 24,384 picks × 100 = 28.53 paise a pick.'},
+  K6: {on: 'loomday', t: 'Profit of one loom-day', own: 'fx', sec: 'g-realisation', w: 'Realisation − picks × (the day\'s folded cost per pick without its B grade part) − the loom\'s own B grade. The B grade part = (B grade loss − revenue) ÷ A-grade folded picks. The loom\'s B grade = its register metres × the day\'s net B grade loss per B grade metre; what the register cannot pin to a loom is spread over every pick, so the day\'s B grade is charged in full and never twice.', g: 'When there is no costing day (realisation shows, profit does not). Next: see Files per day on Data health.',
+    x: '27.21 paise − (₹200 − ₹100) ÷ 86,000 picks × 100 = 27.09 paise. Loom 1: ₹6,956 − 24,384 picks × 27.09 paise (₹6,606) − 20 m of B grade × ₹5 = ₹249.'},
+  'K7:sale': {t: 'Sale value at prevailing rate', fn: 'K7', own: 'fx', sec: 'g-realisation', w: 'The day\'s sale value over its priced loom-days, with paise per pick (÷ priced picks) and ₹ per loom per day (÷ priced loom-days). It values what the looms made at the sale rate in force on the production date (the plant\'s day folder, India time); it is not what was sold. On the basis at the top: As sold values each head group on its own default record (greige where a greige record is linked, else RFD; set per link on Head-group links); Greige and RFD value every link on that record and leave the other kind as a gap.', g: 'When nothing is priced. Next: see Coverage on this tab for what to link or price.', x: '₹46,737 over 3 loom-days, on the tile ₹0.47 lakh; ÷ 3 = ₹15,579 a loom a day.'},
+  'K7:real': {t: 'Realisation', fn: 'K7', own: 'fx', sec: 'g-realisation', w: 'The day\'s realisation, with paise per pick (÷ priced picks) and ₹ per loom per day (÷ priced loom-days).', g: 'When nothing is priced. Next: see Coverage on this tab for what to link or price.', x: '₹20,794 over 3 loom-days, on the tile ₹0.21 lakh; ÷ 94,061 picks × 100 = 22.11 paise a pick; ÷ 3 = ₹6,931 a loom a day.'},
+  'K7:profit': {t: 'Profit', fn: 'K7', own: 'fx', sec: 'g-realisation', w: 'The day\'s profit over its costed loom-days, with paise per pick and ₹ per loom per day.', g: 'When the day has no costing yet: profit shows once that day\'s costing file is read. Next: see Files per day on Data health.', x: '−₹4,790 over 3 costed loom-days, on the tile −₹0.05 lakh; ÷ 94,061 picks × 100 = −5.09 paise a pick; ÷ 3 = −₹1,597 a loom a day.'},
+  'K7:mtd': {g: 'When nothing is priced this month. Next: see Coverage on this tab for what to link or price.', t: 'Realisation, month to date', fn: 'K7', own: 'fx', sec: 'g-realisation', w: 'The same working over every day of the month up to the day shown.', x: 'Two days at ₹20,794 and ₹21,000: ₹41,794, on the tile ₹0.42 lakh.'},
+  K8: {t: 'Coverage', own: 'fx', sec: 'g-realisation', w: 'Priced picks ÷ all picks. Under 90% the tiles are dimmed. Each reason for a gap says where it is fixed.', x: 'All three looms priced: 100%. Were Beta unlinked: 54,559 ÷ 94,061 = 58%.'},
+  K9: {g: 'When nothing in the period is costed. Next: see Coverage on this tab for what to link or price. For a missing costing day, see Files per day on Data health.', t: 'Per pick: sale value to profit', own: 'fx', sec: 'g-realisation', w: 'Sale − yarn − conversion − B grade = profit, each ÷ the costed picks. Conversion = the folded cost per pick without B grade (not the Costing tab\'s converting cost per metre).', x: '49.69 paise − 27.58 paise − 27.09 paise − 0.11 paise = −5.09 paise.'},
+  K10: {g: 'When nothing in the period is costed. Next: see Coverage on this tab for what to link or price. For a missing costing day, see Files per day on Data health.', t: 'Cost charged against the plant\'s costing', own: 'fx', sec: 'g-realisation', w: 'Charged = every woven pick × the cost per pick without B grade, plus B grade. The plant\'s figure = folded cost per pick × A-grade folded picks. They differ when folding runs behind or ahead of weaving.', x: '₹25,484 + ₹100 = ₹25,584 charged against 27.21 paise × 86,000 = ₹23,400: ₹2,184 more, as 94,061 picks were woven and 86,000 folded.'},
+  K11: {g: 'When nothing in the period is priced, or for profit nothing is costed. Next: see Coverage on this tab for what to link or price. For a missing costing day, see Files per day on Data health.', t: 'By loom / By head group', own: 'fx', sec: 'g-realisation', w: 'Each row\'s rupees over its loom-days (or picks), on the figure the switches show: profit or realisation per loom per day, or realisation per pick. At Benchmark, Best or Target, each loom-day\'s picks become the reference effective RPM × its minutes, and its rupees scale with them.', x: 'Alpha: ₹15,563 over 2 loom-days = ₹7,782 a loom per day.'},
+  K13: {t: 'Realisation per pick, day by day', own: 'fx', sec: 'g-realisation', g: 'A day with nothing priced is a gap in the line, never 0. Next: see Coverage on this tab for what to link or price.', w: 'Each day\'s realisation ÷ its priced picks × 100: the Trend line, the 7-day lines beside Realisation and under a loom\'s panel, and the Benchmarks "paise/pick" line. A day with nothing priced is a gap in the line, never 0.', x: '22.11 paise for the day; the next day, with nothing priced, is a break in the line.'},
+  K14: {t: 'Realisation targets', own: 'fx', sec: 'g-targets', w: '"Now" = the month\'s realisation ÷ its priced loom-days. "Target" = each of those loom-days re-worked at the target effective RPM, averaged; there is no typed realisation target. "Now vs target" = now − target.', g: '"not priced" when nothing is priced; "no target RPM" when none is set. Next: see Coverage on the Realisation tab, or set a target RPM above.',
+    x: 'Alpha: ₹15,563 ÷ 2 = ₹7,782 now; at 837 effective RPM each loom-day makes 30,614 picks × 28.53 paise = ₹8,733. Now − target = −₹951 a loom per day.'},
+  // ---- L. Targets
+  L1: {t: 'Target effective RPM', sec: 'g-targets', g: 'When no head group on this width has a target RPM yet: {tgt}.', w: '93% of the target RPM typed on Targets.', x: '93% × a target RPM of 900 = 837 effective RPM.'},
+  // ---- section 6: rules and counts, in words only
+  S_drift: {t: 'Drift alerts', words: true, sec: 'g-quality', w: 'The latest day against the 7 days before, and week on week once 14 days exist. The thresholds are set in the daily run.'},
+  S_flag: {t: 'Flagged looms', words: true, sec: 'g-warp', w: 'A loom over 2 × its head group\'s median rate and over 3 per 100k picks on 3 of its last 5 running days.'},
+  S_wq: {t: 'Qualities breaking at over twice the width median', words: true, sec: 'g-warp', w: 'A head group\'s median break rate over the last 14 days against the median of its loom width; listed at over twice it. Worked in the daily run.'},
+  S_hold: {t: 'Head groups holding the floor up', words: true, sec: 'g-pressure', w: 'The days in the last 14 a head group set the floor, the floor without it, and its share of the picks. Worked in the daily run.'},
+  S_cal: {t: 'Run, stopped and powered down', words: true, sec: 'g-utilisation', w: 'Each loom\'s 24 hours as run, stopped and powered down: a picture of the same minutes as Powered down.'},
+  S_trend: {t: 'Trend', words: true, sec: 'g-trends', w: 'The same loom-day figures as the tables, day by day: RPM, efficiency and effective RPM as for the day tiles, CFM and air per 1,000 picks from the air drawn.'},
+  S_cor: {t: 'Corrections', words: true, own: 'fx', sec: 'g-realisation', w: 'A day already announced whose realisation or profit moved by ₹500 or more, for any cause, gets one correction: sale value, realisation and profit, told → now, with the cause.'},
+  S_ap: {t: 'Approvals: when it asks again', words: true, own: 'own', sec: 'g-approvals', w: 'A difference must hold unchanged across two reads at least 25 minutes apart before it becomes a request. A change of more than 25% on any money figure asks for a confirmation, and so does a date before the first production day or more than 90 days ahead.'},
+  S_bk: {t: 'Backup age', words: true, sec: 'g-data', w: 'The nightly backup\'s last success; late after 26 hours; "no record yet" is never shown as ok.'},
+  S_sc: {t: 'Sheet checks', words: true, own: 'own', sec: 'g-costing', w: 'Counts of the findings that can change a figure the app shows: New (not seen the day before), Standing (the same check, line and figures as before) and All.'},
+  S_fh: {t: 'File health', words: true, own: 'own', sec: 'g-costing', w: 'Three checks a day: the lines add up to the total within ₹1; total ÷ picks = the sheet\'s cost per pick; the PROGRESSIVE column = the previous day\'s total. It reports and never corrects.'},
+};
+// ---------------------------------------------------------------- where the marks go
+// tab ('*' = any tab, 'panel' = the loom or head-group panel); tile: the tile's label, or card: the card's title (a string
+// matched exactly, or a pattern where the title carries the day, the quality or a count); in: the card a tile sits in;
+// ids: the entries it opens (each shown only to the roles it is for); loose: the result appears in the tile's small print,
+// not its main figure; chart: the card shows the figure on a chart only (no text to check it against on screen; its
+// arithmetic is pinned by tests/test_working.py); name: only for a card whose heading follows its own switch (the search
+// lists that card under the same name, NAV_STATIC in nav.js). Every other mark is named by its tile or card as drawn (wkName).
+const WK_AT = [
+  {tab: 'actions', tile: 'Picks', ids: ['A1', 'A6']}, {tab: 'actions', tile: 'Efficiency', ids: ['A2:eff']}, {tab: 'actions', tile: 'Speed while running', ids: ['A2:rpm']},
+  {tab: 'actions', tile: 'Air per 1,000 picks', ids: ['A3']}, {tab: 'actions', tile: 'Average CFM per loom', ids: ['B1:cfm']}, {tab: 'actions', tile: 'Total CFM consumption', ids: ['B1:total']},
+  {tab: 'actions', tile: 'Powered down', ids: ['B1:off']}, {tab: 'actions', tile: 'Floor pressure', ids: ['B1:floor']},
+  {tab: 'actions', tile: 'Realisation per pick', ids: ['B2:real']}, {tab: 'actions', tile: 'Folded cost per pick', ids: ['B2:fold']},
+  {tab: 'actions', tile: 'Target cost per pick', ids: ['B3']}, {tab: 'actions', tile: 'Folding shortage', ids: ['B4']},
+  {tab: 'actions', tile: 'Target realisation per pick', ids: ['B5:real']}, {tab: 'actions', tile: 'Target profit per pick', ids: ['B5:profit']},
+  {tab: 'actions', card: 'Work on these first', ids: ['B6', 'K12', 'B7']}, {tab: 'actions', card: 'Where the saving is', ids: ['B3']},
+  {tab: 'actions', card: /^RPM · /, ids: ['B8:rpm']}, {tab: 'actions', card: /^Efficiency · /, ids: ['B8:eff']}, {tab: 'actions', card: /^CFM · /, ids: ['B8:cfm']}, {tab: 'actions', card: /^Pressure · /, ids: ['B8:press']},
+  {tab: 'quality', card: 'Gap to the reference, by head group', ids: ['C1', 'C4']}, {tab: 'quality', card: 'Current vs reference', ids: ['A5', 'C2', 'C3']}, {tab: 'quality', card: 'Drift alerts', ids: ['S_drift']},
+  {tab: 'benchmarks', card: /: benchmark · /, ids: ['D1']}, {tab: 'panel', card: 'Benchmark, best and target', ids: ['A4']},
+  {tab: 'cfm', tile: 'Total CFM now', in: 'If every loom ran at its reference CFM', ids: ['E1:now']}, {tab: 'cfm', tile: 'Total CFM after the work', in: 'If every loom ran at its reference CFM', ids: ['E1:after']}, {tab: 'cfm', tile: 'Air saved', in: 'If every loom ran at its reference CFM', ids: ['E1:saved']}, {tab: 'cfm', tile: 'Compressor energy saved', in: 'If every loom ran at its reference CFM', ids: ['E1:pct']},
+  {tab: 'cfm', tile: 'Energy saved', in: 'What the CFM saving is worth', ids: ['E2:kwh']}, {tab: 'cfm', tile: 'Money saved', in: 'What the CFM saving is worth', ids: ['E2:rs']}, {tab: 'cfm', tile: 'Cost per pick saved', in: 'What the CFM saving is worth', ids: ['A8:cfm']}, {tab: 'cfm', tile: 'In a month', in: 'What the CFM saving is worth', ids: ['E2:month']},
+  {tab: 'cfm', tile: 'Compressor, that day', in: 'What the CFM saving is worth', ids: ['E3:day']}, {tab: 'cfm', tile: 'Compressor energy', in: 'Compressor power', ids: ['E3:kwh']}, {tab: 'cfm', tile: 'Cost', in: 'Compressor power', ids: ['E3:cost']}, {tab: 'cfm', tile: 'Energy per air', in: 'Compressor power', ids: ['E3:air']}, {tab: 'cfm', tile: 'Cost per air', in: 'Compressor power', ids: ['E3:rsair']},
+  {tab: 'cfm', card: 'What the CFM saving is worth', ids: ['E2', 'E4']}, {tab: 'cfm', card: 'Reference vs running CFM', ids: ['A3:bm']}, {tab: 'cfm', card: 'Total CFM by day', ids: ['E5']},
+  {tab: 'panel', card: 'Compressor cost of this air', ids: ['E6']},
+  {tab: 'erpm', tile: 'Effective RPM now', in: 'If every loom ran at its reference effective RPM', ids: ['A2:erpm']}, {tab: 'erpm', tile: 'Picks now', in: 'If every loom ran at its reference effective RPM', ids: ['F1:now']}, {tab: 'erpm', tile: 'Picks after the work', in: 'If every loom ran at its reference effective RPM', ids: ['F1:after']}, {tab: 'erpm', tile: 'Picks gained', in: 'If every loom ran at its reference effective RPM', ids: ['F1:gain']},
+  {tab: 'erpm', tile: 'Realisation after the work', in: 'If every loom ran at its reference effective RPM', ids: ['F3:rs']}, {tab: 'erpm', tile: 'Realisation per pick after the work', in: 'If every loom ran at its reference effective RPM', ids: ['F3:pp']}, {tab: 'erpm', card: 'Reference vs running effective RPM', ids: ['F2', 'F2m']},
+  {tab: 'pressure', tile: 'Floor now', in: 'If every loom ran at its reference pressure', ids: ['G1:now']}, {tab: 'pressure', tile: 'Floor after the work', in: 'If every loom ran at its reference pressure', ids: ['G1:after']}, {tab: 'pressure', tile: 'Compressor set point', in: 'If every loom ran at its reference pressure', ids: ['G2'], loose: true}, {tab: 'pressure', tile: 'Compressor energy saved', in: 'If every loom ran at its reference pressure', ids: ['G3']},
+  {tab: 'pressure', tile: 'Energy saved', in: 'What lowering the pressure is worth', ids: ['G3:kwh']}, {tab: 'pressure', tile: 'Money saved', in: 'What lowering the pressure is worth', ids: ['G3:rs']}, {tab: 'pressure', tile: 'Cost per pick saved', in: 'What lowering the pressure is worth', ids: ['A8:press']}, {tab: 'pressure', tile: 'In a month', in: 'What lowering the pressure is worth', ids: ['G3:month']}, {tab: 'pressure', tile: 'Compressor, that day', in: 'What lowering the pressure is worth', ids: ['G3:day']},
+  {tab: 'pressure', card: 'What lowering the pressure is worth', ids: ['E4']}, {tab: 'pressure', card: 'Floor ladder', ids: ['G4']}, {tab: 'pressure', card: 'Reference vs running pressure', ids: ['G5'], when: () => typeof PVIEW === 'undefined' || PVIEW === 'quality'}, {tab: 'pressure', card: 'Head groups holding the floor up', ids: ['S_hold']},
+  {tab: 'utilisation', card: /^Run, stopped and powered down/, ids: ['S_cal']}, {tab: 'utilisation', card: /^Powered down on /, ids: ['H1', 'H2']}, {tab: 'utilisation', card: /^Consistently low efficiency/, ids: ['H3']},
+  {tab: 'warp', tile: /^Warp breaks on /, ids: ['I1:day'], loose: true}, {tab: 'warp', tile: 'Last 7 days', ids: ['I1:week'], loose: true}, {tab: 'warp', card: /^Loom-wise: /, ids: ['I1']}, {tab: 'warp', card: 'Break rate by beam', ids: ['I2', 'I3']},
+  {tab: 'warp', card: 'Flagged looms', ids: ['S_flag']}, {tab: 'warp', card: 'Qualities breaking at over twice the width median', ids: ['S_wq']},
+  {tab: 'costing', tile: 'Cost per pick (incl. cut piece loss)', ids: ['J1']}, {tab: 'costing', tile: 'Folded cost per pick', ids: ['J2']}, {tab: 'costing', tile: 'Picks', ids: ['J3:picks']}, {tab: 'costing', tile: 'Total cost', ids: ['J3:total']},
+  {tab: 'costing', tile: 'Metres produced', ids: ['J3:m']}, {tab: 'costing', tile: 'Fixed per day', ids: ['J4']}, {tab: 'costing', tile: 'Month to date', ids: ['J5']}, {tab: 'costing', tile: 'Same day last month', ids: ['J6']},
+  {tab: 'costing', card: 'Sheet checks', ids: ['S_sc']}, {tab: 'costing', card: 'Plant vs corrected', ids: ['J19']}, {tab: 'costing', card: 'Month to date: file vs correct', ids: ['J20']}, {tab: 'costing', card: 'Day rules', ids: ['J21']},
+  {tab: 'costing', card: 'Why cost per pick moved', ids: ['J7']}, {tab: 'costing', card: 'Folded cost per pick', ids: ['J8']}, {tab: 'costing', card: 'Fixed against variable cost', ids: ['J9']}, {tab: 'costing', card: 'Cost per pick', ids: ['J1'], chart: true},
+  {tab: 'costing', card: 'Realisation against cost per pick', ids: ['J22'], chart: true}, {tab: 'costing', card: 'Cost per pick by cost type', ids: ['J9']}, {tab: 'costing', card: 'Fixed-cost absorption', ids: ['J10'], chart: true},
+  {tab: 'costing', card: 'Any single expense line', ids: ['J11'], chart: true}, {tab: 'costing', card: 'Power', ids: ['J12']}, {tab: 'costing', card: 'Labour', ids: ['J13']}, {tab: 'costing', card: 'Production by quality head group', ids: ['J14']},
+  {tab: 'costing', card: 'Stock and dispatch', ids: ['J15', 'J16']}, {tab: 'costing', card: 'Quality loss', ids: ['J17']}, {tab: 'costing', card: 'B grade by head group', ids: ['J18']}, {tab: 'costing', card: 'Month to date', ids: ['J5']}, {tab: 'costing', card: 'File health', ids: ['S_fh']},
+  {tab: 'realisation', tile: 'Sale value at prevailing rate', ids: ['K7:sale', 'K1', 'K2', 'K3']}, {tab: 'realisation', tile: 'Realisation', ids: ['K7:real', 'K4', 'K5']}, {tab: 'realisation', tile: 'Profit', ids: ['K7:profit', 'K6']},
+  {tab: 'realisation', tile: 'Realisation, month to date', ids: ['K7:mtd']}, {tab: 'realisation', card: 'Corrections', ids: ['S_cor']}, {tab: 'realisation', card: 'Coverage', ids: ['K8']}, {tab: 'realisation', card: 'Trend', ids: ['K13']},
+  {tab: 'realisation', card: /^By (loom|head group)$/, name: 'By loom / By head group', ids: ['K11']}, {tab: 'realisation', card: 'Per pick: sale value to profit', ids: ['K9']}, {tab: 'realisation', card: 'Cost charged against the plant\'s costing', ids: ['K10']},
+  {tab: 'targets', card: 'Targets by head group', ids: ['L1']}, {tab: 'targets', card: 'Realisation targets', ids: ['K14']}, {tab: 'data', card: 'Backup age', ids: ['S_bk']}, {tab: 'approvals', card: 'History', ids: ['S_ap']},
+  {tab: '*', card: 'Trend', ids: ['S_trend']},
+];
+// The result as the Result row shows it: with its unit ("83.3%", "10.14 lakh", "25.00 paise"), as its line ends
+const wkShownRes = (L) => !L.unit ? L.res : L.unit === '%' ? L.res + '%' : `${L.res} ${L.unit}`;
+const wkFn = (id) => (WK[id] && WK[id].fn) || id;
+// An entry this signed-in role may see: the owner-only ones need the owner (and the realisation analysis on, for money)
+function wkAllowed(id) {
+  const e = WK[id]; if (!e) return false;
+  if (e.own === 'fx') return typeof fxOn === 'function' && fxOn() && !isPlant();
+  if (e.own === 'own') return wkOwner();
+  return true;
+}
+const wkAtTab = (a, tab) => a.tab === tab || (a.tab === '*' && !WK_AT.some((b) => b !== a && b.tab === tab && b.card === a.card));
+const wkMatch = (want, text) => want instanceof RegExp ? want.test(text) : want === text;
+// The line with the day's own figures and its result: null when the figures are not there (a gap) or the entry is a rule.
+function wkLive(id, data) {
+  const e = WK[id], f = wkFn(id), fn = (typeof WKL === 'object' && WKL[f]) || (typeof WKLF === 'object' && WKLF[f]);
+  if (!e || e.words || !fn) return null;
+  const d = data && id in data ? data[id] : WKD[id];
+  try { return d ? fn(d) : null; } catch (err) { return null; }
+}
+
+// A benchmark's percentile, from the runs the daily run stored with it (the two loom-days either side), for D1 and A4
+function wkBench(w, hg, m) {
+  const b = typeof bench === 'function' ? bench(w, hg) : null, R = b && b.runs && b.runs[m];
+  if (!R || !R.lo || !(R.of > 0)) return null;
+  return {hg, what: (typeof BMETA === 'object' && BMETA[m] ? BMETA[m].label : m), n: R.of, p: R.pct / 100, lo: R.lo[m], hi: R.hi ? R.hi[m] : R.lo[m], dp: m === 'rpm' || m === 'erpm' ? 0 : m === 'apk' ? 1 : 2,
+    u: {rpm: 'RPM', erpm: 'effective RPM', apk: 'ft³ per 1,000 picks', main_max: 'kgf/cm²', main: 'kgf/cm²', warp_rate: 'per 100k picks'}[m] || ''};
+}
+// ---------------------------------------------------------------- the mark
+function wkMark(ids, label, data, kind) {
+  const b = el('button', {type: 'button', class: 'wkb', 'aria-label': `Working: ${label}`, title: `Working: ${label}`, 'data-wk': ids.join(',')});
+  const go = (e) => { e.preventDefault(); e.stopPropagation(); wkOpen(ids, label, data, kind || 'line'); };
+  b.addEventListener('click', go);
+  b.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') go(e); });
+  b.__wkData = data || null;
+  return b;
+}
+// The figures as drawn, kept on the mark itself: a later off-screen draw (the search index) cannot change what it opens.
+const wkSnap = (ids) => Object.fromEntries(ids.map((id) => [id, WKD[id] === undefined ? null : WKD[id]]));
+// Called on every redraw (collapseAll in model.js): adds the marks the page lacks. Idempotent.
+function wkDecorate() {
+  if (!D) return;
+  try { wkDecorate0(); } catch (e) { /* a mark must never stop the redraw (fillGaps and fitCharts run after it) */ }
+}
+function wkDecorate0() {
+  const roots = [[$('#main'), TAB]];
+  if (typeof dlg !== 'undefined' && dlg && dlg.open) roots.push([dlg, 'panel']);
+  for (const [root, tab] of roots) wkScan(root, tab, (a, host, name) => {
+    const box = host.parentElement; if (box.querySelector(':scope > .wkb')) return;
+    const ids = a.ids.filter(wkAllowed); if (!ids.length) return;
+    const m = wkMark(ids, name, wkSnap(ids), a.tile ? 'tile' : a.chart ? 'chart' : 'card');
+    if (a.loose) m.dataset.wkLoose = '1'; if (a.chart) m.dataset.wkChart = '1';
+    host.after(m); if (a.tile) box.classList.add('wkhas');
+  }, tab !== 'panel' && typeof NAV_STATIC === 'object' && !NAV_STATIC[tab]);
+}
+// ---------------------------------------------------------------- names: one source
+// A mark is named by what its tile or card says on this role's own screen: the tile's label, or the card's title as the
+// search lists cards (navCardName: without a trailing count). WKN keeps the name as last drawn, on screen (wkDecorate) or
+// off screen (the search index draws every tab once, navIndex), so the sheet's title, the search entry and the Guide link
+// of a mark are the same words as the screen, also where the title carries the day or the quality picked.
+const WKN = new Map(), WKT = new Set();   // WKT: the tabs drawn whole at least once, so a mark with no name there is not on this role's screen for the day
+const wkCardName = (t) => typeof navCardName === 'function' ? navCardName(t) : String(t).trim();
+// whole: root is the tab as a whole (not a tab whose cards arrive after the page is drawn, NAV_STATIC in nav.js): the
+// marks it does not draw lose their name, so the search and the Guide list only what this role's screen shows for the day.
+function wkScan(root, tab, each, whole) {
+  if (!root) return;
+  let moved = false;
+  const was = whole ? new Map(WK_AT.filter((a) => a.tab === tab && WKN.has(a)).map((a) => [a, WKN.get(a)])) : null;
+  if (whole) { for (const a of was.keys()) WKN.delete(a); WKT.add(tab); }
+  const seen = (a, host, name) => { if (!a.name && WKN.get(a) !== name) { WKN.set(a, name); if (!was || was.get(a) !== name) moved = true; } if (each) each(a, host, name); };
+  for (const lab of root.querySelectorAll('.kpi > .label')) {
+    const text = lab.textContent.trim(), a = WK_AT.find((x) => x.tile && wkAtTab(x, tab) && wkMatch(x.tile, text));
+    if (a) seen(a, lab, text);
+  }
+  for (const h of root.querySelectorAll('.card > .cardhead > h3')) {
+    if (h.closest('tr.drillrow')) continue;
+    const text = h.textContent.trim(), a = WK_AT.find((x) => x.card && wkAtTab(x, tab) && wkMatch(x.card, text) && (!x.when || x.when()));
+    if (a) seen(a, h, wkCardName(text));
+  }
+  if (was && [...was.keys()].some((a) => !WKN.has(a))) moved = true;
+  if (moved && typeof navRelabel === 'function') navRelabel();   // a built search index follows the screen
+}
+// A mark's name: as last drawn; on a tab not yet drawn whole (its cards arrive after the page is drawn), the tile label
+// or card title itself where that is fixed text. null = this role's screen does not show it for the day: no search entry
+// and no Guide link then.
+const wkName = (a) => a.name || WKN.get(a) || (!WKT.has(a.tab) && typeof (a.tile || a.card) === 'string' ? a.tile || a.card : null);
+// The marks the search and the Guide list for this role: on a tab (not in a loom's or head group's panel), on a tab the
+// role can open, with at least one entry the role may see.
+const wkListed = () => WK_AT.filter((a) => a.tab !== 'panel' && a.tab !== '*' && !a.when && wkName(a) && a.ids.some(wkAllowed) && (typeof tabAllowed !== 'function' || tabAllowed(a.tab)));
+// What the search and the Guide call a mark: its name; a name this role meets in more than one place adds what it is and
+// where ("Efficiency, tile on Actions", "Money saved, tile in What the CFM saving is worth"). The Guide says so (g-start).
+function wkLabel(a, L) {
+  const nm = wkName(a), tabName = typeof TITLES === 'object' && TITLES[a.tab] ? TITLES[a.tab] : a.tab;
+  return (L || wkListed()).some((b) => b !== a && wkName(b) === nm) ? `${nm}, ${a.tile ? 'tile' : 'card'} ${a.in ? 'in ' + a.in : 'on ' + tabName}` : nm;
+}
+
+// ---------------------------------------------------------------- the sheet
+let WKS = null;
+const WK_ON = {loomday: 'for that one loom-day (By loom: tap the loom\'s row to see its loom-days)', tile: 'as on the tile', card: 'as on the card', chart: 'the figure the chart draws for that day', line: 'as on the "this week vs last week" line', screen: 'as on the screen'};
+function wkSheet() {
+  if (!WKS) {
+    WKS = el('dialog', {class: 'wks', 'aria-labelledby': 'wks-t'});
+    WKS.addEventListener('click', (e) => { if (e.target === WKS) WKS.close(); });
+    document.body.append(WKS);
+  }
+  return WKS;
+}
+function wkOpen(ids, label, data, kind) {
+  ids = (ids || []).filter(wkAllowed);
+  ids = ids.filter((id, i) => !(i && WK[id].alt && !wkLive(id, data)));   // greige or RFD: only the one that applies
+  if (!ids.length) return;
+  const S0 = wkSheet();
+  const one = (id) => {
+    const e = WK[id], L = wkLive(id, data), part = (k, ...v) => el('div', {class: 'wkp'}, el('div', {class: 'wkk', text: k}), ...v);
+    const g0 = e.g ? wkNext(e.g) : WK_GAP;   // every gap ends with a next step in plain words
+    const gap = e.g ? g0 : `${g0} Next: pick another day with ${wkNext('{day}')}; if it stays, ${wkOwner() ? 'see Files per day on Data health' : 'tell the owner'}.`;
+    return el('section', {class: 'wke', 'data-wk-id': id},
+      ids.length > 1 ? el('h3', {text: e.t}) : null,
+      part('In words', el('p', {text: e.w})),
+      e.words ? null : part('With this day\'s figures', el('p', {class: 'wkl', text: L ? L.line : 'Not available for the day shown. The part headed When it shows "—", below, says why and what to do next.'})),
+      e.words ? null : part('Result', el('p', {}, el('b', {class: 'wkr', 'data-wk-res': L ? L.res : '', text: L ? wkShownRes(L) : '—'}), L ? `, ${WK_ON[e.on || kind] || WK_ON.screen}.` : '')),
+      e.words ? null : part('When it shows "—"', el('p', {text: gap})),
+      e.x ? el('details', {class: 'wkx'}, el('summary', {text: 'Example with made-up figures'}), el('p', {text: MADE_UP + e.x})) : null);
+  };
+  const sec = WK[ids[0]].sec;
+  S0.replaceChildren(
+    el('div', {class: 'wkhead'}, el('h2', {id: 'wks-t'}, el('span', {class: 'wkeq', 'aria-hidden': 'true', text: '='}), ` Working: ${label}`),
+      el('button', {type: 'button', class: 'ghost wkclose', 'aria-label': 'Close the Working', text: '×', onclick: () => S0.close()})),
+    ...ids.map(one),
+    ids.some((id) => wkLive(id, data)) ? el('p', {class: 'note wkrnd', text: 'The figures in a line are shown rounded and worked unrounded, so a last digit can differ by one.'}) : null,
+    el('p', {class: 'wkfoot'}, el('button', {class: 'link', type: 'button', text: 'More in the Guide ›', onclick: () => { S0.close(); if (typeof navGuide === 'function' && sec) navGuide(sec); else if (typeof openGuide === 'function') openGuide(); }}),
+));
+  if (!S0.open) S0.showModal();
+  S0.scrollTop = 0;
+}
+
+// ---------------------------------------------------------------- search, Guide links
+// One search entry per mark this role can see ("Working: " and its name, wkLabel); picking one opens its tab, scrolls to
+// the tile or card and opens the sheet from the mark itself, so it shows the figures on the screen. Plant view never finds
+// a money entry (NAV_MONEY in nav.js) and nobody but the owner finds an owner entry.
+WK_AT.forEach((a) => { const k0 = `${a.tab}|${a.ids[0]}|${a.tile ? 't' : 'c'}`, n = WK_AT.filter((b) => b.key && b.key.replace(/\|\d+$/, '') === k0).length; a.key = n ? `${k0}|${n + 1}` : k0; });   // a stable id for Recent and Favourites
+function wkSearchItems() {
+  const L = wkListed(), tabName = (t) => typeof TITLES === 'object' && TITLES[t] ? TITLES[t] : t;
+  return L.map((a) => ({id: 'w:' + a.key, k: 'Working', label: 'Working: ' + wkLabel(a, L), sub: tabName(a.tab) + ' tab', t: a.tab, wk: a, go: () => wkGo(a)}));
+}
+// Open a mark's Working where it lives: its tab, its tile or card, its own mark. If the day shown does not draw that tile
+// or card, the sheet still opens with the words and says the figures are not available for the day.
+function wkGo(a) {
+  if (typeof closePanel === 'function') closePanel();
+  if (TAB !== a.tab && typeof setTab === 'function') setTab(a.tab);
+  const until = Date.now() + (typeof NAV_STATIC === 'object' && NAV_STATIC[a.tab] ? 6000 : 1500);   // a tab whose cards arrive after it is drawn gets longer
+  const look = () => {
+    if (TAB !== a.tab) return;
+    let host = null; wkScan($('#main'), a.tab, (b, h) => { if (b === a && !host) host = h; });
+    if (!host && Date.now() < until) { setTimeout(look, 250); return; }
+    const mk = host && host.parentElement.querySelector(':scope > .wkb');
+    if (host) host.scrollIntoView({block: 'center'});
+    if (mk) mk.click();
+    else { const ids = a.ids.filter(wkAllowed); wkOpen(ids, wkName(a) || WK[ids[0]].t, Object.fromEntries(ids.map((id) => [id, null]))); }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(look));
+}
+// Each tab's Guide section links to the Working of the marks on that tab: one link per mark this role can see, under the
+// same words as the search (wkLabel). A link closes the Guide and opens the Working from the mark on its tab.
+function wkGuideLinks(tab) {
+  if (typeof navFresh === 'function' && typeof NAV_BUSY !== 'undefined' && !NAV_BUSY && D && !navFresh()) { try { navIndex(); } catch (e) { /* the links then use the names drawn so far */ } }
+  const L = wkListed(), P = L.filter((a) => a.tab === tab);
+  if (!P.length) return null;
+  return el('p', {class: 'note wkgl'}, 'Working (the = mark on this tab\'s tiles and card titles): ', ...P.flatMap((a, i) => [i ? ' · ' : '', el('button', {class: 'link', type: 'button', text: wkLabel(a, L), onclick: () => wkGo(a)})]));
+}

@@ -712,3 +712,169 @@ function targetFolded(fday, tc, short) {
   const num = opex - (tc.Sc || 0) - (tc.Sp || 0) + tc.Add, den = (fday.picks * 1e5 + tc.E) * (1 - short);
   return den > 0 ? 100 * num / den : null;
 }
+
+// ================================================================ Round J (18 Nov 2026): the Working
+// Each "=" mark on a tile or card title opens the Working: the formula in words (app/working.js), then the same line with
+// the day's own figures and the result. The screens hand the figures they drew with to wkPut (working.js); WKL[id](d)
+// turns them into {line, res, unit}. One rule holds for every entry, by construction (wkOut): the line names the figures
+// that go in and ENDS on its result with its unit, so the Result row never shows a figure the line does not end on, and
+// never a bare number. res is worked here from those figures and formatted the way the tile or card prints it, so the
+// Working and the screen can be checked against each other (tests/test_working.py by hand, headless check_working on
+// every mark for every role). null = the figure is a gap.
+const wkN = (x, d = 0) => { if (!ok(x)) return '—'; const s = Math.abs(x).toLocaleString('en-IN', {minimumFractionDigits: d, maximumFractionDigits: d}); return (x < 0 && /[1-9]/.test(s) ? '−' : '') + s; };
+const wkR = (x, d = 0) => !ok(x) ? '—' : (x < 0 && /[1-9]/.test(Math.abs(x).toFixed(d)) ? '−₹' : '₹') + wkN(Math.abs(x), d);
+const wkF = (x, d) => !ok(x) ? '—' : x.toFixed(d);   // toFixed, as most tiles print (no grouping)
+const wkS = (x, d) => !ok(x) ? '—' : (x > 0 && /[1-9]/.test(x.toFixed(d)) ? '+' : x < 0 && /[1-9]/.test(Math.abs(x).toFixed(d)) ? '−' : '') + Math.abs(x).toFixed(d);   // signed
+const wkPz = (x) => !ok(x) ? '—' : x.toFixed(x !== 0 && Math.abs(x) < 0.1 ? 3 : 2);   // paise per pick of a saving, as on the CFM and Pressure tabs
+const wkSum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
+// up to n terms written out, then "+ k more" (a sum over many looms)
+const wkTerms = (xs, f, n = 3) => xs.slice(0, n).map(f).join(' + ') + (xs.length > n ? ` + ${xs.length - n} more` : '');
+const wkPn = (pf) => pf === 2 ? ' × 2 panels' : '';
+// The result with its unit, as the Result row shows it ("83.3%", "10.14 lakh", "₹2,135 a day")
+const wkShown = (res, unit) => !unit ? res : unit === '%' ? res + '%' : `${res} ${unit}`;
+// {line, res, unit, v}: the line is `pre`, then sep (" = " unless the result is read, not worked), then the result and unit
+const wkOut = (pre, res, unit, v, sep = ' = ') => ({line: pre + sep + wkShown(res, unit), res, unit: unit || '', v});
+const WKL = {
+  // ---- A. ideas used on every tab
+  A1: (d) => { if (!d || !(d.fpicks > 0)) return null; const p = d.fpicks / 39.37, v = p / 1e5 / (d.days || 1);
+    return wkOut(`${wkN(d.fpicks)} fabric picks ÷ 39.37 = ${wkN(p)} picks${d.days > 1 ? ` over ${d.days} days` : ''}`, wkF(v, 2), 'lakh', v); },
+  A6: (d) => { if (!d || !ok(d.now) || !ok(d.prev)) return null; const v = d.now - d.prev, zero = !/[1-9]/.test(Math.abs(v).toFixed(d.dp));
+    return wkOut(`${wkF(d.now, d.dp)} ${d.unit} on the day − ${wkF(d.prev, d.dp)} ${d.unit}, the average of the ${d.n} day${d.n === 1 ? '' : 's'} before`,
+      zero ? '±0' : (v > 0 ? '▲ +' : '▼ −') + Math.abs(v).toFixed(d.dp), d.unit, v); },
+  A2e: (d) => { if (!d || !(d.tot > 0)) return null; const v = 100 * d.run / d.tot; return wkOut(`${wkN(d.run)} minutes run ÷ ${wkN(d.tot)} minutes run and stopped × 100`, wkF(v, 1), '%', v); },
+  A2r: (d) => { if (!d || !(d.run > 0)) return null; const v = d.picks / d.run; return wkOut(`${wkN(d.picks)} machine picks ÷ ${wkN(d.run)} minutes run`, f0(v), 'RPM', v); },
+  A2x: (d) => { if (!d || !(d.tot > 0)) return null; const v = d.picks / d.tot; return wkOut(`${wkN(d.picks)} machine picks ÷ ${wkN(d.tot)} minutes run and stopped`, f0(v), 'effective RPM', v); },
+  A3: (d) => { if (!d || !(d.fpicks > 0)) return null; const v = 1000 * d.air / d.fpicks; return wkOut(`${wkN(d.air)} ft³ of air ÷ ${wkN(d.fpicks)} fabric picks × 1,000`, wkF(v, 1), 'ft³ per 1,000 picks', v); },
+  A3b: (d) => { if (!d || !ok(d.apk) || !ok(d.rpm)) return null; const v = d.apk * d.pf * d.rpm / 1000;
+    return wkOut(`Loom ${d.loom} (${d.hg}): benchmark ${wkF(d.apk, 1)} ft³ per 1,000 picks × ${d.pf} panel${d.pf === 1 ? '' : 's'} × its own ${wkN(d.rpm)} RPM ÷ 1,000`, wkF(v, 1), 'CFM', v); },
+  A5: (d) => { if (!d || !ok(d.now) || !ok(d.ref)) return null; const t = d.ref * d.tol / 100, g = d.now - d.ref, miss = d.hi ? d.now < d.ref - t : d.now > d.ref + t;
+    return wkOut(`${d.hg}: ${d.what} ${wkN(d.now, d.dp)} against ${d.name} ${wkN(d.ref, d.dp)}. Tolerance ${d.tol}% of ${wkN(d.ref, d.dp)} = ${wkN(t, d.dp + 1)}, so anything ${d.hi ? 'under' : 'over'} ${wkN(d.hi ? d.ref - t : d.ref + t, d.dp + 1)} is marked ${d.hi ? '▼' : '▲'} (this one ${miss ? 'is' : 'is not'}). Gap ${wkN(d.now, d.dp)} − ${wkN(d.ref, d.dp)}`,
+      (g >= 0 ? '+' : '−') + Math.abs(g).toFixed(d.dp), d.what, g); },
+  A7: (d) => { if (!d || !ok(d.cur) || !ok(d.prev)) return null; const v = d.cur - d.prev, zero = !/[1-9]/.test(d.fmt(Math.abs(v)));
+    const of = d.of || 7, u = d.unit || '', du = String(d.dunit != null ? d.dunit : u).trim();
+    return wkOut(`this week ${d.fmt(d.cur)}${u}${d.cn < of ? ` (${d.cn} of ${of} days)` : ''} − last week ${d.fmt(d.prev)}${u}${d.pn < of ? ` (${d.pn} of ${of} days)` : ''}`,
+      zero ? '±0' : (v > 0 ? '▲ +' : '▼ −') + d.fmt(Math.abs(v)), du, v); },
+  A8: (d) => { if (!d || !ok(d.rs) || !(d.picks > 0)) return null; const v = 100 * d.rs / d.picks;
+    return wkOut(`${wkR(d.rs)} saved a day ÷ ${wkN(d.picks)} picks × 100`, wkPz(v), 'paise per pick', v); },
+  // ---- B. Actions
+  B1c: (d) => { if (!d || !(d.run > 0)) return null; const v = d.air / d.run; return wkOut(`${wkN(d.air)} ft³ of air ÷ ${wkN(d.run)} minutes run`, wkF(v, 1), 'CFM', v); },
+  B1t: (d) => { if (!d || !ok(d.air)) return null; const v = d.air / 1440; return wkOut(`${wkN(d.air)} ft³ of air in the day ÷ 1,440 minutes`, f0(v), 'CFM', v); },
+  B1o: (d) => { if (!d || !ok(d.min)) return null; const v = d.min / 60; return wkOut(`${wkN(d.min)} loom-minutes powered down (24 hours less run and stopped, loom by loom) ÷ 60`, wkF(v, 1), 'loom-hours', v); },
+  B1f: (d) => { if (!d || !ok(d.floor)) return null; return wkOut(`the highest main pressure of any loom that day, on loom ${d.loom} (${d.hg})`, wkF(d.floor, 2), 'kgf/cm²', d.floor, ': '); },
+  B3: (d) => { if (!d || !ok(d.c0)) return null; const S = d.steps.filter((s) => ok(s.pp)), v = d.c0 + wkSum(S, (s) => s.pp);
+    return wkOut(`${wkF(d.c0, 2)} paise now ${S.map((s) => `${s.pp < 0 ? '−' : '+'} ${Math.abs(s.pp).toFixed(Math.abs(s.pp) < 0.1 && s.pp !== 0 ? 3 : 2)} (${s.name})`).join(' ')}${d.left ? ` (left out: ${d.left})` : ''}`, wkF(v, 2), 'paise', v); },
+  B4: (d) => { if (!d || !(d.P > 0)) return null; const v = 1 - (d.A + d.B + d.C) / d.P;
+    return wkOut(`${d.days} of ${d.of} days: 1 − (A-grade folded picks ${wkN(d.A)} + B grade picks ${wkN(d.B)} + cut piece picks ${wkN(d.C)}) ÷ production picks ${wkN(d.P)}`, wkF(v * 100, 1), '%', v); },
+  B6: (d) => { if (!d) return null; const parts = [];
+    if (ok(d.rsPicks)) parts.push(`lost picks ${wkN(d.picks)} × ${wkF(d.pp, 2)} paise ${d.by === 'realisation' ? 'of realisation per pick (the owner\'s valuation, in place of the cost per pick)' : 'of cost per pick (the lines paid whether or not the loom weaves)'} = ${wkR(d.rsPicks)}`);
+    if (ok(d.rsAir) && d.ft3 > 0) parts.push(`extra air ${wkN(d.ft3)} ft³ × ₹${wkF(d.rsFt3 * 1000, 2)} per 1,000 ft³ = ${wkR(d.rsAir)}`);
+    if (ok(d.rsPress) && d.press > 0) parts.push(`its step of the floor ladder (the compressor saving when its pressure comes down to its reference) ${wkR(d.rsPress)}`);
+    if (!parts.length) return null; const v = (ok(d.rsPicks) ? d.rsPicks : 0) + (ok(d.rsAir) ? d.rsAir : 0) + (ok(d.rsPress) ? d.rsPress : 0);
+    return wkOut(`Loom ${d.loom}: ${parts.join(' + ')}${parts.length > 1 ? '; together' : '; in all'}`, wkR(v), 'a day', v, ' '); },
+  B8r: (d) => { if (!d) return null; const v = (d.ref - d.now) * d.run * d.pf / 39.37 / 1e5;
+    return wkOut(`Loom ${d.loom}: reference ${wkN(d.ref)} (the higher reference it misses) − ${wkN(d.now)} RPM = ${wkN(d.ref - d.now)}; × ${wkN(d.run)} minutes run × ${d.pf} panel${d.pf === 1 ? '' : 's'} ÷ 39.37 = ${wkN(v * 1e5)} picks`, wkF(v, 3), 'lakh picks lost', v); },
+  B8e: (d) => { if (!d) return null; const m = Math.max(0, d.line / 100 * d.tot - d.run), v = m * d.rpm * d.pf / 39.37 / 1e5;
+    return wkOut(`Loom ${d.loom}: ${d.line}% × ${wkN(d.tot)} minutes run and stopped − ${wkN(d.run)} minutes run = ${wkN(m, 1)} minutes short; × ${wkN(d.rpm)} RPM × ${d.pf} panel${d.pf === 1 ? '' : 's'} ÷ 39.37 = ${wkN(v * 1e5)} picks`, wkF(v, 3), 'lakh picks short', v); },
+  B8c: (d) => { if (!d) return null; const v = d.now - d.ref; return wkOut(`Loom ${d.loom}: ${wkF(d.now, 1)} CFM − ${wkF(d.ref, 1)} CFM (the lower reference it is over by more than ${d.tol}%)`, wkF(v, 1), 'CFM over', v); },
+  B8p: (d) => { if (!d) return null; const v = d.now - d.ref; return wkOut(`Loom ${d.loom}: ${wkF(d.now, 2)} kgf/cm², the day's highest, − ${wkF(d.ref, 2)} (the lower reference it is over by more than 0.1)`, wkF(v, 2), 'kgf/cm² over', v); },
+  // ---- C, D. Quality and Benchmarks
+  C1: (d) => { if (!d || !ok(d.now) || !ok(d.ref) || d.ref === 0) return null; const p = (d.now - d.ref) / Math.abs(d.ref) * 100;
+    return wkOut(`${d.hg}, ${d.what}: (${wkN(d.now, d.dp)} − ${d.name} ${wkN(d.ref, d.dp)}) ÷ ${wkN(d.ref, d.dp)} × 100`, `${Math.abs(p) < 0.05 ? '±' : p > 0 ? '+' : '−'}${Math.abs(p).toFixed(1)}%`, '', p); },
+  D1: (d) => { if (!d || !(d.n > 0)) return null; const k = (d.n - 1) * d.p, f = Math.floor(k), w = k - f, v = d.lo + (d.hi - d.lo) * w;
+    return wkOut(`${d.hg}, ${d.what}: ${d.n} loom-days in order; ${wkN(d.p * 100)}% of the way along the ${d.n - 1} step${d.n === 2 ? '' : 's'} between them is ${wkN(k, 2)} steps, so ${wkN(w, 2)} of the way from ${wkN(d.lo, d.dp)} to ${wkN(d.hi, d.dp)}: ${wkN(d.lo, d.dp)} × ${wkN(1 - w, 2)} + ${wkN(d.hi, d.dp)} × ${wkN(w, 2)}`, wkN(v, d.dp), d.u || '', v); },
+  L1: (d) => { if (!d || !ok(d.rpm)) return null; const v = 0.93 * d.rpm; return wkOut(`${d.hg}, ${d.w} cm: 93% × target RPM ${wkN(d.rpm)}`, f0(v), 'effective RPM', v); },
+  // ---- E. CFM and compressor money
+  E1n: (d) => d && ok(d.air) ? wkOut(`${wkN(d.air)} ft³ of air in the day ÷ 1,440 minutes`, f0(d.air / 1440), 'CFM', d.air / 1440) : null,
+  E1a: (d) => d && ok(d.after) ? wkOut(`${wkN(d.after)} ft³ (each loom above its reference brought down to it, the rest as they ran) ÷ 1,440 minutes`, f0(d.after / 1440), 'CFM', d.after / 1440) : null,
+  E1s: (d) => { if (!d || !ok(d.air)) return null; const v = (d.air - d.after) / 1440;
+    return wkOut(`${wkN(d.air)} − ${wkN(d.after)} = ${wkN(d.air - d.after)} ft³ a day${d.date ? ` on ${d.date}` : ''}; ÷ 1,440 minutes`, f0(v), 'CFM', v); },
+  E1p: (d) => { if (!d || !(d.air > 0)) return null; const v = 100 * (d.air - d.after) / d.air; return wkOut(`${wkN(d.air - d.after)} ft³ saved ÷ ${wkN(d.air)} ft³ now × 100`, wkF(v, 1), '%', v); },
+  E2k: (d) => { if (!d || !ok(d.ft3)) return null; const v = d.ft3 * d.kwhFt3; return wkOut(`${wkN(d.ft3)} ft³ of air saved × ${wkF(d.kwhFt3 * 1000, 2)} kWh per 1,000 ft³`, f0(v), 'kWh a day', v); },
+  G3k: (d) => { if (!d || !ok(d.frac)) return null; const v = d.frac * d.kwh; return wkOut(`${wkF(d.frac * 100, 1)}% of the compressor's ${wkN(d.kwh)} kWh`, f0(v), 'kWh a day', v); },
+  E2r: (d) => { if (!d || !ok(d.kwh)) return null; const v = d.kwh * d.rate; return wkOut(`${wkN(d.kwh, 1)} kWh × ₹${wkF(d.rate, 2)} a unit`, wkR(v), 'a day', v); },
+  E2m: (d) => { if (!d || !ok(d.rs)) return null; return wkOut(`${wkR(d.rs, 2)} a day × 30 days`, wkR(d.rs * 30), '', d.rs * 30); },
+  E3d: (d) => d && ok(d.rupees) ? wkOut(`the costing sheet's Power (Compressor) line on ${d.date}, ${wkN(d.kwh)} kWh at ₹${wkF(d.rate, 2)} a unit`, wkR(d.rupees), '', d.rupees, ': ') : null,
+  E3k: (d) => d && ok(d.kwh) ? wkOut(`the costing sheet's Power (Compressor) line on ${d.date}`, f0(d.kwh), 'kWh', d.kwh, ': ') : null,
+  E3e: (d) => { if (!d || !(d.ft3 > 0)) return null; const v = d.kwh / (d.ft3 * 0.0283168) * 1000;
+    return wkOut(`${wkN(d.kwh)} kWh ÷ ${wkN(d.ft3)} ft³ of floor air = ${wkF(d.kwh / d.ft3 * 1000, 2)} kWh per 1,000 ft³; ÷ 0.0283168 m³ per ft³`, wkF(v, 1), 'kWh per 1,000 m³', v); },
+  E3a: (d) => { if (!d || !(d.ft3 > 0)) return null; const v = d.rupees / d.ft3 * 1000; return wkOut(`${wkR(d.rupees)} ÷ ${wkN(d.ft3)} ft³ of floor air × 1,000`, wkR(v), 'per 1,000 ft³', v); },
+  E6: (d) => { if (!d || !ok(d.rsFt3)) return null; const v = d.ft3 * d.rsFt3; return wkOut(`${d.date}: this ${d.what}'s ${wkN(d.ft3)} ft³ × the floor's ₹${wkF(d.rsFt3 * 1000, 2)} per 1,000 ft³`, wkR(v), '', v); },
+  // ---- F. Effective RPM
+  F1n: (d) => d && ok(d.now) ? wkOut(`${wkN(d.now)} fabric picks ÷ 39.37 = ${wkN(d.now / 39.37)} picks`, wkF(d.now / 39.37 / 1e5, 2), 'lakh', d.now / 39.37 / 1e5) : null,
+  F1g: (d) => { if (!d || !ok(d.gain)) return null; const v = d.gain / 39.37 / 1e5;
+    return wkOut(`(reference − effective RPM) × (run + stopped) minutes × panels, for each loom below its reference: ${d.terms.length ? wkTerms(d.terms, (t) => `loom ${t.loom} (${wkN(t.ref)} − ${wkN(t.now, 1)}) × ${wkN(t.min)}${t.pf === 2 ? ' × 2' : ''}`) : 'no loom'} = ${wkN(d.gain)} fabric picks; ÷ 39.37 = ${wkN(d.gain / 39.37)} picks`, wkF(v, 2), 'lakh', v); },
+  F1a: (d) => d && ok(d.now) ? wkOut(`${wkN(d.now)} + ${wkN(d.gain)} fabric picks gained = ${wkN(d.now + d.gain)}; ÷ 39.37 = ${wkN((d.now + d.gain) / 39.37)} picks`, wkF((d.now + d.gain) / 39.37 / 1e5, 2), 'lakh', (d.now + d.gain) / 39.37 / 1e5) : null,
+  // the Shortfall cell prints "−n" for a loom below its reference and "0" for one at or past it
+  F2: (d) => { if (!d || !ok(d.ref)) return null; const s = d.ref - d.now, p = Math.max(0, s) * d.min * d.pf / 39.37;
+    return wkOut(`Loom ${d.loom}: picks short = its shortfall of ${wkN(Math.max(0, s), 1)} effective RPM × ${wkN(d.min)} minutes run and stopped${wkPn(d.pf)} ÷ 39.37 = ${wkN(p)} picks (${wkF(p / 1e5, 2)} lakh). The shortfall: reference ${wkN(d.ref, 1)} − ${wkN(d.now, 1)} now = ${wkN(Math.max(0, s), 1)}, shown as`, s > 0.5 ? '−' + f0(s) : '0', 'effective RPM', s, ' '); },
+  // ---- G. Pressure
+  G1n: (d) => d && ok(d.floor) ? wkOut(`the highest main pressure of any loom, both widths, on loom ${d.loom}`, wkF(d.floor, 2), 'kgf/cm²', d.floor, ': ') : null,
+  G1a: (d) => d && ok(d.floor) ? wkOut(`each loom above its reference brought down to it, the rest as they ran; the highest is then${d.held ? ` on loom ${d.held}` : ''}`, wkF(d.floor, 2), 'kgf/cm²', d.floor, ': ') : null,
+  G2: (d) => { if (!d || !ok(d.m) || !ok(d.now)) return null; const a = d.now + d.m, b = d.after + d.m;
+    return wkOut(`floor now ${wkF(d.now, 2)} + margin ${wkF(d.m, 2)} = ${wkF(a, 2)}; floor after the work ${wkF(d.after, 2)} + ${wkF(d.m, 2)} = ${wkF(b, 2)}; on the tile`, `needed ${wkF(a, 2)} → ${wkF(b, 2)}`, 'kgf/cm²', a, ': '); },
+  G3: (d) => { if (!d || !ok(d.sp) || !ok(d.m)) return null; const P = pressParts(d.sp, d.now, d.after, d.m, d.rule); if (!ok(P.total)) return null;
+    const from2 = Math.min(d.sp, P.now);
+    const p1 = d.sp > P.now ? `the set point ${wkF(d.sp, 2)} → ${wkF(P.now, 2)} needed now: ${wkF(d.sp - P.now, 2)} × ${d.rule}% = ${wkF(P.fix * 100, 1)}%` : `the set point ${wkF(d.sp, 2)} is already at or below the ${wkF(P.now, 2)} needed now: 0%`;
+    const p2 = from2 > P.after ? `${wkF(from2, 2)} → ${wkF(P.after, 2)} needed after the work: ${wkF(from2 - P.after, 2)} × ${d.rule}% = ${wkF(P.looms * 100, 1)}%` : `${wkF(from2, 2)} is already at or below the ${wkF(P.after, 2)} needed after the work: 0%`;
+    return wkOut(`part 1, ${p1}; part 2, ${p2}; together`, wkF(P.total * 100, 1), '%', P.total, ' '); },
+  G4: (d) => { if (!d) return null; return wkOut(`step 1: loom ${d.loom} (it sets the floor) brought from ${wkF(d.from, 2)} to its reference ${wkF(d.to, 2)}; the floor worked out again drops ${wkF(d.drop, 2)}, from ${wkF(d.before, 2)} to`, wkF(d.floor, 2), 'kgf/cm²', d.floor, ' '); },
+  G5: (d) => { if (!d) return null; return wkOut(`${d.hg}: only its looms brought down to their reference (the others as they ran); the highest main pressure is then`, wkF(d.floor, 2), 'kgf/cm²', d.floor, ' '); },
+  // ---- H, I. Utilisation and Warp breaks
+  H1: (d) => { if (!d) return null; const same = Math.abs(1440 - d.run - d.stop - d.off) < 0.5;   // the daily run counts under 10 minutes as 0 and a missing shift as powered down
+    return wkOut(same ? `Loom ${d.loom}: 1,440 − ${wkN(d.run)} minutes run − ${wkN(d.stop)} stopped = ${wkN(d.off)} minutes; ÷ 60`
+      : `Loom ${d.loom}: it ran ${wkN(d.run)} and stood ${wkN(d.stop)} minutes; ${wkN(d.off)} minutes powered down as counted for the day (a shift missing from the files counts as powered down; under 10 minutes counts as 0) ÷ 60`, wkF(d.off / 60, 1), 'hours', d.off / 60); },
+  H3: (d) => { if (!d || !d.effs.length) return null; const v = wkSum(d.effs, (e) => e) / d.effs.length;
+    return wkOut(`Loom ${d.loom}: ${d.low} of its last ${d.effs.length} running days under ${d.line}%; Below line = ${d.line} − the average = ${wkF(d.line - v, 1)} points; the average: (${d.effs.map((e) => wkF(e, 1)).join(' + ')}) ÷ ${d.effs.length}`, wkF(v, 1), '%', v); },
+  I1: (d) => { if (!d || !(d.picks > 0)) return null; const v = d.warp / d.picks * 1e5;
+    return wkOut(`${d.what}${ok(d.med) && d.med > 0 ? ` (${wkF(v / d.med, 1)}× its head group's median rate of ${wkF(d.med, 2)})` : ''}: ${wkN(d.warp)} warp breaks ÷ ${wkN(d.picks)} machine picks × 1,00,000`, wkF(v, 2), 'per 100k picks', v); },
+  I2: (d) => { if (!d || !(d.picks > 0)) return null; const v = d.warp / d.picks * 1e5;
+    return wkOut(`Beam ${d.beam} on loom ${d.loom} (its beam line is ${wkF(d.line, 2)}): ${wkN(d.warp)} breaks ÷ ${wkN(d.picks)} machine picks over its ${d.days} day${d.days === 1 ? '' : 's'} × 1,00,000`, wkF(v, 2), 'per 100k picks', v); },
+};
+// ---- J. Costing (picks in lakh, as the costing days carry them)
+Object.assign(WKL, {
+  J1: (d) => { if (!d || !(d.picks > 0)) return null; const v = 100 * (d.total + (d.cut || 0)) / (d.picks * 1e5);
+    return wkOut(`(total expenses ${wkR(d.total)} + cut piece loss ${wkR(d.cut || 0)}) ÷ ${wkN(d.picks * 1e5)} production picks × 100`, wkF(v, 2), 'paise', v); },
+  // OPEX is not carried on the app's costing day: it is the corrected costing's OPEX row, recovered here from that file's own
+  // folded cost per pick (the same identity targetFolded uses), so the line shows each part of the folded cost.
+  J2: (d) => { if (!d || !ok(d.fcpp) || !(d.afold > 0)) return null; const P = d.afold * 1e5, bl = ok(d.bl) ? d.bl : 0, br = ok(d.brev) ? d.brev : 0, cut = d.cut || 0;
+    const opex = d.fcpp / 100 * P - (bl + cut - br), v = 100 * (opex + bl + cut - br) / P;
+    return wkOut(`(OPEX ${wkR(opex)}, the costing sheet's operating expenses row, + B grade loss ${wkR(bl)} + cut piece loss ${wkR(cut)} − B grade revenue ${wkR(br)}) ÷ ${wkN(P)} A-grade folded picks × 100`, wkF(v, 2), 'paise', v); },
+  J3p: (d) => { if (!d || !ok(d.picks)) return null; const pk = ok(d.prev) && d.prev > 0 ? (d.picks / d.prev - 1) * 100 : null;
+    return wkOut(`${ok(pk) ? `${wkS(pk, 1)}% against ${wkF(d.prev, 2)} lakh on ${d.prevDate} ((${wkF(d.picks, 2)} ÷ ${wkF(d.prev, 2)} − 1) × 100); ` : ''}the costing file's production picks (metres × picks per inch)`, wkF(d.picks, 2), 'lakh', d.picks, ': '); },
+  J3t: (d) => d && ok(d.total) ? wkOut(`the costing file's total expenses (its total row, TOTAL AMOUNT), without the cut piece loss`, wkR(d.total), '', d.total, ': ') : null,
+  J3m: (d) => d && ok(d.metres) ? wkOut(`picks per loom = ${wkN(d.picks * 1e5)} picks ÷ ${wkN(d.looms, 1)} looms running = ${wkN(d.picks * 1e5 / d.looms)}; the costing file's metres produced`, f0(d.metres), 'm', d.metres, ': ') : null,
+  J4: (d) => { if (!d || !(d.total > 0)) return null; const v = d.fixed / d.total; return wkOut(`${wkR(d.fixed)} on lines that are fixed per day ÷ ${wkR(d.total)} total expenses × 100`, wkF(v * 100, 1) + '%', '', v); },
+  J5: (d) => { if (!d || !(d.picks > 0)) return null; const v = 100 * (d.amount + (d.cut || 0)) / (d.picks * 1e5);
+    return wkOut(`(the month's expenses ${wkR(d.amount)} + its cut piece loss ${wkR(d.cut || 0)}) ÷ ${wkN(d.picks * 1e5)} picks over ${d.days} day${d.days === 1 ? '' : 's'} × 100`, wkF(v, 2), 'paise', v); },
+  J6: (d) => d && ok(d.ly) ? wkOut(`today ${wkF(d.cpp, 2)} paise, ${wkS(d.cpp - d.ly, 2)} paise against the same date last month; that date, ${d.lyDate}: (its expenses + cut piece loss) ÷ its picks`, wkF(d.ly, 2), 'paise', d.ly) : null,
+  J7: (d) => { if (!d || !ok(d.prev)) return null; const v = wkSum(d.parts, (p) => p.e);
+    const sg = (x) => (x > 0 ? '+' : x < 0 ? '−' : '±') + Math.abs(x).toFixed(2);   // as the card's Total row
+    return wkOut(`${d.ref}: ${wkF(d.prev, 2)} paise; ${d.date}: ${wkF(d.prev + v, 2)} paise. The parts, in paise: ${d.parts.map((p, i) => `${p.e < 0 ? '−' : i ? '+' : ''} ${Math.abs(p.e).toFixed(2)} (${p.n})`.trim()).join(' ')}`, sg(v), 'paise', v); },
+  J8: (d) => { if (!d || !ok(d.prev)) return null; const v = d.prev + d.folding + d.opex + d.cut;
+    return wkOut(`${d.date}: ${d.prevDate}'s ${wkF(d.prev, 2)} paise ${wkS(d.folding, 2)} (picks folded) ${wkS(d.opex, 2)} (OPEX) ${wkS(d.cut, 2)} (cut-piece loss)`, wkF(v, 2), 'paise', v); },
+  J9: (d) => { if (!d || !(d.picks > 0)) return null; const P = d.picks * 1e5, v = 100 * (wkSum(d.types, (t) => t.a) + (d.cut || 0)) / P;
+    return wkOut(`${d.types.map((t) => `${t.name.toLowerCase()} ${wkR(t.a)}`).join(' + ')} + cut piece loss ${wkR(d.cut || 0)}, each ÷ ${wkN(P)} picks × 100: ${d.types.map((t) => wkF(100 * t.a / P, 2)).join(' + ')} + ${wkF(100 * (d.cut || 0) / P, 2)}`, wkF(v, 2), 'paise', v); },
+  J10: (d) => { if (!d || !(d.picks > 0)) return null; const v = 100 * d.fixed / (d.picks * 1e5); return wkOut(`${d.date}: fixed lines ${wkR(d.fixed)} ÷ ${wkN(d.picks * 1e5)} picks × 100`, wkF(v, 2), 'paise', v); },
+  J11: (d) => { if (!d || !(d.picks > 0) || !ok(d.a)) return null; const v = 100 * d.a / (d.picks * 1e5); return wkOut(`${d.date}: ${d.n} ${wkR(d.a)} ÷ ${wkN(d.picks * 1e5)} picks × 100`, wkF(v, 2), 'paise', v); },
+  J12: (d) => { if (!d || !(d.picks > 0) || !ok(d.units)) return null; const v = d.units / d.picks;
+    return wkOut(`power cost per pick ${wkR(d.amount)} ÷ ${wkN(d.picks * 1e5)} picks × 100 = ${wkF(100 * d.amount / (d.picks * 1e5), 2)} paise; ${wkN(d.units)} units ÷ ${wkF(d.picks, 2)} lakh picks`, wkF(v, 0), 'units per lakh picks', v); },
+  J13: (d) => { if (!d || !(d.picks > 0) || !ok(d.cost)) return null; const v = 100 * d.cost / (d.picks * 1e5);
+    return wkOut(`${wkR(d.cost)} ÷ ${wkN(d.looms, 1)} looms running = ${wkR(d.cost / d.looms)} a loom; labour lines ${wkR(d.cost)} ÷ ${wkN(d.picks * 1e5)} picks × 100`, wkF(v, 2), 'paise', v); },
+  J14: (d) => { if (!d || !ok(d.ppi) || !ok(d.cpp)) return null; const v = d.cpp / 100 * d.ppi;
+    return wkOut(`${d.hg}: ${wkN(d.tm)} m × ${wkF(d.ppi, 1)} picks per inch = ${wkN(d.tm * d.ppi)} picks; converting cost ${wkF(d.cpp, 2)} paise × ${wkF(d.ppi, 1)} ÷ 100`, '₹' + wkF(v, 2), 'a metre', v); },
+  J15: (d) => { if (!d || !(d.produced > 0) || !ok(d.closing)) return null; const v = d.closing / d.produced;
+    return wkOut(`${ok(d.dispatch) ? `dispatch ${wkN(d.dispatch)} m ÷ ${wkN(d.produced)} m × 100 = ${wkF(100 * d.dispatch / d.produced, 1)}%; ` : ''}stock days: ${wkN(d.closing)} m closing stock ÷ ${wkN(d.produced)} m produced`, wkF(v, 1), 'days', v); },
+  J17: (d) => { if (!d || !(d.af > 0)) return null; const P = d.af, b = ok(d.bl) ? 100 * d.bl / P : null, c = ok(d.cl) ? 100 * d.cl / P : null; if (!ok(b) && !ok(c)) return null;   // P: A-grade folded picks, as the B grade register days carry them
+    const v = (ok(b) ? b : 0) + (ok(c) ? c : 0), parts = [ok(b) ? `B grade loss ${wkR(d.bl)} ÷ ${wkN(P)} A-grade folded picks × 100 = ${wkF(b, 2)} paise` : 'no B grade loss on the file (left out)', ok(c) ? `cut piece loss ${wkR(d.cl)} ÷ the same picks × 100 = ${wkF(c, 2)} paise` : 'no cut piece loss on the file (left out)'];
+    return wkOut(`${d.date}: ${ok(d.bm) && d.fm > 0 ? `B grade ${wkN(d.bm)} m ÷ ${wkN(d.fm)} m folded × 100 = ${wkF(100 * d.bm / d.fm, 2)}%; ` : ''}${parts.join('; ')}; together`, wkF(v, 2), 'paise', v, ' '); },
+  J18: (d) => { if (!d || !(d.prod > 0)) return null; const v = 100 * d.m / d.prod; return wkOut(`${d.hg}: ${wkN(d.m)} m of B grade ÷ ${wkN(d.prod)} m it produced on register days × 100`, wkF(v, 2), '%', v); },
+  J19: (d) => { if (!d || !ok(d.file) || !ok(d.calc)) return null; const v = d.file - d.calc, u = d.unit;
+    const fm = (x) => u === 'rs' ? wkR(x, 2) : u === 'picks' ? wkN(x) + ' picks' : x.toFixed(3) + ' paise', sg = (x) => (x > 0 ? '+' : '−') + (u === 'rs' ? wkR(Math.abs(x), 2) : u === 'picks' ? wkN(Math.abs(x)) : Math.abs(x).toFixed(3));
+    if (d.agree) return wkOut(`${d.what}: ${fm(d.file)} in the plant's file and ${fm(d.calc)} recomputed are within ₹0.50, 10 picks or 0.001 paise of each other`, 'agrees', '', v, ': ');
+    return wkOut(`${d.what}: ${ok(d.exp) && d.exp !== 0 ? `${sg(d.exp)} of it is expected from the day rules, ${sg(v - d.exp)} is unexplained; ` : ''}${fm(d.file)} in the plant's file − ${fm(d.calc)} recomputed`, sg(v), u === 'picks' ? 'picks' : u === 'rs' ? '' : 'paise', v); },
+  J20: (d) => { if (!d || !ok(d.file) || !ok(d.correct)) return null; const v = d.file - d.correct;
+    return wkOut(`the file's month total ${wkR(d.file)} is ${Math.abs(v) < 0.5 ? 'the same as' : `${wkR(Math.abs(v))} ${v >= 0 ? 'more' : 'less'} than`} the correct one: the recomputed day amounts from the 1st, added up`, wkR(d.correct), '', v); },
+  J21: (d) => { if (!d || !ok(d.expected) || !ok(d.added)) return null; const v = d.added - d.expected;
+    if (Math.abs(v) < 0.5) return wkOut(`${d.line}: the plant added ${wkR(d.added)} (today's running total before the day less ${d.prevDate}'s month total), and ${wkR(d.expected)} was expected (the single amount)`, 'as it should be', '', v, ': ');
+    return wkOut(`${d.line}: the plant added ${wkR(d.added)} (today's running total before the day less ${d.prevDate}'s month total); ${wkR(d.expected)} was expected (the single amount); gap ${wkR(d.added)} − ${wkR(d.expected)}`, wkR(v), '', v); },
+});

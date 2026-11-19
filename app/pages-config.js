@@ -79,6 +79,8 @@ function pageTargets() {
     });
   };
   const allBar = () => { const b = el('button', {class: 'primary', type: 'button', text: 'Save all', disabled: !db, onclick: saveAll}); allBtns.push(b); return el('div', {class: 'toolbar'}, b, allMsg); };
+  if (typeof wkPut === 'function') { const k = Object.keys(TG).sort().find((x) => ok(TG[x].rpm) && (D.benchmarks || []).some((b) => key(b.width, b.hg) === x && inW(b.width)));   // Round J: the first head group with a target RPM
+    wkPut('L1', k ? {hg: TG[k].hg, w: TG[k].width, rpm: TG[k].rpm} : null); }
   s.append(card('Targets by head group', targetsLoaded ? `${Object.keys(TG).length} head group${Object.keys(TG).length === 1 ? '' : 's'} with targets` : 'Loading saved targets…', allBar(), tb, el('div', {class: 'toolbar', style: 'margin-top:10px'}, (() => { const b = el('button', {class: 'primary', type: 'button', text: 'Save all', disabled: !db, onclick: saveAll}); allBtns.push(b); return b; })()),
     el('div', {class: 'legend'}, el('span', {class: 'lg'}, legendShape('bar'), 'now'), el('span', {class: 'lg'}, legendShape('tick'), 'benchmark'), el('span', {class: 'lg'}, legendShape('circle'), 'best'), el('span', {class: 'lg'}, legendShape('diamond'), 'target, as typed')),
     el('p', {class: 'note', text: '"now" is the latest day (pressure: highest the head group ran at). Benchmark CFM is shown at the RPM run on the latest day. The small bar beside each box puts now, benchmark, best and the target on one scale, so a target looser than the benchmark shows at a glance; it follows what you type. Targets are saved to the App targets tab of the Config Sheet.'}),
@@ -210,6 +212,7 @@ function pageBench() {
     el('button', {type: 'button', 'aria-pressed': kind === 'pct' ? 'true' : 'false', text: 'Benchmark', onclick: () => { BKIND = 'pct'; render(); }}),
     el('button', {type: 'button', 'aria-pressed': kind === 'best' ? 'true' : 'false', text: 'Best', disabled: BEST_OK[BMET] ? null : true,
       title: BEST_OK[BMET] ? 'The single best loom-day' : 'Warp breaks are benchmarked on the median, so there is no best', onclick: () => { BKIND = 'best'; render(); }}));
+  if (typeof wkPut === 'function') wkPut('D1', kind === 'best' ? null : wkBench(w, hg, BMET));   // Round J
   const right = el('div', {id: 'bdetail', style: 'display:grid;gap:16px;min-width:0;scroll-margin-top:12px'},
     el('div', {class: 'card'},
       el('div', {class: 'cardhead'}, el('div', {}, el('h2', {}, hgLink(hg, w, D.latest)), el('div', {class: 'note', text: `${w} cm · ${b.n} loom-days on ${b.dates} dates from ${b.looms} looms · click the name for every loom that ran it on ${dfmt(D.latest)}`})),

@@ -550,7 +550,7 @@ function fcTargetReal(rows, extra) {
     const t = r.picks + Math.max(0, e);
     num += r.real / r.picks * t; tp += t; priced += r.picks; n += 1;
   }
-  return {pp: tp > 0 ? 100 * num / tp : null, tp, priced, all, coverage: all > 0 ? priced / all : null, n, gaps};
+  return {pp: tp > 0 ? 100 * num / tp : null, num, tp, priced, all, coverage: all > 0 ? priced / all : null, n, gaps};
 }
 // Target profit per pick = target realisation per pick − target folded cost per pick (no B grade, so no loom B grade
 // charge). Paise; null when either is missing.
@@ -558,3 +558,76 @@ function fcTargetProfit(realPp, foldPp) {
   const n = (v) => typeof v === 'number' && isFinite(v);
   return n(realPp) && n(foldPp) ? realPp - foldPp : null;
 }
+
+// ================================================================ Round J (18 Nov 2026): the Working, owner-only money lines
+// Same shape as WKL in calc.js ({line, res, unit} from the figures a screen drew with, the line ending on its result and
+// unit by construction: fwOut); kept here, standalone, because the realisation notice loads this file without calc.js.
+// working.js merges the two. Money, so owner only (fxOn).
+const fwN = (x, d = 0) => { if (!(typeof x === 'number' && isFinite(x))) return '—'; const s = Math.abs(x).toLocaleString('en-IN', {minimumFractionDigits: d, maximumFractionDigits: d}); return (x < 0 && /[1-9]/.test(s) ? '−' : '') + s; };
+const fwR = (x) => !(typeof x === 'number' && isFinite(x)) ? '—' : (x < 0 && Math.round(Math.abs(x)) > 0 ? '−₹' : '₹') + Math.round(Math.abs(x)).toLocaleString('en-IN');
+const fwP = (x) => !(typeof x === 'number' && isFinite(x)) ? '—' : x.toFixed(2);
+const fwL = (x) => !(typeof x === 'number' && isFinite(x)) ? '—' : (x < 0 ? '−₹' : '₹') + (Math.abs(x) / 1e5).toFixed(2);   // ₹ lakh, as the Realisation tiles
+const fwOk = (x) => typeof x === 'number' && isFinite(x);
+const fwOut = (pre, res, unit, v, sep = ' = ') => ({line: pre + sep + (unit ? `${res} ${unit}` : res), res, unit: unit || '', v});
+const WKLF = {
+  B2r: (d) => { if (!d || !(d.picks > 0) || !fwOk(d.real)) return null; const v = 100 * d.real / d.picks;
+    return fwOut(`${fwR(d.real)} realisation ÷ ${fwN(d.picks)} priced picks × 100`, fwP(v), 'paise', v); },
+  B5r: (d) => { if (!d || !(d.tp > 0)) return null; const v = 100 * d.num / d.tp;
+    return fwOut(`now ${fwP(d.now)} paise. Each loom-day's target picks × its own realisation per pick, added up = ${fwR(d.num)}; ÷ ${fwN(d.tp)} target picks × 100`, fwP(v), 'paise', v); },
+  B5p: (d) => { if (!d || !fwOk(d.tr) || !fwOk(d.s)) return null; const num = d.opex - d.Sc - d.Sp + d.Add, den = (d.P + d.E) * (1 - d.s); if (!(den > 0)) return null; const tf = 100 * num / den, v = d.tr - tf;
+    return fwOut(`target folded cost = (OPEX ${fwR(d.opex)} − CFM saving ${fwR(d.Sc)} − pressure saving ${fwR(d.Sp)} + added costs ${fwR(d.Add)}) ÷ (${fwN(d.P + d.E)} target picks × (1 − ${(d.s * 100).toFixed(1)}% folding shortage)) × 100 = ${fwP(tf)} paise; target realisation ${fwP(d.tr)} − ${fwP(tf)}`, fwP(v), 'paise', v); },
+  B7: (d) => { if (!d || !fwOk(d.cost) || !(d.looms > 0)) return null; const v = d.cost / d.looms;
+    return fwOut(`(total expenses ${fwR(d.total)} + cut piece loss ${fwR(d.cut)}) ÷ ${d.looms} looms running`, fwR(v), 'a loom', v); },
+  C2: (d) => { if (!d || !fwOk(d.ld)) return null; const n = d.full ? d.looms : d.priced, v = n * d.ld;
+    return fwOut(`${d.hg}: ${n} loom${n === 1 ? '' : 's'}${d.full ? ' that ran' : ' priced (of ' + d.looms + ' that ran)'} × ${fwR(d.ld)} realisation per loom-day`, fwR(v), 'in the day', v); },
+  C3: (d) => { if (!d || !(d.conv > 0) || !fwOk(d.real)) return null; const v = (d.real - d.conv) / d.conv;
+    return fwOut(`${d.hg}: (realisation ${fwR(d.real)} − conversion cost ${fwR(d.conv)}) ÷ ${fwR(d.conv)} × 100`, `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}%`, '', v); },
+  C4: (d) => { if (!d || !fwOk(d.now) || !fwOk(d.at)) return null; const v = d.now - d.at;
+    return fwOut(`${d.hg}: realisation now ${fwR(d.now)} − the same loom-days at the ${d.ref} effective RPM ${fwR(d.at)}`, Math.abs(v) < 0.5 ? '±₹0' : (v > 0 ? '+' : '') + fwR(v), 'in the day', v); },
+  E4: (d) => { if (!d || !d.rows.length) return null; const v = d.rows.reduce((a, r) => a + r.rs, 0);
+    return fwOut(`(benchmark RPM − RPM) × minutes run × panels ÷ 39.37 × the loom-day's realisation per pick: ${d.rows.slice(0, 3).map((r) => `loom ${r.loom} ${fwN(r.picks)} picks × ${fwP(r.pp)} paise = ${fwR(r.rs)}`).join(' + ')}${d.rows.length > 3 ? ` + ${d.rows.length - 3} more` : ''}${d.rows.length > 1 ? '; together' : '; in all'}`, fwR(v), 'a day', v, ' '); },
+  F2m: (d) => { if (!d || !fwOk(d.pp) || !fwOk(d.picks)) return null; const v = d.picks * d.pp / 100;
+    return fwOut(`Loom ${d.loom}, realisation lost: ${fwN(d.picks)} picks short × ${fwP(d.pp)} paise of realisation per pick`, fwR(v), 'in the day', v); },
+  F3r: (d) => { if (!d || !d.rows.length) return null; const v = d.rows.reduce((a, r) => a + r.after, 0);
+    return fwOut(`now ${fwR(d.now)}. Each priced loom at its reference effective RPM: reference × (run + stopped) minutes × panels ÷ 39.37 × its own realisation per pick, added up over ${d.rows.length} loom${d.rows.length === 1 ? '' : 's'}`, fwR(v), 'in the day', v); },
+  F3p: (d) => { if (!d || !(d.picks > 0)) return null; const v = 100 * d.after / d.picks;
+    return fwOut(`${fwR(d.after)} ÷ ${fwN(d.picks)} picks after the work × 100`, fwP(v), 'paise', v); },
+  H2: (d) => { if (!d || !fwOk(d.pp)) return null; const p = d.off * d.rpm * d.pf / 39.37, v = p * d.pp / 100;
+    return fwOut(`Loom ${d.loom}: ${fwN(d.off)} minutes powered down × ${fwN(d.rpm)} RPM${d.pf === 2 ? ' × 2 panels' : ''} ÷ 39.37 = ${fwN(p)} picks; × ${fwP(d.pp)} paise of realisation per pick`, fwR(v), 'in the day', v); },
+  I3: (d) => { if (!d || !d.days.length) return null; const T = d.days.filter((x) => fwOk(x.warp_min) && x.warp_min >= 0 && fwOk(x.realPp));
+    if (!T.length) return null; const terms = T.map((x) => ({p: x.warp_min * x.rpm * (x.pf || 1) / 39.37, pp: x.realPp, m: x.warp_min, rpm: x.rpm})), v = terms.reduce((a, t) => a + t.p * t.pp / 100, 0);
+    return fwOut(`Beam ${d.beam}, day by day: minutes stopped for warp breaks × RPM ÷ 39.37 × that day's realisation per pick: ${terms.slice(0, 3).map((t) => `${fwN(t.m, 1)} × ${fwN(t.rpm)} ÷ 39.37 × ${fwP(t.pp)} paise`).join(' + ')}${terms.length > 3 ? ` + ${terms.length - 3} more` : ''}`, fwR(v), 'over the beam', v); },
+  J16: (d) => { if (!d || !(d.metres > 0) || !fwOk(d.closing)) return null; const r = d.sale / d.metres, v = d.closing * r;
+    return fwOut(`the month's sale value ${fwR(d.sale)} ÷ ${fwN(d.metres)} m woven = ₹${r.toFixed(2)} a metre; × ${fwN(d.closing)} m closing stock`, fwR(v), '', v); },
+  J22: (d) => { if (!d || !fwOk(d.real) || !(d.picks > 0)) return null; const v = 100 * d.real / d.picks;
+    return fwOut(`${d.date}: cost per pick ${fwP(d.cpp)} paise; realisation ${fwR(d.real)} ÷ ${fwN(d.picks)} priced picks × 100`, fwP(v), 'paise', v); },
+  K1: (d) => { if (!d || !(d.ppi > 0)) return null; const v = d.picks / d.ppi; return fwOut(`Loom ${d.loom} on ${d.date}: ${fwN(d.picks)} picks ÷ ${fwN(d.ppi, 1)} picks per inch (PPI)`, fwN(v, 1), 'm', v); },
+  K2: (d) => { if (!d || d.rfd || !fwOk(d.price)) return null; const pm = d.price * (1 - d.vat), v = d.metres * pm;
+    return fwOut(`Loom ${d.loom} (greige): ₹${d.price.toFixed(2)} × (1 − ${(d.vat * 100).toFixed(1)}% VATAV) = ₹${pm.toFixed(2)} a metre; × ${fwN(d.metres, 1)} m`, fwR(v), '', v); },
+  K3: (d) => { if (!d || !d.rfd || !fwOk(d.price) || !fwOk(d.g)) return null; const rm = d.price * (1 - d.vat - d.brok) - d.proc * d.g - d.trans, pm = rm / d.g, v = d.metres * pm;
+    return fwOut(`Loom ${d.loom} (RFD): g = ${d.g.toFixed(4)}; ₹${d.price.toFixed(2)} × (1 − ${(d.vat * 100).toFixed(1)}% − ${(d.brok * 100).toFixed(1)}%) − ₹${d.proc.toFixed(2)} × ${d.g.toFixed(4)} − ₹${d.trans.toFixed(2)} = ₹${rm.toFixed(2)} an RFD metre; ÷ ${d.g.toFixed(4)} = ₹${pm.toFixed(2)} a greige metre; × ${fwN(d.metres, 1)} m`, fwR(v), '', v); },
+  K4: (d) => { if (!d || !d.yarns.length) return null; const v = d.yarns.reduce((a, y) => a + y.gpm / 1000 * y.rate, 0);
+    return fwOut(`${d.hg}: ${d.yarns.map((y) => `${y.side} ${fwN(y.gpm, 2)} g ÷ 1,000 × ₹${fwN(y.rate)} a kg`).join(' + ')}`, '₹' + v.toFixed(2), 'a metre', v); },
+  K5: (d) => { if (!d || !fwOk(d.sale) || !fwOk(d.yarn)) return null; const v = d.sale - d.yarn * d.metres;
+    return fwOut(`Loom ${d.loom}: ${fwP(100 * v / d.picks)} paise a pick (the rupees below ÷ ${fwN(d.picks)} picks × 100). Sale value ${fwR(d.sale)} − standard yarn ₹${d.yarn.toFixed(2)} a metre × ${fwN(d.metres, 1)} m`, fwR(v), '', v); },
+  K6: (d) => { if (!d || !fwOk(d.real) || !fwOk(d.costPp)) return null; const c = d.picks * d.costPp / 100, v = d.real - c - (d.bcharge || 0);
+    return fwOut(`Loom ${d.loom}: realisation ${fwR(d.real)} − ${fwR(c)} (${fwN(d.picks)} picks × ${fwP(d.costPp)} paise, the folded cost per pick without its B grade part) − its own B grade ${fwR(d.bcharge || 0)}`, fwR(v), '', v); },
+  K7: (d) => { if (!d || !fwOk(d.v) || !(d.ld > 0)) return null;
+    return fwOut(`${d.what}: ${fwR(d.v)} over ${fwN(d.ld)} ${d.costed ? 'costed' : 'priced'} loom-days${d.picks > 0 ? `; ÷ ${fwN(d.picks)} picks × 100 = ${fwP(100 * d.v / d.picks)} paise a pick` : ''}; ÷ ${fwN(d.ld)} loom-days = ${fwR(d.v / d.ld)} a loom a day; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000`, fwL(d.v), 'lakh', d.v); },
+  K8: (d) => { if (!d || !(d.picks > 0)) return null; const v = d.priced / d.picks;
+    return fwOut(`${fwN(d.priced / 1e5, 2)} lakh priced picks ÷ ${fwN(d.picks / 1e5, 2)} lakh picks × 100`, (v * 100).toFixed(0) + '%', '', v); },
+  K9: (d) => { if (!d || !fwOk(d.sale) || !(d.picks > 0)) return null; const v = d.sale - d.yarn - d.conv - d.bgrade, pp = (x) => fwP(100 * x / d.picks), r = 100 * v / d.picks;
+    return fwOut(`in rupees, sale ${fwR(d.sale)} − standard yarn ${fwR(d.yarn)} − conversion ${fwR(d.conv)} − the looms' own B grade ${fwR(d.bgrade)} = ${fwR(v)} of profit. Per pick, each ÷ ${fwN(d.picks)} costed picks × 100: sale ${pp(d.sale)} − standard yarn ${pp(d.yarn)} − conversion ${pp(d.conv)} − B grade ${pp(d.bgrade)}`,
+      (r < 0 && /[1-9]/.test(Math.abs(r).toFixed(2)) ? '−' : '') + Math.abs(r).toFixed(2), 'paise of profit per pick', r); },
+  K10: (d) => { if (!d || !fwOk(d.charged) || !fwOk(d.plant)) return null; const v = d.charged - d.plant;
+    return fwOut(`charged to the looms ${fwR(d.charged)} − the plant's folded cost ${fwR(d.plant)}`, fwR(v), '', v); },
+  K11: (d) => { if (!d || !fwOk(d.v) || !(d.n > 0)) return null; const v = d.v / d.n;
+    return d.pp ? fwOut(`${d.name}: ${d.what}, realisation × 100 = ${fwN(d.v, 0)} paise ÷ ${fwN(d.n)} picks`, fwP(v), 'paise', v)
+      : fwOut(`${d.name}: ${d.what} ${fwR(d.v)} ÷ ${fwN(d.n)} loom-days`, fwR(v), 'a loom per day', v); },
+  K12: (d) => { if (!d || !fwOk(d.pp) || !(d.picks > 0)) return null; const v = d.picks * d.pp / 100;
+    return fwOut(`Loom ${d.loom}: ${fwN(d.picks)} lost picks × ${fwP(d.pp)} paise of realisation per pick`, fwR(v), 'a day', v); },
+  K13: (d) => { if (!d || !(d.picks > 0)) return null; const v = 100 * d.real / d.picks;
+    return fwOut(`${d.date}: realisation ${fwR(d.real)} ÷ ${fwN(d.picks)} priced picks × 100`, fwP(v), 'paise', v); },
+  K14: (d) => { if (!d || !fwOk(d.now) || !fwOk(d.tgt)) return null; const v = d.now - d.tgt;
+    return fwOut(`${d.hg}: now ${fwR(d.real)} ÷ ${d.ld} priced loom-days = ${fwR(d.now)}; target ${fwR(d.tgt)} (each loom-day at 93% of the target RPM, averaged); now − target, ${fwR(d.now)} − ${fwR(d.tgt)}`, fwR(v), 'a loom per day', v); },
+};

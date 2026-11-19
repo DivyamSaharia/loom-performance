@@ -369,7 +369,7 @@ function foldCards(root, off) {
     if (h.getAttribute('aria-expanded') !== String(!shut)) h.setAttribute('aria-expanded', shut ? 'false' : 'true');
   }
 }
-const collapseAll = () => { const q = !!(typeof QF === 'string' && QF.trim()); collapseTables($('#main'), q); foldCards($('#main'), q); if (dlg && dlg.open) { collapseTables(dlg, false); foldCards(dlg, false); } };
+const collapseAll = () => { const q = !!(typeof QF === 'string' && QF.trim()); collapseTables($('#main'), q); foldCards($('#main'), q); if (dlg && dlg.open) { collapseTables(dlg, false); foldCards(dlg, false); } if (typeof wkDecorate === 'function') wkDecorate(); };
 function delta(cur, prev, goodUp, fmt = (x) => x.toFixed(1), unit = '') {
   if (!ok(cur) || !ok(prev)) return el('span', {class: 'delta flat', text: 'no prior days'});
   const d = cur - prev;
@@ -448,7 +448,7 @@ function wkPill(c, o) {
     const miss = !ok(c.cur.v) && !ok(c.prev.v) ? ['neither this week', dd(c.cur), ' nor last week', dd(c.prev), ' has a day with figures yet']
       : !ok(c.prev.v) ? ['last week', dd(c.prev), ' has no day with figures yet'] : ['this week', dd(c.cur), ' has no day with figures yet'];
     return el('div', {class: 'wkcmp', 'data-wk': 'gap', title: tip}, el('b', {text: o.what}), ', this week vs last week: — ', ...miss,
-      '. The comparison shows once both weeks have a day: pick a later day, or check again after the daily run (it updates the app every hour, 10:40 to 16:40 IST). ' +
+      `. The comparison shows once both weeks have a day: pick a later day${typeof wkNext === 'function' ? ' with ' + wkNext('{day}') : ''}, or check again after the daily run (it updates the app every hour, 10:40 to 16:40 IST). ` +
       (typeof fxIsOwner === 'function' && fxIsOwner() ? 'If a week stays empty, see Files per day on Data health for the missing days.' : 'If a week stays empty, tell the owner.'));
   }
   const ad = Math.abs(c.d), zero = !/[1-9]/.test(o.fmt(ad));
@@ -456,7 +456,8 @@ function wkPill(c, o) {
   const chg = zero ? '±0' : (c.d > 0 ? '▲ +' : '▼ −') + o.fmt(ad) + dunit;
   return el('div', {class: 'wkcmp', 'data-wk': c.dir, title: tip},
     el('b', {text: o.what}), ', this week', dd(c.cur), ` ${o.fmt(c.cur.v)}${unit}${cov(c.cur)} vs last week`, dd(c.prev), ` ${o.fmt(c.prev.v)}${unit}${cov(c.prev)} `,
-    el('span', {class: 'delta ' + cls, text: chg}), basis);
+    el('span', {class: 'delta ' + cls, text: chg}), basis,
+    typeof wkMark === 'function' ? wkMark(['A7'], `This week vs last week: ${o.what}`, {A7: {cur: c.cur.v, prev: c.prev.v, cn: c.cur.days, pn: c.prev.days, of: c.of, fmt: o.fmt, unit, dunit}}) : null);   // Round J
 }
 
 // ---------------------------------------------------------------- Search, favourites and recent places (Round E, 17 Nov 2026)
