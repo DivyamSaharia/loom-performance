@@ -143,7 +143,7 @@ function readout(svg, box, o, X, f) {
   hit.addEventListener('click', (e) => show(at(e)));
   box.append(R.out);
 }
-// "Open this day" where a chart has no day view of its own: Costing opens the day on Costing; elsewhere the app's day picker.
+// "Open this day" where a chart has no day view of its own: Costing opens the day on Costing; elsewhere the app's date chip.
 function openDayAny(d) {
   if (TAB === 'costing' && typeof pickDay === 'function') { pickDay(d); return; }
   const sel = $('#day'), opts = sel ? [...sel.options] : [];

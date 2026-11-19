@@ -759,7 +759,7 @@ const WKL = {
   // ---- B. Actions
   B1c: (d) => { if (!d || !(d.run > 0)) return null; const v = d.air / d.run; return wkOut(`${wkN(d.air)} ft³ of air ÷ ${wkN(d.run)} minutes run`, wkF(v, 1), 'CFM', v); },
   B1t: (d) => { if (!d || !ok(d.air)) return null; const v = d.air / 1440; return wkOut(`${wkN(d.air)} ft³ of air in the day ÷ 1,440 minutes`, f0(v), 'CFM', v); },
-  B1o: (d) => { if (!d || !ok(d.min)) return null; const v = d.min / 60; return wkOut(`${wkN(d.min)} loom-minutes powered down (24 hours less run and stopped, loom by loom) ÷ 60`, wkF(v, 1), 'loom-hours', v); },
+  B1o: (d) => { if (!d || !ok(d.min)) return null; const v = d.min / 60; return wkOut(`${wkN(d.min)} loom-minutes powered down (24 h less run and stopped, loom by loom) ÷ 60`, wkF(v, 1), 'loom-h', v); },
   B1f: (d) => { if (!d || !ok(d.floor)) return null; return wkOut(`the highest main pressure of any loom that day, on loom ${d.loom} (${d.hg})`, wkF(d.floor, 2), 'kgf/cm²', d.floor, ': '); },
   B3: (d) => { if (!d || !ok(d.c0)) return null; const S = d.steps.filter((s) => ok(s.pp)), v = d.c0 + wkSum(S, (s) => s.pp);
     return wkOut(`${wkF(d.c0, 2)} paise now ${S.map((s) => `${s.pp < 0 ? '−' : '+'} ${Math.abs(s.pp).toFixed(Math.abs(s.pp) < 0.1 && s.pp !== 0 ? 3 : 2)} (${s.name})`).join(' ')}${d.left ? ` (left out: ${d.left})` : ''}`, wkF(v, 2), 'paise', v); },
@@ -822,7 +822,7 @@ const WKL = {
   // ---- H, I. Utilisation and Warp breaks
   H1: (d) => { if (!d) return null; const same = Math.abs(1440 - d.run - d.stop - d.off) < 0.5;   // the daily run counts under 10 minutes as 0 and a missing shift as powered down
     return wkOut(same ? `Loom ${d.loom}: 1,440 − ${wkN(d.run)} minutes run − ${wkN(d.stop)} stopped = ${wkN(d.off)} minutes; ÷ 60`
-      : `Loom ${d.loom}: it ran ${wkN(d.run)} and stood ${wkN(d.stop)} minutes; ${wkN(d.off)} minutes powered down as counted for the day (a shift missing from the files counts as powered down; under 10 minutes counts as 0) ÷ 60`, wkF(d.off / 60, 1), 'hours', d.off / 60); },
+      : `Loom ${d.loom}: it ran ${wkN(d.run)} and stood ${wkN(d.stop)} minutes; ${wkN(d.off)} minutes powered down as counted for the day (a shift missing from the files counts as powered down; under 10 minutes counts as 0) ÷ 60`, wkF(d.off / 60, 1), 'h', d.off / 60); },
   H3: (d) => { if (!d || !d.effs.length) return null; const v = wkSum(d.effs, (e) => e) / d.effs.length;
     return wkOut(`Loom ${d.loom}: ${d.low} of its last ${d.effs.length} running days under ${d.line}%; Below line = ${d.line} − the average = ${wkF(d.line - v, 1)} points; the average: (${d.effs.map((e) => wkF(e, 1)).join(' + ')}) ÷ ${d.effs.length}`, wkF(v, 1), '%', v); },
   I1: (d) => { if (!d || !(d.picks > 0)) return null; const v = d.warp / d.picks * 1e5;

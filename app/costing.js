@@ -372,7 +372,7 @@ function pageCosting() {
   const D0 = cDays(), idx = D0.indexOf(cur), prev = idx > 0 ? D0[idx - 1] : null, last = D0[D0.length - 1];
   const cAge = ageDays(last.date);
   if (cAge > 3) s.append(el('p', {class: 'err', text: `Latest costing day is ${dfmt(last.date)}, ${cAge} days ago: the costing file may be missing or the costing run may have stopped.`}));
-  // ---- header and day picker
+  // ---- header and the Day list
   const sel = el('select', {id: 'cday', 'aria-label': 'Costing day'}, D0.slice().reverse().map((d) => el('option', {value: d.date, text: (d.date === last.date ? 'Latest · ' : '') + dfmt(d.date), selected: d.date === cur.date ? true : null})));
   sel.addEventListener('change', () => { CDATE = sel.value === last.date ? '' : sel.value; render(); });
   s.append(el('div', {}, el('h2', {text: `Costing, ${dfmt(cur.date)}`}),

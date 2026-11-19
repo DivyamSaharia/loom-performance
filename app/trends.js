@@ -40,7 +40,7 @@ let TRP = {loom: '7', hg: '7'};                  // period per subject kind, kep
 try { const p = JSON.parse(localStorage.getItem('w2-trend-period') || '{}'); if (['7', 'co', 'rng'].includes(p.loom)) TRP.loom = p.loom; if (['7', '14', '30', 'rng'].includes(p.hg)) TRP.hg = p.hg; } catch (e) {}
 function setPer(kind, v) { TRP[kind] = v; try { localStorage.setItem('w2-trend-period', JSON.stringify(TRP)); } catch (e) {} }
 
-// ---- the latest benchmarks (data.enc.json), whatever day the date picker shows
+// ---- the latest benchmarks (data.enc.json), whatever day the date chip shows
 let LBM = null, LBM_SRC = null, LBM_SIG = '';
 function lbench(w, hg) {
   const src = LATEST || D; if (!src) return null;

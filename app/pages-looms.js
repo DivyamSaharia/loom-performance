@@ -195,7 +195,7 @@ function pageActions() {
       kpi('Air per 1,000 picks', f1(day.apk), 'ft³', delta(day.apk, pr && pr.apk, false, (x) => x.toFixed(1), ' ft³'), null, sp('apk', f1, 'Air per 1,000 picks, ft³')),
       kpi('Average CFM per loom', f1(day.cfm), 'CFM', delta(day.cfm, pr && pr.cfm, false, (x) => x.toFixed(1), ' CFM'), 'ft³/min while running, run-weighted', sp('cfm', f1, 'Average CFM per loom')),
       kpi('Total CFM consumption', f0(day.floor_cfm), 'CFM', delta(day.floor_cfm, pr && pr.floor_cfm, false, (x) => x.toFixed(0), ' CFM'), `24-h average draw of all looms · ${f0(day.air)} ft³ in the day`, sp('floor_cfm', f0, 'Total CFM')),
-      kpi('Powered down', f1(day.off_h), 'loom-h', delta(day.off_h, pr && pr.off_h, false, (x) => x.toFixed(1), ' h'), null, sp('off_h', f1, 'Powered down, loom-hours')));
+      kpi('Powered down', f1(day.off_h), 'loom-h', delta(day.off_h, pr && pr.off_h, false, (x) => x.toFixed(1), ' h'), null, sp('off_h', f1, 'Powered down, loom-h')));
     const fl = (D.pressure.floor || []).slice(-1)[0];
     const fm = new Map((D.pressure.floor || []).map((f) => [f.date, f.floor]));
     if (fl && typeof wkPut === 'function') wkPut('B1:floor', {floor: fl.floor, loom: fl.loom, hg: fl.hg});
@@ -408,7 +408,7 @@ function pageQuality() {
 
 // Heat grid at the top of Quality: head groups × metrics, each cell the day's % gap from the chosen reference.
 // Benchmark / Best / Target switch kept on this device (w2-heat-ref). Efficiency is always against the line, warp breaks
-// has a benchmark (its median) only; a cell with no reference is grey and says why. Follows the width and the day picker.
+// has a benchmark (its median) only; a cell with no reference is grey and says why. Follows the width and the date chip.
 let QREF = 'tgt';   // Quality: Current vs reference (12 Nov 2026)
 try { const v = localStorage.getItem('w2-q-ref'); if (['bm', 'best', 'tgt'].includes(v)) QREF = v; } catch (e) {}
 let QHM = 'bm';
@@ -1008,7 +1008,7 @@ function pageErpm() {
 function pageUtil() {
   const s = el('section', {class: 'page', id: 'utilisation'});
   s.append(el('div', {}, el('h2', {text: `Powered-down and low-efficiency looms, ${wLabel()}`}),
-    el('p', {class: 'lead', text: `Looms powered down for ${OFF_LONG / 60} hours or more on ${dfmt(D.latest)}, and looms that ran below ${f0(EFF_BAD())}% efficiency on at least ${LOW_EFF_DAYS} of their last ${LOW_EFF_WINDOW} running days.`})));
+    el('p', {class: 'lead', text: `Looms powered down for ${OFF_LONG / 60} h or more on ${dfmt(D.latest)}, and looms that ran below ${f0(EFF_BAD())}% efficiency on at least ${LOW_EFF_DAYS} of their last ${LOW_EFF_WINDOW} running days.`})));
   s.append(utilCalendar());
   const U = (D.util || []).filter((u) => u.date === D.latest && inW(u.width));
   const hgOf = (loom) => (D.loom_hg || {})[loom] || '—';

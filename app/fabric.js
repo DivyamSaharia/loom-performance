@@ -575,7 +575,7 @@ function fxRequestCard(r, raw, redraw, isRejected) {
 // R1 (11 Nov 2026): three bases (As sold is the default), a sticky basis/period bar, the trend with Sale value and approval
 // markers, a coverage card, the per-pick waterfall, product ranking with the best product per loom type, lost realisation
 // from stops and low speed, and a click-through from every row to the loom-days behind it. Arithmetic: fabric_calc.js.
-// 12 Nov 2026: laid out like the loom tabs. The app's width switch and day picker apply here: every figure follows the
+// 12 Nov 2026: laid out like the loom tabs. The app's width switch and date chip apply here: every figure follows the
 // width; the tiles are as on the day picked and the period ends on it. Masters, pending requests and approval days load
 // once a minute at most, so switching width or day redraws straight away.
 let FXR_AT = 0, FXR_PEND = [];
