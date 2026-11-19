@@ -1023,7 +1023,7 @@ function pageUtil() {
       offLong.map((u) => {
         const prev = (D.util || []).filter((v) => v.loom === u.loom && v.date < D.latest && v.off >= OFF_LONG).length;
         return [el('span', {}, loomLink(u.loom, u.date), el('div', {class: 'note', text: `${u.width} cm ${u.type}`})), hgLink(hgOf(u.loom), u.width, u.date), f1(u.off / 60), f1(u.run / 60), f1(u.stop / 60), ...(money ? [fxIdleCell(u.loom, u.date, u.off)] : []), prev ? `${prev} earlier day${prev > 1 ? 's' : ''} ≥ ${OFF_LONG / 60} h` : '—'];
-      }), money ? [2, 3, 4, 5] : [2, 3, 4]) : el('div', {class: 'empty', text: `No loom was powered down for ${OFF_LONG / 60} hours or more.`}),
+      }), money ? [2, 3, 4, 5] : [2, 3, 4]) : el('div', {class: 'empty', text: `No loom was powered down for ${OFF_LONG / 60} h or more.`}),
     money && offLong.length ? el('p', {class: 'note', text: 'Realisation forgone = the powered-down minutes × the RPM the loom runs on its current quality × that quality\'s realisation per pick on this loom (the day\'s own, else the loom\'s latest priced day on it), As sold, from the Realisation tab. What the idle hours would have made at the going rate, less standard yarn.'}) : null));
 
   // consistently low efficiency

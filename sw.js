@@ -4,7 +4,7 @@
 // with no connection the app opens and says it cannot reach the database. The sealed data files left from the passcode view
 // (switchover, 14 Nov 2026) are deleted from the device on activate. BUILD is stamped by pipeline/publish_site.py.
 'use strict';
-const BUILD = 'f3e6fb2b4ed3';
+const BUILD = '170462d802d3';
 const SHELL = 'w2-shell-' + BUILD;
 const NET_WAIT = 4000;   // ms to wait for the network before using the saved copy
 const OLD_DATA = 'w2-data';   // the passcode view's sealed data copies: removed
