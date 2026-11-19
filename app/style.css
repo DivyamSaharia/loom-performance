@@ -566,6 +566,7 @@ dialog.nsheet::backdrop{background:rgba(0,0,0,.35)}
 .kpi.tap .label::after{content:' ›';color:var(--muted)}
 .tcsteps table{table-layout:fixed;width:100%}.tcsteps th:first-child{width:auto}.tcsteps th:nth-child(2),.tcsteps th:nth-child(3){width:110px}
 .tcsteps td:first-child,.tcsteps td:first-child .note,.tcsteps td:first-child .link{white-space:normal;overflow-wrap:anywhere;text-align:left}
+.tcsteps .tcsame{display:inline-block;white-space:normal;overflow-wrap:anywhere;text-align:right}
 @media (max-width:560px){.tcsteps th:nth-child(2),.tcsteps th:nth-child(3){width:78px}}
 /* Round J (18 Nov 2026): the Working. The = mark is its own small button: on a tile at its top right corner, after a card's
    title, and at the end of a week line. Its = is drawn by CSS, so the tile's and the card's own text stay as they were. */

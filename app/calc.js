@@ -664,7 +664,9 @@ function targetCost(inp) {
   const steps = [
     {id: 'cfm', pp: Sc != null ? s1 - s0 : null, rs: Sc != null ? -Sc : null},
     {id: 'press', pp: Sp != null ? s2 - s1 : null, rs: Sp != null ? -Sp : null},
-    {id: 'picks', pp: s3 - s2, rs: (s3 - s2) / 100 * (P + E)},
+    // step 3 saves no rupee: the same fixed costs are shared over more picks, so its rupees are 0 and the rupee column adds to
+    // the foot exactly (Divyam, 19 Nov, H1 option d); its paise still add up. Its effect shows only per pick.
+    {id: 'picks', pp: s3 - s2, rs: 0},
     {id: 'added', pp: s4 - s3, rs: Add, parts: add},
     {id: 'quality', pp: s5 - s4, rs: -Bq, bgrade: bl && ok(bl.a) ? bl.a : 0, cut: ok(day.cut) ? day.cut : 0}];
   // per loom (its loom-day records together): CFM saving, extra picks and metres, and its effect on the target cost per

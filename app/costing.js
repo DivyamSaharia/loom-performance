@@ -938,13 +938,14 @@ function tcCard() {
   const lk = (p) => pn(p / 1e5, 2);
   const A = tc.add;
   const at = (v, r, dec, miss) => ok(r) ? `${rsC(v)} at ₹${pn(r, dec)}/m${dec === 3 ? ' (month to date)' : ''}` : `left out (${miss})`;
-  const stepRow = (label, sub, x, link) => [el('div', {}, el('div', {text: label}), sub ? el('div', {class: 'note', text: sub}) : null, link ? el('div', {}, link) : null),
-    x && x.pp != null ? tcPp(x.pp) : el('span', {class: 'pill muted', text: 'left out'}), x && x.rs != null ? rsC(x.rs) : '—'];
+  const SAME_RS = '₹0 · same rupees, more picks';
+  const stepRow = (label, sub, x, link, rsText) => [el('div', {}, el('div', {text: label}), sub ? el('div', {class: 'note', text: sub}) : null, link ? el('div', {}, link) : null),
+    x && x.pp != null ? tcPp(x.pp) : el('span', {class: 'pill muted', text: 'left out'}), x && x.rs != null ? (rsText ? el('span', {class: 'tcsame', text: rsText}) : rsC(x.rs)) : '—'];
   const steps = el('div', {class: 'nosort tcsteps'}, table(['Step', ['Per pick', 'paise'], ['The day', '₹']], [
     [el('b', {text: 'Cost per pick now'}), pn(tc.c0, 2), rsC(tc.c0 / 100 * tc.P)],
     stepRow('1. Every loom at its target CFM', why('cfm') || `${ok(tc.Sc) ? f0(tc.Sc / tc.rate) : '—'} kWh less at ₹${f2(tc.rate)} a unit (Power (Compressor) for the day)`, st.cfm, go('cfm', 'Current vs benchmark, best and target, by loom')),
     stepRow('2. Compressor at the set point needed with every loom at its target pressure', why('press') || (COMP_SP > tc.need ? `${f2(COMP_SP)} → ${f2(tc.need)} kgf/cm² (the floor with every loom at its target main pressure, ${f2(tc.floorT)}, + margin; this uses targets whatever the Pressure tab's Reference switch shows), on the air left after step 1` : `the compressor runs at ${f2(COMP_SP)} kgf/cm², already at or below the ${f2(tc.need)} needed with every loom at its target main pressure (floor ${f2(tc.floorT)} + margin): nothing to save`) + (tc.noTgtP ? ` · ${tc.noTgtP} of ${tc.nPress} looms have no target pressure and stay where they run` : ''), st.press, go('pressure')),
-    stepRow('3. Every loom at its target effective RPM', `+${lk(tc.E)} lakh picks, looms that ran only; a loom already above its target adds nothing; the same fixed costs are shared over ${lk(tc.P + tc.E)} lakh picks`, st.picks, go('erpm')),
+    stepRow('3. Every loom at its target effective RPM', `+${lk(tc.E)} lakh picks, looms that ran only; a loom already above its target adds nothing; the same fixed costs are shared over ${lk(tc.P + tc.E)} lakh picks`, st.picks, go('erpm'), SAME_RS),
     stepRow('4. Costs that grow with the extra picks', `+${f0(tc.dM)} m: compressor power ${rsC(A.power)} · warping ${at(A.warping, tc.rates.warping, 2, 'no rate on the day\'s file')} · transport ${at(A.transport, tc.rates.transport, 2, 'no rate on the day\'s file')} · packing ${at(A.packing, tc.rates.packing, 3, 'no packing amount this month yet')}. Every other expense line stays the same.`, st.added, toCosting('Power')),
     stepRow('5. No B grade and no cut pieces', `the B grade expense line ${rs(st.quality.bgrade)} and the cut piece loss ${rs(st.quality.cut)} both taken as 0`, st.quality, toCosting('B grade and cut pieces')),
     [el('b', {text: 'Target cost per pick'}), el('b', {text: pn(tc.cpp, 2)}), rsC(tc.cpp / 100 * (tc.P + tc.E))]], [1, 2]));
