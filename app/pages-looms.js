@@ -486,7 +486,7 @@ function spTile(pp, M, noM) {
   const e = typeof spEntry === 'function' ? spEntry(D.latest) : null, since = has && e ? `since ${dfmt(e.from)} · ` : '';   // Round V: the history entry in force
   const unset = SP_HIST && SP_HIST.length && !e ? `none in the set point history on ${dfmt(D.latest)}: ` : 'not set yet: ';
   // Round W (20 Nov 2026): every role is told when the history could not be read (the tile then shows the last set point saved)
-  const noHist = db && SP_HIST == null ? `the set point history could not be read, so this is the last set point saved: press Refresh (the round arrow); if it stays, ${typeof fxIsOwner === 'function' && fxIsOwner() ? 'see Data health' : 'tell the owner'} · ` : '';
+  const noHist = db && SP_HIST == null ? `the set point history could not be read, so this is the last set point saved: press Refresh (the round arrow); if it stays, ${typeof fxIsOwner === 'function' && fxIsOwner() ? 'see Backup age on Data health: if it cannot be read either, the database is not answering' : 'tell the owner'} · ` : '';
   const note = noHist + since + (has ? '' : (ed ? unset + 'tap to type it · ' : unset + 'tell the owner · ')) + need + (has && ed ? ' · tap to change' : '');
   const k = el('div', {class: 'kpi' + (ed ? ' tap' : ''), role: ed ? 'button' : null, tabindex: ed ? '0' : null, 'aria-label': ed ? 'Compressor set point: tap to change' : null},
     el('div', {class: 'label', text: 'Compressor set point'}), el('div', {class: 'big'}, has ? f2(COMP_SP) : '—', el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: note}));
@@ -513,7 +513,7 @@ function spEditor() {
     catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'save', 'Save'); btn.disabled = false; }
   }});
   const H = (SP_HIST || []).slice().sort((a, b) => a.from.localeCompare(b.from));
-  const hist = SP_HIST == null ? `The set point history could not be read, so the tile shows the last set point saved. Press Refresh (the round arrow) to try again; if it stays, ${typeof fxIsOwner === 'function' && fxIsOwner() ? 'see Data health' : 'tell the owner'}.`
+  const hist = SP_HIST == null ? `The set point history could not be read, so the tile shows the last set point saved. Press Refresh (the round arrow) to try again; if it stays, ${typeof fxIsOwner === 'function' && fxIsOwner() ? 'see Backup age on Data health: if it cannot be read either, the database is not answering' : 'tell the owner'}.`
     : H.length ? 'Set point history: ' + H.map((h) => `${f2(h.kgf)} kgf/cm² from ${dfmt(h.from)}`).join(' · ') + '.' : 'No set point history yet: the first set point you save starts it.';
   return el('div', {class: 'toolbar'}, el('label', {text: 'Compressor set point, as set on the compressor'}), inp, el('span', {text: 'kgf/cm²'}),
     el('label', {text: 'Effective from'}), dt, btn,

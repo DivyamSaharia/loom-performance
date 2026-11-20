@@ -167,7 +167,33 @@ function dataHealthVisuals() {
     card('Files per day', 'by folder day · what the daily run did with each',
       layers.length ? stackBars({dates, layers, fmt: f0, h: 220, int: true, aria: 'Files the daily run looked at, per day, by what it did with them'}) : el('div', {class: 'empty', text: 'No file on record for these days.'}),
       layers.length ? stackKey(layers) : null,
-      el('p', {class: 'note', text: 'Two shift files a day is the normal day. Set aside means the run could not use the file (the table below says why); duplicates and superseded files are copies or older versions of a file already read.'})));
+      el('p', {class: 'note', text: 'Two shift files a day is the normal day. Set aside means the run could not use the file (the table below says why); duplicates and superseded files are copies or older versions of a file already read.'}),
+      costPickNotes(dates)));
+}
+
+// Round X (20 Nov 2026): which costing file each day used, found by its content, not its name (pipeline/file_pick.py).
+// Only the days where it was not one file named costing.xlsx are listed, each flag with its next step. Names and dates only.
+const PICK_NEXT = [
+  [/costing files; used/, 'Next: ask the plant to keep one costing file in each day folder.'],
+  [/inside; used for the folder/, 'Next: move the file to its own day\'s folder; the run reads it for the folder\'s date until then.'],
+  [/could not be read/, 'Next: ask the plant to upload that costing file again.'],
+  [/not read again/, 'Next: nothing to do; the run reads a day again only within the last 31 days.'],
+  [/re-read from|costing read from/, 'Nothing to do: the usual name is costing.xlsx, but any name is read.'],
+];
+function costPickNotes(dates) {
+  const C = typeof COST !== 'undefined' ? COST : null, P = C && C.picks;
+  if (!C) return el('p', {class: 'note', text: 'Costing file: the costing data has not loaded. Press Refresh (the round-arrow icon) and look again.'});
+  if (!P) return el('p', {class: 'note', text: 'Costing file: which file each day used shows after the next daily run (it runs every hour, 10:40 to 16:40 IST). Next: ' + (canEdit() ? 'press Reload data on this tab to run it now.' : 'wait for the next run.')});
+  const days = (dates || []).filter((d) => P[d]).reverse();
+  if (!days.length) return el('p', {class: 'note', text: 'Costing file: every day in these 30 days was read from one file named costing.xlsx (the run finds the file by what is in it, so another name is read too).'});
+  return el('div', {class: 'pickn'}, el('p', {class: 'note', text: 'Costing file: days that were not one file named costing.xlsx (the run finds the file by what is in it).'}),
+    el('ul', {class: 'note'}, days.map((d) => {
+      const r = P[d], fl = r.flags || [];
+      const nx = [...new Set(fl.map((f) => (PICK_NEXT.find(([re]) => re.test(f)) || [, ''])[1]).filter(Boolean))];
+      return el('li', {}, `${dfmt(d)}: ${r.file ? 'read from ' + r.file : 'no costing file read'}`,
+        fl.length ? el('ul', {}, fl.map((f) => el('li', {text: f.replace(/^\d\d\.\d\d: /, '').replace(/ Check the file is in the right folder\.$/, '')}))) : null,
+        nx.map((t) => el('div', {class: 'note', text: t})));
+    })));
 }
 
 // ---------------------------------------------------------------- Benchmarks tab

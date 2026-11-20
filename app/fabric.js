@@ -813,7 +813,7 @@ function fxBeTile(date, DT) {
   const B = fxBreakEven(date);
   if (typeof wkPut === 'function') wkPut('K7:be', B.wk);
   const has = ok(B.be), rl = DT.priced_ld ? DT.real_ld : null;
-  const cmp = has && ok(rl) ? el('span', {class: 'delta ' + (rl >= B.be ? 'up-good' : 'up-bad'), text: `Realisation ${fxMoney(rl)} a loom a day: ${fxMoney(Math.abs(rl - B.be))} ${rl >= B.be ? 'above' : 'below'}`})
+  const cmp = has && ok(rl) ? el('span', {class: 'delta ' + (rl >= B.be ? 'up-good' : 'up-bad'), text: `Realisation ${fxMoney(rl)} a loom a day: ${fxMoney(Math.abs(rl - B.be))} ${rl >= B.be ? 'above' : 'below'} break-even`})
     : has ? el('span', {class: 'delta flat', text: 'no realisation to set against it: nothing priced on this day. Next: see Coverage on this tab'}) : null;
   const why = !B.cd ? `no costing for ${dfmt(date)} yet: it shows once that day's costing file is read. Next: see Files per day on Data health.`
     : !ok(B.cost) ? `the costing for ${dfmt(date)} has no total expenses. Next: see Files per day on Data health.`

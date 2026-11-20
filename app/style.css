@@ -477,6 +477,8 @@ ol.prio p{margin:3px 0 0;line-height:1.45}
 .card.shut>.cardhead{margin-bottom:0}
 @media (prefers-reduced-motion:reduce){.cardhead.fold>h3::before{transition:none}}
 .seg .sml,.nm .sml{display:none}
+/* Round X: on a phone the Air and compressor tiles put the unit under the figure, so "Air over benchmark" fits */
+@media (max-width:560px){.kpi.ap .big small{display:block;margin-top:2px}}
 @media (max-width:560px){.seg .lgl,.nm .lgl{display:none}.seg .sml,.nm .sml{display:inline}.perbar .seg button{padding:0 10px}}
 @media (max-width:560px){.seg.bseg{flex-wrap:wrap;overflow:visible}.seg.bseg button{padding:0 10px}}   /* Why cost per pick moved: the 4 choices wrap rather than clip on a phone (16 Nov 2026) */
 /* sorting (12 Nov 2026) */

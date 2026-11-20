@@ -762,6 +762,10 @@ const erWord = (f) => !f || f.used === 'none' ? 'the day\'s own average' : f.use
 const erShort = (f) => !f || f.used === 'none' ? 'the day\'s own average: too few days for a line yet'
   : f.used === 'slope' ? `slope of a line through ${f.n} days: the extra kWh per extra 1,000 ft³ · R² ${f2(f.r2)} (1.00 = every day on the line)`
   : `${f.n}-day average · ${f.why === 'few' ? `a line needs ${ER_MIN} days` : f.why === 'r2' ? `the days sit loosely on a line: R² ${f2(f.r2)}, under ${f2(ER_R2)}` : 'the line\'s slope is out of range'}`;
+// Round X: the same note in a few words for a phone (below 560 px, .nm in style.css); the Working (E9) keeps the full story.
+const erPhone = (f) => !f || f.used === 'none' ? 'the day\'s own average' : f.used === 'slope' ? `slope over ${f.n} days · R² ${f2(f.r2)}`
+  : `${f.n}-day average · ${f.why === 'few' ? 'too few days for a line' : f.why === 'r2' ? 'days too loose for a line' : 'slope out of range'}`;
+const erNote = (f) => el('div', {class: 'note nm'}, el('span', {class: 'lgl', text: erShort(f)}), el('span', {class: 'sml', text: erPhone(f) + ' · details in the Working (the = mark)'}));
 // The figures the Working (E9) shows for the rate on a day
 const erWk = (f, date, own) => !f ? null : {date: dfmt(date), used: f.used, why: f.why, n: f.n, from: f.from ? dfmt(f.from) : '', to: f.to ? dfmt(f.to) : '', a: f.a, b: f.b, c: f.c, useC: f.useC,
   r2: f.r2, avg: f.avg, rate: f.used === 'none' ? (ok(own) ? own * 1000 : null) : f.rate, min: ER_MIN, floor: ER_R2, sps: (f.sps || []).map((e) => `${f2(e[0])} kgf/cm² on ${e[1]} day${e[1] === 1 ? '' : 's'}`).join(', ')};
@@ -796,9 +800,9 @@ function compDay(date) {
     fit, sFt3, sRsFt3: p.kwh > 0 ? sFt3 * p.rupees / p.kwh : null};
 }
 // Round U: where a day's compressor kWh comes from (src 'register': the 5-19 Nov 2026 backfill, costing.py comp_backfill)
-function compSrc(d) { const p = ((D.power && D.power.days) || {})[d]; return p && p.src === 'register' ? 'the power register\'s weaving compressor reading' : 'the costing sheet\'s Power (Compressor) line'; }
+function compSrc(d) { const p = ((D.power && D.power.days) || {})[d]; return p && p.src === 'register' ? 'the weaving compressor\'s meter reading' : 'the costing sheet\'s Power (Compressor) line'; }
 function compNote(c, date) {
-  if (!c) return `Compressor power (kWh and rupees) starts on 5 Nov 2026: the power register's readings for 5–19 Nov, then the costing sheet's Power (Compressor) line. The money figures appear once a day with a compressor reading has loom data. Next: ${tcNext()}.`;
+  if (!c) return `Compressor power (kWh and rupees) starts on 5 Nov 2026: the weaving compressor's meter readings for 5–19 Nov, then the costing sheet's Power (Compressor) line. The money figures appear once a day with a compressor reading has loom data. Next: ${tcNext()}.`;
   return `Uses the compressor's ${f0(c.kwh)} kWh (${compSrc(c.date)}) at ₹${f2(c.rate)} a unit on ${dfmt(c.date)}${c.exact ? '' : ` (the latest day with a compressor reading; ${dfmt(date)} is not in the costing sheet yet)`}, spread over the ${f0(c.ft3 / 1000)} thousand ft³ the floor drew. Money figures are for one day and ×30 for a month at that day's level.`;
 }
 function moneyKpis(c, kwhLo, kwhHi, picks, scope, rate) {
@@ -810,7 +814,7 @@ function moneyKpis(c, kwhLo, kwhHi, picks, scope, rate) {
     kpiC('Cost per pick saved', ok(pLo) ? pzR(pLo, pHi) : NA, ok(pLo) ? 'paise per pick' : '', ok(pLo) ? `over ${pn(picks / 1e5, 2)} lakh picks, ${scope}` : 'no picks for that day'),
     kpiC('In a month', rng(rsLo * 30, rsHi * 30, rs), '× 30 days', null),
     kpiC('Compressor, that day', rs(c.rupees), '', `${f0(c.kwh)} kWh · ₹${f2(c.rate)} a unit`),
-    rate ? kpiC('Energy rate', f2(c.sFt3 * 1000), 'kWh per 1,000 ft³', erShort(c.fit)) : null);   // Round V: the rate the CFM saving uses
+    rate ? kpiC('Energy rate', f2(c.sFt3 * 1000), 'kWh per 1,000 ft³', erNote(c.fit)) : null);   // Round V: the rate the CFM saving uses
 }
 function cfmMoneyCard(day, date) {
   const c = compDay(date);
@@ -890,7 +894,7 @@ function airCard() {
     const note = !r ? (f.comp ? `no Power (Compressor) line on the costing sheet yet: ${tcNext()}` : 'no loom data yet: press Refresh (the round arrow)')
       : `${f.note(r.a, r.d)}${f.comp && last && r.d !== last.d ? ` · ${dfmt(r.d)}, the latest day with a compressor reading` : ''}`;
     const t = kpiC(f.label, ok(v) ? f.fmt(v) : '—', ok(v) ? f.unit : '', note), k = t.querySelector('.kpi'), on = f.k === pick.k;
-    k.classList.add('tap'); if (on) k.classList.add('sel');
+    k.classList.add('tap', 'ap'); if (on) k.classList.add('sel');
     k.setAttribute('role', 'button'); k.setAttribute('tabindex', '0'); k.setAttribute('aria-pressed', on ? 'true' : 'false'); k.setAttribute('aria-label', `${f.label}: chart it day by day`);
     const go = () => { APPICK[APVIEW] = f.k; render(); };
     k.addEventListener('click', go); k.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
@@ -902,8 +906,8 @@ function airCard() {
   const inR = CPWPER === 'range' ? new Set(rngDays(allF.map((r) => r.d))) : null;
   const rows = CPWPER === 'all' ? allF : inR ? allF.filter((r) => inR.has(r.d)) : allF.slice(-(+CPWPER));
   const b = (v, t, sh) => el('button', {type: 'button', 'aria-pressed': CPWPER === v ? 'true' : 'false', 'aria-label': t, onclick: () => { CPWPER = v; try { localStorage.setItem('w2-comp-period', v); } catch (e) {} render(); }}, el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh || t}));
-  const name = pick.label + (pick.unit ? `, ${pick.unit}` : '');
-  const bar = allF.length > 1 ? el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days', '7d'), b('14', '14 days', '14d'), b('30', '30 days', '30d'), b('all', 'All days', 'All'), b('range', 'Dates')),
+  const name = pick.label + (pick.unit ? `, ${pick.unit.startsWith('a day') ? '₹ ' + pick.unit : pick.unit}` : '');   // Round X: "Cost per CFM, ₹ a day per CFM"
+  const bar = allF.length > 1 ? el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days', '7d'), b('14', '14 days', '14d'), b('30', '30 days', '30d'), b('all', 'All days', 'All days'), b('range', 'Dates')),
     CPWPER === 'range' ? rngCtl(allF.map((r) => r.d), render) : null, rows.length ? el('span', {class: 'note', text: `${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} days`}) : null,
     // Round D: the charted figure, this week vs last week (each day weighted as the figure is: by picks, air or minutes run)
     wkPill(wkMean(all.map((r) => ({date: r.d, a: r.a})), D.latest, (r) => pick.get(r.a), (r) => pick.w(r.a), 'down'), {what: pick.label, fmt: pick.fmt, unit: pick.wu})) : null;
@@ -925,7 +929,7 @@ function airCard() {
     : gapOf ? `${pick.label} is ${gapOf.label} less its At ${refW} line; tap ${gapOf.label} to see both lines.`
     : `${pick.label} has no reference line: the compressor's energy is taken to fall in step with the floor's air, so this figure would not change with the looms brought down to their ${refW} CFM.`;
   return card(AP_CARD, sub, views, refs, el('div', {class: 'kpis sc sc4'}, ...figs.map(tile)),   // 2 × 2 on a phone
-    el('p', {class: 'note', text: `Tap a tile to chart it day by day; now charting ${pick.label}.${APVIEW === 'pow' && flat ? ' Over these days the costing sheet\'s compressor kWh hardly changes, so energy and cost per air move mostly with the floor\'s air (and cost with the ₹ a unit).' : ''}`}),
+    el('p', {class: 'note', text: `Tap a tile to chart it day by day; now charting ${pick.label}.${APVIEW === 'pow' && flat ? ' Over these days the compressor\'s kWh changes by under 2%, so Energy per air and Cost per air move mostly with the floor\'s air (Cost per air also with the ₹ a unit).' : ''}`}),
     bar, chart, rows.length > 1 ? el('p', {class: 'note', text: refNote}) : null);
 }
 function pressureMoneyCard(pp) {
