@@ -70,6 +70,7 @@ const PAGES = {actions: pageActions, quality: pageQuality, benchmarks: pageBench
   approvals: pageApprovals, masters: pageMasters, links: pageLinks, realisation: pageRealisation};
 function render() {
   if (!D) return;
+  if (typeof spSync === 'function') spSync();   // Round V: the compressor set point in force on the day shown
   for (const b of document.querySelectorAll('.segmented[aria-label="Loom width"] button')) b.setAttribute('aria-pressed', b.dataset.w === W ? 'true' : 'false');
   for (const a of document.querySelectorAll('[data-tab]')) { if (a.dataset.tab === TAB) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
   const mb = $('#morebtn'); if (mb) { if (!MOB.includes(TAB)) mb.setAttribute('aria-current', 'page'); else mb.removeAttribute('aria-current'); }

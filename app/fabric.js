@@ -1333,9 +1333,9 @@ function fxGapWorth(w, hg, A, date, loom) {
   const effMin = Math.max(0, EFF_BAD() / 100 * (A.run + A.stop) - A.run);
   out.eff = ok(A.eff) ? cell(A.eff < EFF_BAD() ? effMin : 0, rsPicks(effMin * A.rpm)) : '—';
   const cfmB = cfmOf(b.apk, w, hg, A.rpm);
-  out.cfm = ok(cfmB) && ok(A.cfm) ? cell(A.cfm - cfmB, c ? Math.max(0, A.cfm - cfmB) * A.run * c.rsFt3 : null, 'air') : '—';
-  out.apk = ok(b.apk) && ok(A.apk) ? cell(A.apk - b.apk, c ? Math.max(0, A.apk - b.apk) * A.fpicks / 1000 * c.rsFt3 : null, 'air') : '—';
-  out.note = `Gap worth: a picks gap × ${pp == null ? 'the realisation per pick (not priced here)' : fxPaise(pp) + ' paise of realisation per pick'} on ${dfmt(date)} (As sold); an air gap × ${c ? '₹' + pn(c.rsFt3 * 1000, 2) + ' per 1,000 ft³ of compressor air on ' + dfmt(c.date) : 'the compressor\'s rupees per ft³ (no reading yet)'}. For the day's run time; pressure is floor-wide and has no figure of its own.`;
+  out.cfm = ok(cfmB) && ok(A.cfm) ? cell(A.cfm - cfmB, c ? Math.max(0, A.cfm - cfmB) * A.run * c.sRsFt3 : null, 'air') : '—';
+  out.apk = ok(b.apk) && ok(A.apk) ? cell(A.apk - b.apk, c ? Math.max(0, A.apk - b.apk) * A.fpicks / 1000 * c.sRsFt3 : null, 'air') : '—';
+  out.note = `Gap worth: a picks gap × ${pp == null ? 'the realisation per pick (not priced here)' : fxPaise(pp) + ' paise of realisation per pick'} on ${dfmt(date)} (As sold); an air gap × ${c ? '₹' + pn(c.sRsFt3 * 1000, 2) + ' per 1,000 ft³ of air saved (the energy rate on the CFM tab, at the compressor\'s ₹ a unit) on ' + dfmt(c.date) : 'the compressor\'s rupees per ft³ (no reading yet)'}. For the day's run time; pressure is floor-wide and has no figure of its own.`;
   return out;
 }
 // Targets tab (R2; 12 Nov 2026: the realisation target is worked out from the target RPM, not typed): realisation now against

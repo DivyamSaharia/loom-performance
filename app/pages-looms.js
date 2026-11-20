@@ -97,7 +97,7 @@ function priorityList(n = 5) {
   const cc = typeof compDay === 'function' ? compDay(D.latest) : null;
   for (const r of A.eff) { const o = get(r.x); o.lakh += r.impact; o.why.push({k: 'Efficiency', t: `${f1(r.now)}%, ${f1(r.gap)} points under the ${f0(EFF_BAD())}% line`}); if (r.beam) o.beam = r.x; }
   for (const r of A.rpm) { const o = get(r.x); o.lakh += r.impact; o.why.push({k: 'Speed', t: `${f0(r.now)} RPM, ${f0(r.gap)} under its ${ok(r.tg) && r.now + r.gap === r.tg ? 'target' : 'benchmark'}`}); }
-  for (const r of A.cfm) { const o = get(r.x); const ft3 = r.gap * r.x.run; o.ft3 += ft3; o.rsAir += cc ? ft3 * cc.rsFt3 : 0; o.why.push({k: 'Air', t: `${f1(r.now)} CFM, ${f1(r.gap)} over its reference`}); }
+  for (const r of A.cfm) { const o = get(r.x); const ft3 = r.gap * r.x.run; o.ft3 += ft3; o.rsAir += cc ? ft3 * cc.sRsFt3 : 0; o.why.push({k: 'Air', t: `${f1(r.now)} CFM, ${f1(r.gap)} over its reference`}); }
   const looms = (D.pressure.looms || []).map((l) => { const b = bench(l.width, l.hg) || {}, t = tgt(l.width, l.hg) || {}, bm = ok(b.main_max) ? b.main_max : (ok(b.main) ? b.main : null), tg = ok(t.main) ? t.main : null;
     return {loom: l.loom, hg: l.hg, width: l.width, main: l.main, ref: ok(bm) && ok(tg) ? Math.min(bm, tg) : ok(tg) ? tg : bm}; });
   const F = floorLadder(looms, n);
@@ -136,7 +136,7 @@ function priorityCard() {
   const P = priorityList(5);
   if (typeof wkPut === 'function') {   // Round J: the top loom, for its Working (cost valuation; owner: realisation)
     const o = P.rows[0], real = o && o.pickBy === 'realisation';
-    wkPut('B6', o ? {loom: o.x.loom, by: o.pickBy, picks: o.lakh * 1e5, pp: o.lakh > 0 ? 100 * o.rsPicks / (o.lakh * 1e5) : null, rsPicks: o.pickBy ? o.rsPicks : null, ft3: o.ft3, rsFt3: P.cc ? P.cc.rsFt3 : null, rsAir: P.cc ? o.rsAir : null, press: o.press, rsPress: P.cc ? o.rsPress : null} : null);
+    wkPut('B6', o ? {loom: o.x.loom, by: o.pickBy, picks: o.lakh * 1e5, pp: o.lakh > 0 ? 100 * o.rsPicks / (o.lakh * 1e5) : null, rsPicks: o.pickBy ? o.rsPicks : null, ft3: o.ft3, rsFt3: P.cc ? P.cc.sRsFt3 : null, rsAir: P.cc ? o.rsAir : null, press: o.press, rsPress: P.cc ? o.rsPress : null} : null);
     wkPut('K12', real ? {loom: o.x.loom, picks: o.lakh * 1e5, pp: 100 * o.rsPicks / (o.lakh * 1e5)} : null);
   }
   const sk = P.skipped.length ? el('p', {class: 'note co-skip', text: `${P.skipped.length} loom${P.skipped.length === 1 ? '' : 's'} left out: head group changed in the last 2 shifts (${P.skipped.map((c) => `loom ${c.loom}, shift ${c.shift}`).join('; ')}). ${P.skipped.length === 1 ? 'It comes' : 'They come'} back once 2 shifts pass on the new head group.`}) : null;
@@ -483,7 +483,9 @@ function pGapNote() {
 function spTile(pp, M, noM) {
   const ed = canEdit() && !!db, has = ok(COMP_SP);
   const need = ok(pp.now) ? `needed ${f2(pp.now)} → ${f2(pp.after)} after the work (floor + ${f2(M)} margin)` : noM;
-  const note = (has ? '' : (ed ? 'not set yet: tap to type it · ' : 'not set yet: tell the owner · ')) + need + (has && ed ? ' · tap to change' : '');
+  const e = typeof spEntry === 'function' ? spEntry(D.latest) : null, since = has && e ? `since ${dfmt(e.from)} · ` : '';   // Round V: the history entry in force
+  const unset = SP_HIST && SP_HIST.length && !e ? `none in the set point history on ${dfmt(D.latest)}: ` : 'not set yet: ';
+  const note = since + (has ? '' : (ed ? unset + 'tap to type it · ' : unset + 'tell the owner · ')) + need + (has && ed ? ' · tap to change' : '');
   const k = el('div', {class: 'kpi' + (ed ? ' tap' : ''), role: ed ? 'button' : null, tabindex: ed ? '0' : null, 'aria-label': ed ? 'Compressor set point: tap to change' : null},
     el('div', {class: 'label', text: 'Compressor set point'}), el('div', {class: 'big'}, has ? f2(COMP_SP) : '—', el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: note}));
   if (ed) { const go = () => { PSP_EDIT = !PSP_EDIT; render(); }; k.addEventListener('click', go); k.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }); }
@@ -492,16 +494,29 @@ function spTile(pp, M, noM) {
 function spEditor() {
   if (!PSP_EDIT || !canEdit() || !db) return null;
   const inp = el('input', {type: 'number', step: '0.05', min: '1', max: '15', value: ok(COMP_SP) ? String(COMP_SP) : '', 'aria-label': 'Compressor set point, kgf/cm²', style: 'width:100px'});
+  // Round V (Divyam, 20 Nov 2026): each set point carries the day it took effect (the day shown to begin with, never after today)
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  const dt = el('input', {type: 'date', class: 'rngin', max: today, value: D.latest <= today ? D.latest : today, 'aria-label': 'Set point effective from'});
   const msg = el('span', {class: 'meta'});
   const btn = el('button', {class: 'primary', type: 'button', text: 'Save', onclick: async () => {
     const v = parseFloat(inp.value); if (!(v >= 1 && v <= 15)) { msg.className = 'err'; msg.textContent = 'Enter the set point in kgf/cm², from 1 to 15.'; return; }
+    const f = dt.value; if (!/^\d{4}-\d{2}-\d{2}$/.test(f) || f > today) { msg.className = 'err'; msg.textContent = 'Pick the day the set point took effect: today or earlier.'; return; }
     btn.disabled = true; msg.className = 'meta'; msg.textContent = 'Saving…';
-    try { await db.collection('targets').doc('compsp__kgf').set({width: 'all', hg: 'all', main: v}); COMP_SP = v; PSP_EDIT = false; render(); }
+    // the targets row keeps the latest set point (the Config sheet's copy); the history keeps every change with its date
+    const latest = !(SP_HIST || []).some((h) => h.from > f);
+    // one reload after both writes; a failed write reloads nothing, so its message stays on the box
+    try { STATE_HOLD += 1;
+      try { if (latest) await db.collection('targets').doc('compsp__kgf').set({width: 'all', hg: 'all', main: v}); await saveSpHist(f, v); } finally { STATE_HOLD -= 1; }
+      await loadState(); PSP_EDIT = false; render(); }
     catch (e) { msg.className = 'err'; msg.textContent = saveFail(e, 'save', 'Save'); btn.disabled = false; }
   }});
-  return el('div', {class: 'toolbar'}, el('label', {text: 'Compressor set point, as set on the compressor'}), inp, el('span', {text: 'kgf/cm²'}), btn,
+  const H = (SP_HIST || []).slice().sort((a, b) => a.from.localeCompare(b.from));
+  const hist = SP_HIST == null ? `The set point history could not be read, so the tile shows the last set point saved. Press Refresh (the round arrow) to try again; if it stays, ${typeof fxIsOwner === 'function' && fxIsOwner() ? 'see Data health' : 'tell the owner'}.`
+    : H.length ? 'Set point history: ' + H.map((h) => `${f2(h.kgf)} kgf/cm² from ${dfmt(h.from)}`).join(' · ') + '.' : 'No set point history yet: the first set point you save starts it.';
+  return el('div', {class: 'toolbar'}, el('label', {text: 'Compressor set point, as set on the compressor'}), inp, el('span', {text: 'kgf/cm²'}),
+    el('label', {text: 'Effective from'}), dt, btn,
     el('button', {class: 'ghost', type: 'button', text: 'Cancel', onclick: () => { PSP_EDIT = false; render(); }}), msg,
-    el('p', {class: 'note', text: 'Saved for everyone at once; the Pressure tab and the Target cost per pick tile on Actions use it straight away.'}));
+    el('p', {class: 'note', text: `Saved for everyone at once, from the day picked: a day uses the set point in force on it. The Pressure tab and the Target cost per pick tile on Actions use it straight away, and the energy rate on the CFM tab is worked out again from that day. To correct a set point, type the right one for the same day. ${hist}`}));
 }
 function pressLooms() {
   // every loom that ran ≥60 min in a shift on the latest day, both widths (one compressor)
@@ -608,6 +623,7 @@ function pagePressure() {
     el('p', {class: 'note', text: 'Each loom above its reference is brought down to it; looms already below stay where they are. Looms with no head group or no benchmark stay as they are. The saving has two parts that add up: the compressor brought down from its set point to what today\'s floor needs, then the looms brought to their reference. Where the compressor already runs at or below what is needed, that part is 0, never negative.'})));
   s.append(pressureMoneyCard(pp));
   s.append(floorLadderCard(looms, floorNew));
+  const erc = erDevCard(); if (erc) s.append(erc);   // Round V: the owner's kWh against the energy rate's fit
 
   // chart: current vs benchmark and target, looms sorted by current pressure
   const inPW = (w) => PW === 'all' || String(w) === PW, pwNote = PW === 'all' ? '' : ` · ${PW} cm only, floor lines still cover all ${looms.length}`;
@@ -815,13 +831,13 @@ function pageCfm() {
     const fp = floorPicks(D.latest);   // 12 Nov 2026: paise per pick on the whole floor's picks, so the rows add up to the plant's saving
     if (typeof wkPut === 'function') { const r = sorted.find((y) => ok(y.bm)), b = r && (bench(r.x.width, r.x.hg) || {});   // Round J: benchmark CFM of the first loom
       wkPut('A3:bm', r ? {loom: r.x.loom, hg: r.x.hg, apk: b.apk, pf: pf(r.x.width, r.x.hg), rpm: r.x.rpm} : null); }
-    const totRs = cc ? sorted.reduce((a, r) => a + (r.ex > 0.05 ? r.ex * r.x.run * cc.rsFt3 : 0), 0) : null;
+    const totRs = cc ? sorted.reduce((a, r) => a + (r.ex > 0.05 ? r.ex * r.x.run * cc.sRsFt3 : 0), 0) : null;
     body = table(['Loom', 'Head group', ['RPM', 'picks/min'], ['Now', 'CFM'], ['Reference', `CFM, ${REF_NAME[CMODE]}`], ['Excess', 'CFM over reference'], ['Air', 'ft³/1,000 picks'], ['Excess air', 'ft³ in the day'], ['Worth', '₹ a day · paise per pick of plant cost'], 'Status'],
       [...sorted.map((r) => {
         const st = ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref) ? el('span', {class: 'pill warn', text: 'above reference'}) : !ok(r.ref) ? el('span', {class: 'pill muted', text: 'no reference'}) : '';
         return [loomLink(r.x.loom, r.x.date), el('span', {}, hgLink(r.x.hg, r.x.width, r.x.date), el('div', {class: 'note', text: `${r.x.width} cm ${r.x.type}`})), f0(r.x.rpm), f1(r.x.cfm),
           refCell(CMODE, r.bm, r.best, r.tg, f1, () => bmBtn(f1(r.bm), r.x.width, r.x.hg, 'apk', {view: 'cfm', rpm: r.x.rpm}), () => bmBtn(f1(r.best), r.x.width, r.x.hg, 'apk', {kind: 'best', view: 'cfm', rpm: r.x.rpm})),
-          r.ex > 0.05 ? '+' + f1(r.ex) : '0', f1(r.x.apk), r.ex > 0.05 ? f0(r.ex * r.x.run) : '0', r.ex > 0.05 && cc ? sortAs(withPP(rs(r.ex * r.x.run * cc.rsFt3), r.ex * r.x.run * cc.rsFt3, fp), r.ex * r.x.run * cc.rsFt3) : (cc ? '₹0' : '—'), st];
+          r.ex > 0.05 ? '+' + f1(r.ex) : '0', f1(r.x.apk), r.ex > 0.05 ? f0(r.ex * r.x.run) : '0', r.ex > 0.05 && cc ? sortAs(withPP(rs(r.ex * r.x.run * cc.sRsFt3), r.ex * r.x.run * cc.sRsFt3, fp), r.ex * r.x.run * cc.sRsFt3) : (cc ? '₹0' : '—'), st];
       }), ...(cc ? [el('tr', {class: 'tot'}, el('td', {}, el('b', {text: 'Total'})), el('td', {colspan: 6, class: 'note', text: 'every loom brought to its reference'}), el('td', {class: 'num', text: f0(sorted.reduce((a, r) => a + (r.ex > 0.05 ? r.ex * r.x.run : 0), 0))}), el('td', {class: 'num'}, el('b', {}, withPP(rs(totRs), totRs, fp))), el('td', {}))] : [])], [2, 3, 4, 5, 6, 7, 8]);
   } else {
     const by = new Map();
@@ -833,12 +849,12 @@ function pageCfm() {
       const ba = x0.hg !== 'Unassigned' ? bestVal(x0.width, x0.hg, 'apk') : null;
       return {x0, R, A, b, t, ba, bm: x0.hg !== 'Unassigned' ? cfmOf(b.apk, x0.width, x0.hg, A.rpm) : null, best: cfmOf(ba, x0.width, x0.hg, A.rpm), exAir, over: R.filter((r) => ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref)).length};
     }).sort((a, b) => b.exAir - a.exAir);
-    const fp = floorPicks(D.latest), totRs = cc ? tot * cc.rsFt3 : null;
+    const fp = floorPicks(D.latest), totRs = cc ? tot * cc.sRsFt3 : null;
     const airRef = (r) => CMODE === 'best' && ok(r.ba) ? bmBtn(f1(r.ba), r.x0.width, r.x0.hg, 'apk', {kind: 'best'}) : ok(r.b.apk) && r.x0.hg !== 'Unassigned' ? bmBtn(f1(r.b.apk), r.x0.width, r.x0.hg, 'apk') : '—';
     body = table(['Head group', ['Looms', 'ran'], ['RPM', 'picks/min'], ['CFM now', 'ft³/min running'], ['Reference', `CFM, ${REF_NAME[CMODE]}`], ['Air now', 'ft³/1,000 picks'], ['Air reference', CMODE === 'best' ? 'ft³/1,000 picks, best' : 'ft³/1,000 picks, benchmark'], ['Looms above', 'reference'], ['Saved if fixed', 'CFM, 24-h draw'], ['Worth', '₹ a day · paise per pick of plant cost'], ['Share of saving', '%']],
       [...rows.map((r) => [el('span', {}, hgLink(r.x0.hg, r.x0.width, D.latest), el('div', {class: 'note', text: r.x0.width + ' cm'})), r.A.looms, f0(r.A.rpm), f1(r.A.cfm),
         refCell(CMODE, r.bm, r.best, r.t.cfm, f1, () => bmBtn(f1(r.bm), r.x0.width, r.x0.hg, 'apk', {view: 'cfm', rpm: r.A.rpm}), () => bmBtn(f1(r.best), r.x0.width, r.x0.hg, 'apk', {kind: 'best', view: 'cfm', rpm: r.A.rpm})),
-        f1(r.A.apk), airRef(r), r.over, f1(r.exAir / 1440), cc ? sortAs(withPP(rs(r.exAir * cc.rsFt3), r.exAir * cc.rsFt3, fp), r.exAir * cc.rsFt3) : '—', tot > 0 ? f0(100 * r.exAir / tot) : '0']),
+        f1(r.A.apk), airRef(r), r.over, f1(r.exAir / 1440), cc ? sortAs(withPP(rs(r.exAir * cc.sRsFt3), r.exAir * cc.sRsFt3, fp), r.exAir * cc.sRsFt3) : '—', tot > 0 ? f0(100 * r.exAir / tot) : '0']),
       ...(cc ? [el('tr', {class: 'tot'}, el('td', {}, el('b', {text: 'Total'})), el('td', {colspan: 7, class: 'note', text: 'every head group brought to its reference'}), el('td', {class: 'num', text: f1(tot / 1440)}), el('td', {class: 'num'}, el('b', {}, withPP(rs(totRs), totRs, fp))), el('td', {class: 'num', text: tot > 0 ? '100' : '0'}))] : [])], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   }
   s.append(card('Reference vs running CFM', (CVIEW === 'quality' ? 'Unlike pressure, fixing one quality saves its own share straight away' : 'CFM while running on the latest day; references at each loom\'s own RPM') + ' · paise per pick are on the whole floor\'s picks, so they add up to the total',

@@ -122,7 +122,9 @@ function readoutBar(o) {
     });
     const refs = (o.refs || []).filter((r) => ok(r.v)).map((r) => el('span', {class: 'note', text: `${r.label} ${(o.fmt || pn)(r.v)}`}));
     const pick = o.onPick || (o.noOpen ? null : openDayAny);
-    out.replaceChildren(...[el('b', {text: ptLabel(o, i)}), ...(parts.length ? parts : [el('span', {text: 'no figure'})]), ...refs,
+    // o.detail(i): more of that day's figures, drawn under the values (Round V: the deviation card's day)
+    const more = o.detail ? o.detail(i) : null;
+    out.replaceChildren(...[el('b', {text: ptLabel(o, i)}), ...(parts.length ? parts : [el('span', {text: 'no figure'})]), ...refs, ...(more ? [more] : []),
       pick ? el('button', {class: 'link', type: 'button', text: o.pickDates ? 'Open the last day ›' : 'Open this day ›', onclick: () => pick(ptPick(o, i))}) : null].filter(Boolean));
   };
   out.append(el('span', {class: 'note', text: 'Point at or tap the chart to read a day.'}));

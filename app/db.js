@@ -210,8 +210,21 @@ const supaDb = {
     }),
   }),
 };
+// Round V (0018): the compressor set point's history. A failed read leaves the history unknown (SP_HIST null: the set point
+// falls back to the targets row and the Pressure tab says why), never stops the load.
+async function loadSpHist() {
+  try { const r = await sbRows('compsp_history', (q) => q.select('eff_from, kgf, set_by, set_at').order('eff_from'));
+    SP_HIST = r.map((x) => ({from: String(x.eff_from).slice(0, 10), kgf: +x.kgf, by: x.set_by || '', at: x.set_at || ''})).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.from) && x.kgf > 0); SP_ERR = ''; }
+  catch (e) { SP_HIST = null; SP_ERR = 'the set point history could not be read'; }
+}
+// Round V: save one set point change (edit targets and admin; the database stamps who and when)
+async function saveSpHist(from, kgf) {
+  const c = await sbClient();
+  const {error} = await c.from('compsp_history').upsert({eff_from: from, kgf, set_by: ME && ME.email}, {onConflict: 'eff_from'});
+  if (error) throw sbFail(error);
+}
 async function loadStateDb() {
-  const [tg, asg] = await Promise.all([sbRows('targets', (q) => q.select('id, width, hg, cfm, rpm, main, at')), sbRows('assignments', (q) => q.select('style, head_group, is_new, status, at').eq('status', 'pending'))]);
+  const [tg, asg] = await Promise.all([sbRows('targets', (q) => q.select('id, width, hg, cfm, rpm, main, at')), sbRows('assignments', (q) => q.select('style, head_group, is_new, status, at').eq('status', 'pending')), loadSpHist()]);
   applyState({targets: tg.map((t) => ({id: t.id, width: String(t.width || ''), hg: String(t.hg || ''), cfm: t.cfm == null ? null : +t.cfm, rpm: t.rpm == null ? null : +t.rpm, main: t.main == null ? null : +t.main, at: t.at || ''})),
               assignments: asg});
 }

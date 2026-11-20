@@ -561,7 +561,8 @@ function airDay(L, comp) {
 // Round U (Divyam, 20 Nov 2026): the card's reference line, one per reference (bm benchmark, best, tg target; key = the
 // loom-day field holding that reference CFM). Each loom above its reference is brought down to it, a loom at or below it
 // or with none stays as it ran (counted in `none`), as the at-target figures of Round T did. The compressor's kWh and
-// rupees fall in step with the air, at the day's own kWh per ft³ (as Target cost per pick step 1), so Cost per CFM,
+// rupees fall by the air taken off × the energy rate for the CFM saving (Round V: the fitted slope, else the 30-day average;
+// comp.k), at the day's ₹ a unit (as Target cost per pick step 1), so Cost per CFM,
 // Energy per air and Cost per air have no line (they would not move). No loom with that reference = every figure null.
 // over / overApk: now − the line (CFM; ft³ per 1,000 picks), never below 0.
 function airRef(R, key, air, run, fp, c) {
@@ -569,11 +570,99 @@ function airRef(R, key, air, run, fp, c) {
   for (const x of R) { const v = x[key], a = x.cfm * x.run; if (ok(v)) { n++; ra += Math.min(x.cfm, v) * x.run; } else ra += a; }
   const none = R.length - n;
   if (!n) return {n, none, air: null, cfm: null, over: null, lcfm: null, apk: null, overApk: null, kwh: null, rupees: null, kwhLakh: null, ppPick: null};
-  const f = air > 0 ? ra / air : null, picks = fp / 39.37, kwh = c && ok(f) ? c.kwh * f : null, rupees = c && ok(f) ? c.rupees * f : null;
+  // Round V: with the energy rate for the CFM saving (c.k, kWh per ft³) the kWh fall by the air taken off × that rate, the
+  // rupees at the day's ₹ a unit; without it (no valid day for the fit) in step with the air, as before
+  const f = air > 0 ? ra / air : null, picks = fp / 39.37;
+  const kwh = c && ok(f) ? (ok(c.k) ? Math.max(0, c.kwh - (air - ra) * c.k) : c.kwh * f) : null;
+  const rupees = c && ok(kwh) ? (ok(c.k) ? (c.kwh > 0 ? kwh * c.rupees / c.kwh : null) : c.rupees * f) : null;
   return {n, none, air: ra, cfm: ra / 1440, over: (air - ra) / 1440, lcfm: run > 0 ? ra / run : null,
     apk: fp > 0 ? 1000 * ra / fp : null, overApk: fp > 0 ? 1000 * (air - ra) / fp : null,
     kwh, rupees, kwhLakh: ok(kwh) && picks > 0 ? 1e5 * kwh / picks : null, ppPick: ok(rupees) && picks > 0 ? 100 * rupees / picks : null};
 }
+
+// ================================================================ Round V (Divyam, 20 Nov 2026): the energy rate for the CFM saving
+// A robust (Huber) regression of the compressor's kWh a day on the floor's air: kWh = a + b × air (1,000 ft³) + c × set point
+// (kgf/cm²). b, the kWh per 1,000 ft³ of air saved, replaces the day's average kWh per ft³ for the CFM saving, Target cost
+// per pick steps 1, 2 and 4 and the Air and compressor card's reference line. Settled (Divyam, 20 Nov 2026):
+//  · the window is the last ER_WIN valid days ending on the day shown, so a past day never moves; valid = from ER_START (the
+//    first power-register day; 1-4 Nov 2026 are left out), a compressor kWh and floor air on the day;
+//  · c enters only when the window holds at least two set points with ER_SPDAYS days or more each (else a + b × air);
+//  · the window average (the window's total kWh ÷ its total air) is used with fewer than ER_MIN days, R² under ER_R2, or b not above 0 and below the
+//    average; with no valid day in the window at all the caller uses the day's own rate, as before;
+//  · each day's deviation = its kWh − the fitted kWh of the fit used for that day; an outlier lies more than ER_OUT robust
+//    standard deviations (1.4826 × the median absolute deviation of the window's residuals, Huber's own scale) from it,
+//    labelled only once the window has ER_MIN days.
+// Huber: tuning constant 1.345, solved by iteratively reweighted least squares from the ordinary fit, the scale taken again
+// each pass; R² is the plain one of the Huber line on the window's days.
+const ER_START = '2026-11-05', ER_WIN = 30, ER_MIN = 10, ER_R2 = 0.7, ER_K = 1.345, ER_OUT = 3, ER_SPDAYS = 5;
+// The set point in force on a day: the latest entry of the history [{from, kgf}] taking effect on or before it; null before any.
+function spAt(hist, d) {
+  let v = null, f = '';
+  for (const h of hist || []) if (h && ok(h.kgf) && h.from <= d && h.from >= f) { v = h.kgf; f = h.from; }
+  return v;
+}
+// Weighted least squares through the normal equations (rows X with the intercept column, weights w): β, or null when singular.
+function erWls(X, y, w) {
+  const p = X[0].length, A = Array.from({length: p}, () => new Array(p + 1).fill(0));
+  X.forEach((x, i) => { for (let j = 0; j < p; j++) { for (let k = 0; k < p; k++) A[j][k] += w[i] * x[j] * x[k]; A[j][p] += w[i] * x[j] * y[i]; } });
+  for (let c = 0; c < p; c++) {
+    let m = c; for (let r = c + 1; r < p; r++) if (Math.abs(A[r][c]) > Math.abs(A[m][c])) m = r;
+    if (Math.abs(A[m][c]) < 1e-12) return null;
+    [A[c], A[m]] = [A[m], A[c]];
+    for (let r = 0; r < p; r++) if (r !== c) { const q = A[r][c] / A[c][c]; for (let k = c; k <= p; k++) A[r][k] -= q * A[c][k]; }
+  }
+  return A.map((r, i) => r[p] / r[i]);
+}
+const erMed = (v) => { const s = v.slice().sort((a, b) => a - b), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
+// The robust standard deviation of residuals: 1.4826 × the median absolute deviation from their median.
+const erScale = (r) => { const m = erMed(r); return m == null ? null : erMed(r.map((x) => Math.abs(x - m))) / 0.6744897501960817; };
+function huberFit(X, y) {
+  const n = y.length; let w = new Array(n).fill(1), b = erWls(X, y, w);
+  if (!b) return null;
+  const res = (bb) => y.map((v, i) => v - X[i].reduce((a, x, j) => a + x * bb[j], 0));
+  let it = 0;
+  for (; it < 200; it++) {
+    const r = res(b), s = erScale(r);
+    if (!(s > 0)) break;   // the points sit on the line: nothing to down-weight
+    w = r.map((x) => Math.abs(x) <= ER_K * s ? 1 : ER_K * s / Math.abs(x));
+    const nb = erWls(X, y, w); if (!nb) return null;
+    const done = nb.every((v, j) => Math.abs(v - b[j]) <= 1e-10 * (1 + Math.abs(v)));
+    b = nb; if (done) break;
+  }
+  const r = res(b), my = y.reduce((a, v) => a + v, 0) / n, tot = y.reduce((a, v) => a + (v - my) ** 2, 0);
+  return {beta: b, w, resid: r, scale: erScale(r), r2: tot > 0 ? 1 - r.reduce((a, v) => a + v * v, 0) / tot : null, iter: it};
+}
+// series: [{d, kwh, air (ft³)}], any order; hist: the set point history [{from, kgf}]; date: the day shown.
+// → {used: 'slope' | 'avg' | 'none', why (avg: 'few' | 'r2' | 'b'), k (kWh per ft³ to use), rate (kWh per 1,000 ft³), avg, a, b,
+//    c (null without the set point), useC, sps (set points in the window: [[kgf, days]]), r2, n, from, to, scale, days: [the
+//    window's days {d, kwh, air, sp, fit, dev, pct, z, out}], day (the day shown's own entry, or null)}
+function erFit(series, date, hist) {
+  const W = (series || []).filter((r) => r && r.d >= ER_START && r.d <= date && r.kwh > 0 && r.air > 0).sort((a, b) => a.d.localeCompare(b.d)).slice(-ER_WIN);
+  const n = W.length;
+  if (!n) return {used: 'none', why: 'none', k: null, rate: null, n: 0, days: [], day: null};
+  const sk = W.reduce((a, r) => a + r.kwh, 0), sa = W.reduce((a, r) => a + r.air, 0), avg = 1000 * sk / sa;
+  const sp = W.map((r) => spAt(hist, r.d)), cnt = new Map();
+  for (const v of sp) if (ok(v)) cnt.set(v, (cnt.get(v) || 0) + 1);
+  const sps = [...cnt.entries()].sort((a, b) => a[0] - b[0]);
+  const useC = sp.every(ok) && sps.filter((e) => e[1] >= ER_SPDAYS).length >= 2;
+  let fit = null, why = null;
+  if (n < ER_MIN) why = 'few';
+  else {
+    fit = huberFit(W.map((r, i) => useC ? [1, r.air / 1000, sp[i]] : [1, r.air / 1000]), W.map((r) => r.kwh));
+    if (!fit || !ok(fit.r2) || fit.r2 < ER_R2) why = 'r2';
+    else if (!(fit.beta[1] > 0) || !(fit.beta[1] < avg)) why = 'b';
+  }
+  const used = why ? 'avg' : 'slope', a = fit ? fit.beta[0] : null, b = fit ? fit.beta[1] : null, c = fit && useC ? fit.beta[2] : null;
+  const rate = used === 'slope' ? b : avg;
+  const fitted = (r, i) => used === 'slope' ? a + b * r.air / 1000 + (useC ? c * sp[i] : 0) : avg * r.air / 1000;
+  const days = W.map((r, i) => { const f = fitted(r, i); return {d: r.d, kwh: r.kwh, air: r.air, sp: sp[i], fit: f, dev: r.kwh - f, pct: f > 0 ? 100 * (r.kwh - f) / f : null}; });
+  const scale = used === 'slope' ? fit.scale : erScale(days.map((x) => x.dev));
+  for (const x of days) { x.z = scale > 0 ? x.dev / scale : null; x.out = n >= ER_MIN && ok(x.z) && Math.abs(x.z) > ER_OUT; }
+  return {used, why, k: rate / 1000, rate, avg, a, b, c, useC, sps, r2: fit ? fit.r2 : null, n, from: W[0].d, to: W[n - 1].d, scale,
+    days, day: days.find((x) => x.d === date) || null};
+}
+// Round V: the deviation card's week line, the average size of the deviation (|%|) over a week's days
+const erAbsPct = (x) => x && ok(x.pct) ? Math.abs(x.pct) : null;
 
 // ================================================================ Round F (Divyam, 18 Nov 2026): set point and target tiles
 // ---- Pressure. The set point needed = the floor (the highest main pressure of the day) + the margin from the Config
@@ -634,7 +723,8 @@ function packRate(days, date) {
 // ---- Target cost per pick (Divyam, 18 Nov 2026). The headline cost per pick, As entered, for one day: (total expenses +
 // cut piece loss) ÷ production picks. Steps applied in order, so they add up:
 //   1. CFM: each loom at its target CFM (excess air only, never more air); the compressor's kWh fall by the air saved ×
-//      its kWh per ft³ that day (Power (Compressor) kWh ÷ the floor's air), at its ₹ per unit.
+//      the energy rate for the CFM saving (Round V: comp.k, the fitted slope or the window average; else the day's own kWh
+//      per ft³, Power (Compressor) kWh ÷ the floor's air), at its ₹ per unit.
 //   2. Pressure: the compressor at the set point needed with every loom at its target main pressure (press.frac, a share of its energy), on the kWh
 //      left after step 1.
 //   3. Extra picks: each loom that ran at its target effective RPM (93% of target RPM); one already above adds nothing.
@@ -664,7 +754,9 @@ function targetCost(inp) {
   const L = (inp.looms || []).filter((x) => x.run > 0);
   const comp = inp.comp && ok(inp.comp.kwh) && ok(inp.comp.rate) ? inp.comp : null;
   const F = L.reduce((a, x) => a + (ok(x.cfm) ? x.cfm * x.run : 0), 0);
-  const k = comp && F > 0 ? comp.kwh / F : null, rho = comp ? comp.rate : null;
+  // Round V: comp.k, the energy rate for the CFM saving (kWh per ft³: the fitted slope, else the window average), when given;
+  // else the day's own kWh ÷ the floor's air, as before
+  const k = comp && F > 0 ? (ok(comp.k) ? comp.k : comp.kwh / F) : null, rho = comp ? comp.rate : null;
   const f = ok(inp.frac) ? inp.frac : null;
   const rW = rate('WARPING'), rT = rate('TRANSPORT'), rP = ok(inp.pack) ? inp.pack : null;
   const recs = L.map((x) => {
@@ -835,7 +927,16 @@ const WKL = {
   E1s: (d) => { if (!d || !ok(d.air)) return null; const v = (d.air - d.after) / 1440;
     return wkOut(`${wkN(d.air)} − ${wkN(d.after)} = ${wkN(d.air - d.after)} ft³ a day${d.date ? ` on ${d.date}` : ''}; ÷ 1,440 minutes`, f0(v), 'CFM', v); },
   E1p: (d) => { if (!d || !(d.air > 0)) return null; const v = 100 * (d.air - d.after) / d.air; return wkOut(`${wkN(d.air - d.after)} ft³ saved ÷ ${wkN(d.air)} ft³ now × 100`, wkF(v, 1), '%', v); },
-  E2k: (d) => { if (!d || !ok(d.ft3)) return null; const v = d.ft3 * d.kwhFt3; return wkOut(`${wkN(d.ft3)} ft³ of air saved × ${wkF(d.kwhFt3 * 1000, 2)} kWh per 1,000 ft³`, f0(v), 'kWh a day', v); },
+  E2k: (d) => { if (!d || !ok(d.ft3)) return null; const v = d.ft3 * d.kwhFt3; return wkOut(`${wkN(d.ft3)} ft³ of air saved × ${wkF(d.kwhFt3 * 1000, 2)} kWh per 1,000 ft³${d.how ? ` (${d.how})` : ''}`, f0(v), 'kWh a day', v); },
+  // Round V: the energy rate for the CFM saving (erFit's figures, costing.js erWk) and each day's kWh against its fit
+  E9: (d) => { if (!d || !ok(d.rate)) return null;
+    const span = `${d.n} day${d.n === 1 ? '' : 's'}, ${d.from} – ${d.to}`;
+    const pre = d.used === 'slope' ? `fit over ${span}: kWh = ${wkN(d.a)} + ${wkF(d.b, 2)} × air in 1,000 ft³${d.useC ? ` + ${wkN(d.c)} × set point (${d.sps})` : ''}, R² ${wkF(d.r2, 2)} (at least ${wkF(d.floor, 2)}) and b between 0 and the average ${wkF(d.avg, 2)}, so the rate is the slope b`
+      : d.used === 'avg' ? `${span}: ${d.why === 'few' ? `fewer than ${d.min} days for a fit` : d.why === 'r2' ? `the fit's R² ${wkF(d.r2, 2)} is under ${wkF(d.floor, 2)}` : `the fit's slope ${wkF(d.b, 2)} is not above 0 and below the average`}, so the rate is the window average, its total kWh ÷ its total air × 1,000`
+      : `no day from 5 Nov 2026 with a compressor reading and loom data up to ${d.date}, so the rate is the day's own kWh ÷ air × 1,000`;
+    return wkOut(pre, wkF(d.rate, 2), 'kWh per 1,000 ft³', d.rate); },
+  G6: (d) => { if (!d || !ok(d.kwh) || !ok(d.fit)) return null; const v = d.kwh - d.fit, p = d.fit > 0 ? 100 * v / d.fit : null;
+    return wkOut(`${d.date}${ok(d.z) ? `, ${wkS(d.z, 1)} robust standard deviations from the fit${d.out ? ' (an outlier)' : ' (not an outlier)'}` : ''}: ${wkN(d.kwh)} kWh − ${wkN(d.fit)} kWh fitted (${d.how})`, `${wkS(v, 0)} kWh (${wkS(p, 2)}%)`, '', v); },
   G3k: (d) => { if (!d || !ok(d.frac)) return null; const v = d.frac * d.kwh; return wkOut(`${wkF(d.frac * 100, 1)}% of the compressor's ${wkN(d.kwh)} kWh`, f0(v), 'kWh a day', v); },
   E2r: (d) => { if (!d || !ok(d.kwh)) return null; const v = d.kwh * d.rate; return wkOut(`${wkN(d.kwh, 1)} kWh × ₹${wkF(d.rate, 2)} a unit`, wkR(v), 'a day', v); },
   E2m: (d) => { if (!d || !ok(d.rs)) return null; return wkOut(`${wkR(d.rs, 2)} a day × 30 days`, wkR(d.rs * 30), '', d.rs * 30); },

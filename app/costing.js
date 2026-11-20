@@ -730,6 +730,48 @@ function dayRulesCard(d, adj, dp, R) {
 // so the day's kWh is spread over the whole floor's air (all looms, both widths).
 let POWER_PCT = 7;   // compressor energy saved per 1 kgf/cm² of pressure; set on the Targets tab
 let COMP_SP = null;  // Round F: the compressor's own set point, kgf/cm², typed on the Pressure tab (App targets row compsp__kgf)
+// Round V (Divyam, 20 Nov 2026): the set point has a history with effective-from dates (table compsp_history, migration
+// 0018: [{from, kgf, by, at}], seeded 5.0 from 1 Nov 2026 and 4.8 from 5 Nov 2026). COMP_SP is the set point in force on the
+// day shown (spSync, at every redraw); with no history (not loaded, or empty) it is the targets row as before (COMP_SP_ROW).
+let SP_HIST = null, SP_ERR = '', COMP_SP_ROW = null;
+// A day before the history's first entry has no set point (a gap with its next step), never a later one.
+function spSync() { COMP_SP = SP_HIST && SP_HIST.length ? (D && D.latest ? spAt(SP_HIST, D.latest) : null) : COMP_SP_ROW; return COMP_SP; }
+// The history entry in force on a day (for the tile's "since"), or null
+const spEntry = (d) => { let e = null; for (const h of SP_HIST || []) if (h.from <= d && (!e || h.from >= e.from)) e = h; return e; };
+// The energy rate for the CFM saving, per day (calc.js erFit): the compressor's kWh against the floor's air on every day with
+// both (D.power.days and the loom-days that ran), worked once per data load and history.
+let ER_MEMO = {key: null, ser: null, by: new Map()};
+function erSeries() {
+  const P = (D && D.power && D.power.days) || {}, air = new Map();
+  for (const x of (D && D.loomdays) || []) if (x.run > 0 && ok(x.cfm)) air.set(x.date, (air.get(x.date) || 0) + x.cfm * x.run);
+  return Object.keys(P).sort().map((d) => ({d, kwh: P[d].kwh, air: air.get(d) || 0}));
+}
+function erDay(date) {
+  if (!D || !date) return null;
+  if (ER_MEMO.key !== D || ER_MEMO.hist !== SP_HIST) ER_MEMO = {key: D, hist: SP_HIST, ser: erSeries(), by: new Map()};
+  if (!ER_MEMO.by.has(date)) ER_MEMO.by.set(date, erFit(ER_MEMO.ser, date, SP_HIST || []));
+  return ER_MEMO.by.get(date);
+}
+// The rate a CFM saving uses on a day, kWh per ft³: the fit's (slope or window average), else the day's own (no valid day yet).
+const erK = (date, own) => { const f = erDay(date); return f && f.used !== 'none' ? f.k : own; };
+// The rate a CFM saving uses on a day, in kWh per 1,000 ft³ (the day's own average where there is no fit yet), and its name.
+function erRateOf(date) { const f = erDay(date); if (f && f.used !== 'none') return f.rate; const c = compDay(date); return c && c.exact ? c.kwhFt3 * 1000 : null; }
+const erWord = (f) => !f || f.used === 'none' ? 'the day\'s own average' : f.used === 'slope' ? 'the fitted slope' : `the ${f.n}-day average`;
+// The Energy rate tile's note: which rate, over how many days, and the R² against the floor
+const erShort = (f) => !f || f.used === 'none' ? 'the day\'s own average: no fit yet'
+  : f.used === 'slope' ? `fitted slope · ${f.n} days · fit R² ${f2(f.r2)}`
+  : `${f.n}-day average · ${f.why === 'few' ? `a fit needs ${ER_MIN} days` : f.why === 'r2' ? `fit R² ${f2(f.r2)}, under ${f2(ER_R2)}` : 'fit slope out of range'}`;
+// The figures the Working (E9) shows for the rate on a day
+const erWk = (f, date, own) => !f ? null : {date: dfmt(date), used: f.used, why: f.why, n: f.n, from: f.from ? dfmt(f.from) : '', to: f.to ? dfmt(f.to) : '', a: f.a, b: f.b, c: f.c, useC: f.useC,
+  r2: f.r2, avg: f.avg, rate: f.used === 'none' ? (ok(own) ? own * 1000 : null) : f.rate, min: ER_MIN, floor: ER_R2, sps: (f.sps || []).map((e) => `${f2(e[0])} kgf/cm² on ${e[1]} day${e[1] === 1 ? '' : 's'}`).join(', ')};
+// In words, for notes and the Working: which rate it is and what it rests on.
+function erHow(f) {
+  if (!f || f.used === 'none') return 'the day\'s own kWh ÷ the floor\'s air (no day from 5 Nov 2026 with a compressor reading and loom data yet, so no fit)';
+  const span = `${f.n} day${f.n === 1 ? '' : 's'}, ${dfmt(f.from)} – ${dfmt(f.to)}`;
+  if (f.used === 'slope') return `the fitted slope b over ${span} (kWh = ${f0(f.a)} + ${f2(f.b)} × air in 1,000 ft³${f.useC ? ` + ${f0(f.c)} × set point` : ''}; R² ${f2(f.r2)})`;
+  const why = f.why === 'few' ? `fewer than ${ER_MIN} days for a fit` : f.why === 'r2' ? `the fit's R² ${f2(f.r2)} is under ${f2(ER_R2)}` : `the fit's slope ${f2(f.b)} is not above 0 and below the average`;
+  return `the average over ${span} (the window's total kWh ÷ its total air), because ${why}`;
+}
 // Cost per pick saved, in paise per pick on the costing basis: rupees saved ÷ picks of the same scope and day, where picks are
 // fabric picks ÷ 39.37 (= metres × picks per inch, the costing sheet's PROD PICK), so it compares with the Costing tab's cost per pick.
 const cPicks = (L) => L.reduce((a, x) => a + (ok(x.fpicks) ? x.fpicks : (x.picks || 0)), 0) / 39.37;
@@ -746,7 +788,11 @@ function compDay(date) {
   const L = (D.loomdays || []).filter((x) => x.date === d && x.run > 0), ft3 = L.reduce((a, x) => a + x.cfm * x.run, 0);
   if (!ft3) return null;
   const p = P[d];
-  return {date: d, exact: d === date, kwh: p.kwh, rate: p.rate, rupees: p.rupees, ft3, kwhFt3: p.kwh / ft3, rsFt3: p.rupees / ft3, kwhKm3: p.kwh / (ft3 * 0.0283168) * 1000};
+  // Round V: sFt3 / sRsFt3, the kWh and rupees per ft³ a CFM saving uses (the energy rate: fitted slope, else the window
+  // average; erDay); kwhFt3 / rsFt3 stay the day's own average (Energy per air, the cost of a loom's air)
+  const fit = erDay(d), sFt3 = fit && fit.used !== 'none' ? fit.k : p.kwh / ft3;
+  return {date: d, exact: d === date, kwh: p.kwh, rate: p.rate, rupees: p.rupees, ft3, kwhFt3: p.kwh / ft3, rsFt3: p.rupees / ft3, kwhKm3: p.kwh / (ft3 * 0.0283168) * 1000,
+    fit, sFt3, sRsFt3: p.kwh > 0 ? sFt3 * p.rupees / p.kwh : null};
 }
 // Round U: where a day's compressor kWh comes from (src 'register': the 5-19 Nov 2026 backfill, costing.py comp_backfill)
 function compSrc(d) { const p = ((D.power && D.power.days) || {})[d]; return p && p.src === 'register' ? 'the power register\'s weaving compressor reading' : 'the costing sheet\'s Power (Compressor) line'; }
@@ -754,7 +800,7 @@ function compNote(c, date) {
   if (!c) return 'Compressor power (kWh and rupees) arrives with the costing sheet, from 7 Nov 2026. The money figures appear once a day with that line has loom data.';
   return `Uses the compressor's ${f0(c.kwh)} kWh (${compSrc(c.date)}) at ₹${f2(c.rate)} a unit on ${dfmt(c.date)}${c.exact ? '' : ` (the latest day with a compressor reading; ${dfmt(date)} is not in the costing sheet yet)`}, spread over the ${f0(c.ft3 / 1000)} thousand ft³ the floor drew. Money figures are for one day and ×30 for a month at that day's level.`;
 }
-function moneyKpis(c, kwhLo, kwhHi, picks, scope) {
+function moneyKpis(c, kwhLo, kwhHi, picks, scope, rate) {
   const rng = (lo, hi, fmt) => Math.abs(hi - lo) < 0.5 * (hi >= 100 ? 1 : 0.05) ? fmt(lo) : `${fmt(lo)}–${fmt(hi)}`;
   const rsLo = kwhLo * c.rate, rsHi = kwhHi * c.rate, pLo = ppS(rsLo, picks), pHi = ppS(rsHi, picks);
   return el('div', {class: 'kpis'},
@@ -762,18 +808,19 @@ function moneyKpis(c, kwhLo, kwhHi, picks, scope) {
     kpiC('Money saved', rng(rsLo, rsHi, rs), 'a day', null),
     kpiC('Cost per pick saved', ok(pLo) ? pzR(pLo, pHi) : NA, ok(pLo) ? 'paise per pick' : '', ok(pLo) ? `over ${pn(picks / 1e5, 2)} lakh picks, ${scope}` : 'no picks for that day'),
     kpiC('In a month', rng(rsLo * 30, rsHi * 30, rs), '× 30 days', null),
-    kpiC('Compressor, that day', rs(c.rupees), '', `${f0(c.kwh)} kWh · ₹${f2(c.rate)} a unit`));
+    kpiC('Compressor, that day', rs(c.rupees), '', `${f0(c.kwh)} kWh · ₹${f2(c.rate)} a unit`),
+    rate ? kpiC('Energy rate', f2(c.sFt3 * 1000), 'kWh per 1,000 ft³', erShort(c.fit)) : null);   // Round V: the rate the CFM saving uses
 }
 function cfmMoneyCard(day, date) {
   const c = compDay(date);
   const body = [];
   if (c && day) {
     const saved = (day.now - day.after) * 1440;
-    if (typeof wkPut === 'function') { const kwh = saved * c.kwhFt3, r = kwh * c.rate;   // Round J: the tiles below, for their Working
-      wkPut('E2:kwh', {ft3: saved, kwhFt3: c.kwhFt3}); wkPut('E2:rs', {kwh, rate: c.rate}); wkPut('E2', {kwh, rate: c.rate}); wkPut('A8:cfm', {rs: r, picks: day.cpk}); wkPut('E2:month', {rs: r});
-      wkPut('E3:day', {date: dfmt(c.date), kwh: c.kwh, rate: c.rate, rupees: c.rupees, src: compSrc(c.date)}); }
-    body.push(moneyKpis(c, saved * c.kwhFt3, saved * c.kwhFt3, day.cpk, `${wLabel()} looms on ${dfmt(date)}`));
-    body.push(el('p', {class: 'note', text: `Saved air ${f0(saved)} ft³ a day × ${f2(c.kwhFt3 * 1000)} kWh per 1,000 ft³ × ₹${f2(c.rate)} a unit. Cost per pick saved = rupees saved ÷ the same looms' picks that day, in paise. Picks are fabric picks ÷ 39.37, the costing sheet's basis, so it compares with the Costing tab's cost per pick. In the tables it is per loom or per head group, over that loom's or head group's own picks.`}));
+    if (typeof wkPut === 'function') { const kwh = saved * c.sFt3, r = kwh * c.rate;   // Round J: the tiles below, for their Working
+      wkPut('E2:kwh', {ft3: saved, kwhFt3: c.sFt3, how: erHow(c.fit)}); wkPut('E2:rs', {kwh, rate: c.rate}); wkPut('E2', {kwh, rate: c.rate}); wkPut('A8:cfm', {rs: r, picks: day.cpk}); wkPut('E2:month', {rs: r});
+      wkPut('E3:day', {date: dfmt(c.date), kwh: c.kwh, rate: c.rate, rupees: c.rupees, src: compSrc(c.date)}); wkPut('E9', erWk(c.fit, c.date, c.kwhFt3)); }
+    body.push(moneyKpis(c, saved * c.sFt3, saved * c.sFt3, day.cpk, `${wLabel()} looms on ${dfmt(date)}`, true));
+    body.push(el('p', {class: 'note', text: `Saved air ${f0(saved)} ft³ a day × ${f2(c.sFt3 * 1000)} kWh per 1,000 ft³ × ₹${f2(c.rate)} a unit. The kWh per 1,000 ft³ is the energy rate for the CFM saving: ${erHow(c.fit)}.${c.fit && c.fit.used === 'slope' && c.fit.a > 0 ? ` About ${f0(c.fit.a)} kWh a day of the compressor's energy does not move with the air, so this rate sits below the day's average of ${f2(c.kwhFt3 * 1000)}.` : ''} Cost per pick saved = rupees saved ÷ the same looms' picks that day, in paise. Picks are fabric picks ÷ 39.37, the costing sheet's basis, so it compares with the Costing tab's cost per pick. In the tables it is per loom or per head group, over that loom's or head group's own picks.`}));
   }
   body.push(el('p', {class: 'note', text: compNote(c, date) + ' Pressure savings are on the Pressure tab and are not added to this.'}));
   if (typeof fxRpmGainNote === 'function') body.push(fxRpmGainNote(date, false));   // R2: realisation gained at benchmark RPM (owner, analysis on)
@@ -805,7 +852,7 @@ function airRows() {
     const L = (D.loomdays || []).filter((x) => x.date === d && x.run > 0).map((x) => { const t = x.hg !== 'Unassigned' ? tgt(x.width, x.hg) : null;
       const r = x.hg !== 'Unassigned' && typeof cfmRefs === 'function' ? cfmRefs(x) : {};   // Round U: benchmark and best CFM, as the CFM tab works them
       return {cfm: x.cfm, run: x.run, fpicks: ok(x.fpicks) ? x.fpicks : x.picks, tcfm: t && ok(t.cfm) ? t.cfm : null, bm: ok(r.bm) ? r.bm : null, best: ok(r.best) ? r.best : null}; });
-    return {d, a: airDay(L, P[d] || null)};
+    return {d, a: airDay(L, P[d] ? {...P[d], k: erK(d, null)} : null)};   // Round V: k, the energy rate for the reference line
   }).filter((r) => r.a);
 }
 function apFigs() {
@@ -872,7 +919,7 @@ function airCard() {
   const rb = (v, t) => el('button', {type: 'button', 'aria-pressed': APREF === v ? 'true' : 'false', 'aria-label': `Reference line: ${t}`, text: t, onclick: () => { APREF = v; render(); }});
   const refs = el('div', {class: 'toolbar'}, el('span', {class: 'note', text: 'Reference line'}), el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference line'}, ...AP_REFS.map(([v, t]) => rb(v, t))));
   const lastR = rows.length ? rows.at(-1).a.ref[APREF] : null, gapOf = pick.gap ? figs.find((f) => f.k === pick.gap) : null;
-  const refNote = pick.line ? (lineVals.some(ok) ? `Dashed line, At ${refW}: ${pick.label} with every loom above its ${refW} CFM brought down to it, the rest as they ran${lastR && lastR.none ? ` (${dfmt(rows.at(-1).d)}: ${lastR.none} loom${lastR.none === 1 ? '' : 's'} with no ${refW} CFM)` : ''}.${pick.comp ? ' The compressor\'s kWh and rupees fall in step with the air, at the day\'s own kWh per 1,000 ft³, as in step 1 of Target cost per pick.' : ''}`
+  const refNote = pick.line ? (lineVals.some(ok) ? `Dashed line, At ${refW}: ${pick.label} with every loom above its ${refW} CFM brought down to it, the rest as they ran${lastR && lastR.none ? ` (${dfmt(rows.at(-1).d)}: ${lastR.none} loom${lastR.none === 1 ? '' : 's'} with no ${refW} CFM)` : ''}.${pick.comp ? ` The compressor's kWh fall by the air taken off × the energy rate for the CFM saving (${f2(erRateOf(rows.at(-1).d))} kWh per 1,000 ft³ on ${dfmt(rows.at(-1).d)}: ${erWord(erDay(rows.at(-1).d))}), and the rupees at the day's ₹ a unit, as in step 1 of Target cost per pick.` : ''}`
       : `No At ${refW} line: ${APREF === 'tg' ? `no loom has a target CFM yet (${typeof canEdit === 'function' && canEdit() ? 'set them on Targets' : 'tell the owner'})` : `no loom has a ${refW} CFM on these days: pick a longer period, or another day with the date chip at the top of the page`}.`)
     : gapOf ? `${pick.label} is ${gapOf.label} less its At ${refW} line; tap ${gapOf.label} to see both lines.`
     : `${pick.label} has no reference line: the compressor's energy is taken to fall in step with the floor's air, so this figure would not change with the looms brought down to their ${refW} CFM.`;
@@ -894,6 +941,41 @@ function pressureMoneyCard(pp) {
   body.push(el('p', {class: 'note', text: compNote(c, D.latest) + ' CFM savings are on the CFM tab and are not added to this: lowering pressure also lowers air use, so the two overlap.'}));
   if (typeof fxRpmGainNote === 'function') body.push(fxRpmGainNote(D.latest, true));   // R2: realisation gained at benchmark RPM, whole floor (owner, analysis on)
   return card('What lowering the pressure is worth', 'Compressor energy at the lower set point, in kWh and rupees', ...body);
+}
+// Round V (Divyam, 20 Nov 2026): the Pressure tab's owner-only card, each day's compressor kWh against the energy rate's
+// fit (calc.js erFit): the deviation in kWh and %, labelled as an outlier more than ER_OUT robust standard deviations from
+// it. One point a day; pointing at or tapping the chart shows that day's figures. Its own period (MTD to begin with) and
+// a week line on the average size of the deviation. Never drawn for any other role (so neither searched nor listed).
+const ER_CARD = 'Compressor kWh against the fit';
+let ERPER = 'mtd';
+try { const v = localStorage.getItem('w2-erdev-period'); if (['7', '14', '30', 'mtd', 'range'].includes(v)) ERPER = v; } catch (e) {}
+function erDevRows() {
+  return erSeries().filter((r) => r.d <= D.latest).map((r) => { const f = erDay(r.d); return f && f.day ? {d: r.d, f, x: f.day} : null; }).filter(Boolean);
+}
+function erDevCard() {
+  if (!(typeof fxIsOwner === 'function' && fxIsOwner())) return null;
+  const all = erDevRows(), sub = 'Owner only · each day\'s kWh − the kWh the energy rate\'s fit gives for its air';
+  const last = all.at(-1);
+  if (typeof wkPut === 'function') wkPut('G6', last ? {date: dfmt(last.d), kwh: last.x.kwh, fit: last.x.fit, z: last.x.z, out: last.x.out, how: erWord(last.f)} : null);
+  if (!all.length) return card(ER_CARD, sub, el('p', {class: 'note', text: 'No day from 5 Nov 2026 has both a compressor reading and loom data yet. It fills in with the daily run (it updates the app every hour, 10:40 to 16:40 IST); if it stays empty, see Files per day on Data health.'}));
+  const ds = all.map((r) => r.d), inR = ERPER === 'range' ? new Set(rngDays(ds)) : null, ym = D.latest.slice(0, 7);
+  const rows = ERPER === 'mtd' ? all.filter((r) => r.d.slice(0, 7) === ym) : inR ? all.filter((r) => inR.has(r.d)) : all.slice(-(+ERPER));
+  const b = (v, t, sh) => el('button', {type: 'button', 'aria-pressed': ERPER === v ? 'true' : 'false', 'aria-label': t, onclick: () => { ERPER = v; try { localStorage.setItem('w2-erdev-period', v); } catch (e) {} render(); }}, el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh || t}));
+  const bar = el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days', '7d'), b('14', '14 days', '14d'), b('30', '30 days', '30d'), b('mtd', 'Month to date', 'MTD'), b('range', 'Dates')),
+    ERPER === 'range' ? rngCtl(ds, render) : null, rows.length ? el('span', {class: 'note', text: `${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} day${rows.length === 1 ? '' : 's'}`}) : null,
+    wkPill(wkMean(all.map((r) => ({date: r.d, x: r.x})), D.latest, (r) => erAbsPct(r.x), null, 'down'), {what: 'Average deviation from the fit, either side', fmt: (v) => v.toFixed(2), unit: '%', dunit: ' points'}));
+  const outs = rows.filter((r) => r.x.out);
+  const detail = (i) => { const r = rows[i]; if (!r) return null; const x = r.x;
+    return el('span', {class: 'note'}, `${f0(x.kwh)} kWh against ${f0(x.fit)} fitted (${erWord(r.f)}${r.f.used === 'slope' ? `, b ${f2(r.f.b)}, R² ${f2(r.f.r2)}` : ''}, ${r.f.n} day${r.f.n === 1 ? '' : 's'}): ${sg(x.dev, 0)} kWh`
+      + (ok(x.z) ? ` · ${sg(x.z, 1)} robust standard deviations` : ''), x.out ? el('span', {class: 'pill bad', text: 'outlier'}) : null); };
+  const chart = rows.length ? lineChart({dates: rows.map((r) => r.d), aria: 'Deviation from the fit, % of the fitted kWh, day by day', fmt: (v) => sg(v, 2) + '%', noOpen: true, detail,
+    refs: [{v: 0, label: 'On the fit'}], marks: outs.map((r) => ({date: r.d, text: `outlier, ${sg(r.x.dev, 0)} kWh (${sg(r.x.pct, 2)}%)`, short: 'outlier'})),
+    series: [{name: 'Deviation from the fit, %', vals: rows.map((r) => r.x.pct)}]}) : el('p', {class: 'note', text: 'No day in this period: pick a longer period.'});
+  const f = last.f;
+  const lx = last.x, lastLine = el('p', {class: 'note', text: `${dfmt(last.d)}${last.d === D.latest ? '' : ' (the latest day with a compressor reading)'}: ${f0(lx.kwh)} kWh against ${f0(lx.fit)} kWh fitted, ${wkS(lx.dev, 0)} kWh (${wkS(lx.pct, 2)}%)${ok(lx.z) ? `, ${wkS(lx.z, 1)} robust standard deviations${lx.out ? ': an outlier' : ''}` : ''}.`});
+  return card(ER_CARD, sub, lastLine, bar, chart,
+    el('p', {class: 'note', text: `${outs.length ? `${outs.length} outlier${outs.length === 1 ? '' : 's'} in this period (${outs.map((r) => dfmt(r.d)).join(', ')}): a day more than ${ER_OUT} robust standard deviations from its fit. Check that day's reading in the power register.` : `No outlier in this period (more than ${ER_OUT} robust standard deviations from the fit).`} Each day is set against the fit used for that day, over its own last 30 days, so a past day does not move. The first days have few days to set against, so they sit near 0; outliers are labelled from the ${ER_MIN}th day.`}),
+    el('p', {class: 'note', text: `On ${dfmt(last.d)} the energy rate is ${erHow(f)}.${f.useC ? ` The set point term c is ${f0(f.c)} kWh per kgf/cm², ${f.a + f.b * last.x.air / 1000 + f.c * last.x.sp > 0 ? f1(100 * f.c / (f.a + f.b * last.x.air / 1000 + f.c * last.x.sp)) : '—'}% of the day's fitted kWh: a measured check beside the Pressure tab's ${f1(POWER_PCT)}% rule, which the pressure saving still uses.` : ` The set point term c needs two set points with ${ER_SPDAYS} days or more each in the window (now: ${(f.sps || []).map((e) => `${f2(e[0])} kgf/cm² on ${e[1]} day${e[1] === 1 ? '' : 's'}`).join(', ') || 'no set point history'}), so it is not fitted yet; the pressure saving uses the ${f1(POWER_PCT)}% rule.`}`}));
 }
 // A share of the compressor's energy, in rupees a day on the day shown, with its paise per pick under it (Round F: one
 // figure, the rule only).
@@ -944,7 +1026,7 @@ function tcRun(date) {
   const PL = date === D.latest ? pressLooms() : [];
   const floorT = PL.length ? Math.max(...PL.map((l) => ok(l.tg) ? Math.min(l.main, l.tg) : l.main)) : null;
   const need = pressNeed(floorT, pMargin()), frac = pressFrac(COMP_SP, need, POWER_PCT);
-  const c = compDay(date), comp = c && c.exact ? {kwh: c.kwh, rate: c.rate} : null;
+  const c = compDay(date), comp = c && c.exact ? {kwh: c.kwh, rate: c.rate, k: c.sFt3} : null;   // Round V: k, the energy rate for the CFM saving
   const looms = tcLooms(date);
   const tc = targetCost({day, comp, pack: packRate(days, date), frac, looms});
   return Object.assign(tc, {date, looms, floorT, need, frac, noTgtP: PL.filter((l) => !ok(l.tg)).length, nPress: PL.length, comp: !!comp});

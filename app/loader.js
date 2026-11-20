@@ -14,14 +14,15 @@ const SNAP = new Map();
 const ageDays = (d) => Math.round((Date.parse(new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10)) - Date.parse(d)) / 864e5);
 function applyState(st) {
   if (st.targets) {
-    TG = {}; SINGLE = new Set(); POWER_PCT = (D && D.power && ok(D.power.rule_pct)) ? D.power.rule_pct : 7; COMP_SP = null;
+    TG = {}; SINGLE = new Set(); POWER_PCT = (D && D.power && ok(D.power.rule_pct)) ? D.power.rule_pct : 7; COMP_SP_ROW = null;
     for (const v of st.targets) {
       if (!v || !v.width || !v.hg) continue;
       if (String(v.id || '').startsWith('power__')) { const n = Number(v.main); if (n >= 1 && n <= 30) POWER_PCT = n; }   // compressor energy saved per 1 kgf/cm²
-      else if (String(v.id || '').startsWith('compsp__')) { const n = Number(v.main); if (n > 0 && n <= 15) COMP_SP = n; }   // Round F: the compressor's own set point, kgf/cm² (Pressure tab)
+      else if (String(v.id || '').startsWith('compsp__')) { const n = Number(v.main); if (n > 0 && n <= 15) COMP_SP_ROW = n; }   // Round F: the compressor's own set point, kgf/cm² (Pressure tab); Round V: the fallback when there is no history
       else if (String(v.id || '').startsWith('panna__')) SINGLE.add(v.hg);   // a 280 cm head group switched to single panna
       else TG[key(String(v.width), v.hg)] = v;
     }
+    spSync();   // Round V: the set point in force on the day shown (the history, else that row)
     targetsLoaded = true; pannaLoaded = true;
     TG_RAW = Object.assign({}, TG); SINGLE_RAW = new Set(SINGLE);   // as saved; hgAliasSaved shows them by name, from these
     hgAliasSaved();
