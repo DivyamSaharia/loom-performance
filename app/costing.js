@@ -726,7 +726,7 @@ function dayRulesCard(d, adj, dp, R) {
 }
 
 // ---------------------------------------------------------------- Compressor power: money on the CFM and Pressure tabs
-// Power (Compressor) kWh and rupees come from the costing sheet (D.power, from 07 Nov 2026). One compressor serves both widths,
+// Power (Compressor) kWh and rupees (D.power, from 5 Nov 2026: the power register's on 5-19 Nov (Round U), else the costing sheet's). One compressor serves both widths,
 // so the day's kWh is spread over the whole floor's air (all looms, both widths).
 let POWER_PCT = 7;   // compressor energy saved per 1 kgf/cm² of pressure; set on the Targets tab
 let COMP_SP = null;  // Round F: the compressor's own set point, kgf/cm², typed on the Pressure tab (App targets row compsp__kgf)
@@ -758,9 +758,10 @@ const erK = (date, own) => { const f = erDay(date); return f && f.used !== 'none
 function erRateOf(date) { const f = erDay(date); if (f && f.used !== 'none') return f.rate; const c = compDay(date); return c && c.exact ? c.kwhFt3 * 1000 : null; }
 const erWord = (f) => !f || f.used === 'none' ? 'the day\'s own average' : f.used === 'slope' ? 'the fitted slope' : `the ${f.n}-day average`;
 // The Energy rate tile's note: which rate, over how many days, and the R² against the floor
-const erShort = (f) => !f || f.used === 'none' ? 'the day\'s own average: no fit yet'
-  : f.used === 'slope' ? `fitted slope · ${f.n} days · fit R² ${f2(f.r2)}`
-  : `${f.n}-day average · ${f.why === 'few' ? `a fit needs ${ER_MIN} days` : f.why === 'r2' ? `fit R² ${f2(f.r2)}, under ${f2(ER_R2)}` : 'fit slope out of range'}`;
+// Round W (20 Nov 2026): plain words for plant staff; R² glossed where it shows (1.00 = every day on the line)
+const erShort = (f) => !f || f.used === 'none' ? 'the day\'s own average: too few days for a line yet'
+  : f.used === 'slope' ? `slope of a line through ${f.n} days: the extra kWh per extra 1,000 ft³ · R² ${f2(f.r2)} (1.00 = every day on the line)`
+  : `${f.n}-day average · ${f.why === 'few' ? `a line needs ${ER_MIN} days` : f.why === 'r2' ? `the days sit loosely on a line: R² ${f2(f.r2)}, under ${f2(ER_R2)}` : 'the line\'s slope is out of range'}`;
 // The figures the Working (E9) shows for the rate on a day
 const erWk = (f, date, own) => !f ? null : {date: dfmt(date), used: f.used, why: f.why, n: f.n, from: f.from ? dfmt(f.from) : '', to: f.to ? dfmt(f.to) : '', a: f.a, b: f.b, c: f.c, useC: f.useC,
   r2: f.r2, avg: f.avg, rate: f.used === 'none' ? (ok(own) ? own * 1000 : null) : f.rate, min: ER_MIN, floor: ER_R2, sps: (f.sps || []).map((e) => `${f2(e[0])} kgf/cm² on ${e[1]} day${e[1] === 1 ? '' : 's'}`).join(', ')};
@@ -797,7 +798,7 @@ function compDay(date) {
 // Round U: where a day's compressor kWh comes from (src 'register': the 5-19 Nov 2026 backfill, costing.py comp_backfill)
 function compSrc(d) { const p = ((D.power && D.power.days) || {})[d]; return p && p.src === 'register' ? 'the power register\'s weaving compressor reading' : 'the costing sheet\'s Power (Compressor) line'; }
 function compNote(c, date) {
-  if (!c) return 'Compressor power (kWh and rupees) arrives with the costing sheet, from 7 Nov 2026. The money figures appear once a day with that line has loom data.';
+  if (!c) return `Compressor power (kWh and rupees) starts on 5 Nov 2026: the power register's readings for 5–19 Nov, then the costing sheet's Power (Compressor) line. The money figures appear once a day with a compressor reading has loom data. Next: ${tcNext()}.`;
   return `Uses the compressor's ${f0(c.kwh)} kWh (${compSrc(c.date)}) at ₹${f2(c.rate)} a unit on ${dfmt(c.date)}${c.exact ? '' : ` (the latest day with a compressor reading; ${dfmt(date)} is not in the costing sheet yet)`}, spread over the ${f0(c.ft3 / 1000)} thousand ft³ the floor drew. Money figures are for one day and ×30 for a month at that day's level.`;
 }
 function moneyKpis(c, kwhLo, kwhHi, picks, scope, rate) {
@@ -876,7 +877,7 @@ function apFigs() {
       {k: 'ppPick', id: 'E8:pp', label: 'Compressor cost per pick', unit: 'paise', fmt: f2, get: (a) => a.ppPick, line: (a) => R(a).ppPick, w: (a) => a.picks, wu: 'paise', comp: true, note: () => 'picks = fabric picks ÷ 39.37, as on Costing', put: (a) => ({rupees: a.rupees, fpicks: a.fpicks})}],
     pow: [
       {k: 'kwh', id: 'E3:kwh', label: 'Compressor energy', unit: 'kWh', fmt: f0, get: (a) => a.kwh, line: (a) => R(a).kwh, w: () => 1, wu: 'kWh', comp: true, note: (a, d) => compSrc(d).replace(/^the /, ''), put: (a, d) => ({date: d, kwh: a.kwh, src: compSrc(d)})},
-      {k: 'rupees', id: 'E3:cost', label: 'Cost', unit: '', fmt: rs, get: (a) => a.rupees, line: (a) => R(a).rupees, w: () => 1, wu: '', comp: true, note: (a) => `₹${f2(a.rate)} a unit`, put: (a, d) => ({date: d, kwh: a.kwh, rate: a.rate, rupees: a.rupees, src: compSrc(d)})},
+      {k: 'rupees', id: 'E3:cost', label: 'Cost', unit: '', fmt: rs, get: (a) => a.rupees, line: (a) => R(a).rupees, w: () => 1, wu: '', comp: true, note: (a, d) => `₹${f2(a.rate)} a unit × ${f0(a.kwh)} kWh, ${compSrc(d).replace(/^the /, '')}`, put: (a, d) => ({date: d, kwh: a.kwh, rate: a.rate, rupees: a.rupees, src: compSrc(d)})},
       {k: 'kwhAir', id: 'E3:air', label: 'Energy per air', unit: 'kWh per 1,000 ft³', fmt: f2, get: (a) => a.kwhAir, w: (a) => a.air, wu: 'kWh per 1,000 ft³', comp: true, note: () => 'compressor kWh ÷ floor air', put: (a) => ({kwh: a.kwh, ft3: a.air})},
       {k: 'rsAir', id: 'E3:rsair', label: 'Cost per air', unit: 'per 1,000 ft³', fmt: rsP2, get: (a) => a.rsAir, w: (a) => a.air, wu: 'per 1,000 ft³', comp: true, note: () => 'compressor ₹ ÷ floor air', put: (a) => ({rupees: a.rupees, ft3: a.air})}]};
 }
@@ -962,7 +963,7 @@ function erDevCard() {
   const rows = ERPER === 'mtd' ? all.filter((r) => r.d.slice(0, 7) === ym) : inR ? all.filter((r) => inR.has(r.d)) : all.slice(-(+ERPER));
   const b = (v, t, sh) => el('button', {type: 'button', 'aria-pressed': ERPER === v ? 'true' : 'false', 'aria-label': t, onclick: () => { ERPER = v; try { localStorage.setItem('w2-erdev-period', v); } catch (e) {} render(); }}, el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh || t}));
   const bar = el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days', '7d'), b('14', '14 days', '14d'), b('30', '30 days', '30d'), b('mtd', 'Month to date', 'MTD'), b('range', 'Dates')),
-    ERPER === 'range' ? rngCtl(ds, render) : null, rows.length ? el('span', {class: 'note', text: `${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} day${rows.length === 1 ? '' : 's'}`}) : null,
+    ERPER === 'range' ? rngCtl(ds, render) : null, rows.length ? el('span', {class: 'note', text: `${ERPER === 'mtd' ? 'Month to date: ' : ''}${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} day${rows.length === 1 ? '' : 's'}`}) : null,
     wkPill(wkMean(all.map((r) => ({date: r.d, x: r.x})), D.latest, (r) => erAbsPct(r.x), null, 'down'), {what: 'Average deviation from the fit, either side', fmt: (v) => v.toFixed(2), unit: '%', dunit: ' points'}));
   const outs = rows.filter((r) => r.x.out);
   const detail = (i) => { const r = rows[i]; if (!r) return null; const x = r.x;
@@ -990,7 +991,7 @@ function setRs(x) { const a = saving(x.floor, x.without); return ok(a) ? moneyOn
 function compTrendBlock(s, dates) {
   const P = (D.power && D.power.days) || {};
   const ds = dates.filter((d) => P[d]).map((d) => ({d, c: compDay(d)})).filter((r) => r.c && r.c.exact);
-  if (!ds.length) return card('Compressor cost of this air', 'from the costing sheet, from 7 Nov 2026', el('p', {class: 'note', text: 'No day in this period has a compressor reading yet.'}));
+  if (!ds.length) return card('Compressor cost of this air', 'compressor readings from 5 Nov 2026', el('p', {class: 'note', text: 'No day in this period has a compressor reading yet.'}));
   const mine = (d) => (D.loomdays || []).filter((x) => x.date === d && x.run > 0 && (s.kind === 'loom' ? x.loom === s.loom : String(x.width) === String(s.w) && x.hg === s.hg));
   const air = ds.map((r) => mine(r.d).reduce((a, x) => a + x.cfm * x.run, 0));
   if (typeof wkPut === 'function') { const i = ds.length - 1; wkPut('E6', {date: dfmt(ds[i].d), ft3: air[i], rsFt3: ds[i].c.rsFt3, what: s.kind === 'loom' ? 'loom' : 'head group'}); }   // Round J

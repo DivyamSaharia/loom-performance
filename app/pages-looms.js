@@ -485,7 +485,9 @@ function spTile(pp, M, noM) {
   const need = ok(pp.now) ? `needed ${f2(pp.now)} → ${f2(pp.after)} after the work (floor + ${f2(M)} margin)` : noM;
   const e = typeof spEntry === 'function' ? spEntry(D.latest) : null, since = has && e ? `since ${dfmt(e.from)} · ` : '';   // Round V: the history entry in force
   const unset = SP_HIST && SP_HIST.length && !e ? `none in the set point history on ${dfmt(D.latest)}: ` : 'not set yet: ';
-  const note = since + (has ? '' : (ed ? unset + 'tap to type it · ' : unset + 'tell the owner · ')) + need + (has && ed ? ' · tap to change' : '');
+  // Round W (20 Nov 2026): every role is told when the history could not be read (the tile then shows the last set point saved)
+  const noHist = db && SP_HIST == null ? `the set point history could not be read, so this is the last set point saved: press Refresh (the round arrow); if it stays, ${typeof fxIsOwner === 'function' && fxIsOwner() ? 'see Data health' : 'tell the owner'} · ` : '';
+  const note = noHist + since + (has ? '' : (ed ? unset + 'tap to type it · ' : unset + 'tell the owner · ')) + need + (has && ed ? ' · tap to change' : '');
   const k = el('div', {class: 'kpi' + (ed ? ' tap' : ''), role: ed ? 'button' : null, tabindex: ed ? '0' : null, 'aria-label': ed ? 'Compressor set point: tap to change' : null},
     el('div', {class: 'label', text: 'Compressor set point'}), el('div', {class: 'big'}, has ? f2(COMP_SP) : '—', el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: note}));
   if (ed) { const go = () => { PSP_EDIT = !PSP_EDIT; render(); }; k.addEventListener('click', go); k.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }); }

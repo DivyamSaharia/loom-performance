@@ -788,9 +788,10 @@ function drawRealisation0(box, pend) {
     bar,
     el('p', {class: 'note', text: `Masters as of ${FX.M.version ? fxWhen(FX.M.version.at) : '—'} · ${FX_BASIS_NOTE[FXBASIS]}`}),
     fxCorrectionsCard(FXCOR),
-    el('div', {class: 'kpis'},
+    el('div', {class: 'kpis fx5'},
       tile('Sale value at prevailing rate', DT, 'sale', 'sale_pp', 'sale_ld', false, dl('sale'), spv('sale'), `covers ${fxPct(DT.coverage)} of picks`),
       tile('Realisation', DT, 'real', 'real_pp', 'real_ld', false, dl('real'), spv('real')),
+      fxBeTile(asOf, DT),
       tile('Profit', DT, 'profit', 'profit_pp', 'profit_ld', true, dl('profit', true), spv('profit', true)),
       tile('Realisation, month to date', MT, 'real', 'real_pp', 'real_ld', false, el('span', {class: 'delta flat', text: `${dfmt(MP.from)} to ${dfmt(asOf)} · profit ${MT.costed_ld ? fxMoney(MT.profit) : '—'}`}),
         last7.length > 1 ? (() => { const v = last7.map((d) => { const t = mtdOf(d); return t.priced_ld ? t.real_ld : null; }); return el('div', {}, spark(v, {aria: 'Month-to-date realisation per loom per day, last days', title: 'Month to date, ₹ per loom per day: ' + last7.map((d, i) => `${dfmt(d)} ${fxMoney(v[i])}`).join(' · ')}),
@@ -805,6 +806,22 @@ function drawRealisation0(box, pend) {
   collapseTables(box);
 }
 
+// Round W (Divyam, 20 Nov 2026): the Break-even realisation tile, owner only (the Realisation tab is). The day on the date
+// chip, as the tiles beside it: the same break-even as the Actions chart's line (fxBreakEven), set against the Realisation
+// tile's ₹ per loom per day. No costing day, or no loom running, is a gap with its next step, never ₹0.
+function fxBeTile(date, DT) {
+  const B = fxBreakEven(date);
+  if (typeof wkPut === 'function') wkPut('K7:be', B.wk);
+  const has = ok(B.be), rl = DT.priced_ld ? DT.real_ld : null;
+  const cmp = has && ok(rl) ? el('span', {class: 'delta ' + (rl >= B.be ? 'up-good' : 'up-bad'), text: `Realisation ${fxMoney(rl)} a loom a day: ${fxMoney(Math.abs(rl - B.be))} ${rl >= B.be ? 'above' : 'below'}`})
+    : has ? el('span', {class: 'delta flat', text: 'no realisation to set against it: nothing priced on this day. Next: see Coverage on this tab'}) : null;
+  const why = !B.cd ? `no costing for ${dfmt(date)} yet: it shows once that day's costing file is read. Next: see Files per day on Data health.`
+    : !ok(B.cost) ? `the costing for ${dfmt(date)} has no total expenses. Next: see Files per day on Data health.`
+    : `no loom ran on ${dfmt(date)}, so there is nothing to share the cost over. Next: pick another day with the date chip.`;
+  return el('div', {class: 'card kpi fxkpi fxbe'}, el('div', {class: 'label', text: 'Break-even realisation'}),
+    el('div', {class: 'val'}, has ? fxMoney(B.be) : '—', has ? el('small', {text: 'a loom a day'}) : null),
+    el('div', {class: 'note', text: has ? `(expenses ${fxMoney(B.cd.total)} + cut piece loss ${fxMoney(B.cd.cut || 0)}) ÷ ${B.running} loom${B.running === 1 ? '' : 's'} running` : why}), cmp);
+}
 // Round J: the Realisation tiles' figures, and one loom-day's steps (the costed loom-day with the most picks) for K1 to K6
 function fxWkTiles(DT, MT, dayRows) {
   const t = (what, T, k, costed) => (costed ? T.costed_ld : T.priced_ld) ? {what, v: T[k], ld: costed ? T.costed_ld : T.priced_ld, picks: costed ? T.costed : T.priced, costed} : null;
@@ -1081,14 +1098,21 @@ function fxTargetTiles(kpi, tc, fs) {
 // both widths, because the cost is the whole plant's). Head-group-wise: each head group's realisation per loom-day.
 // A loom-day the analysis cannot price is listed under the chart, never drawn as ₹0.
 let FXBE_ALL = false;
+// The break-even per loom per day on one date, shared by the Actions chart's line and (Round W, 20 Nov 2026) the Realisation
+// tab's Break-even realisation tile: (total expenses + cut piece loss, Costing) ÷ the looms running that day. No costing day
+// = cost and be null (a gap, never 0); wk = the figures the Working (B7, K7:be) works its line from.
+function fxBreakEven(date) {
+  const cd = (typeof cDays === 'function' ? cDays() : []).find((d) => d.date === date);
+  const running = new Set((D.loomdays || []).filter((x) => x.date === date && x.run > 0).map((x) => x.loom)).size;
+  const cost = cd && ok(cd.total) ? cd.total + (cd.cut || 0) : null, be = fcBreakEven(cost, running);
+  return {cd, running, cost, be, wk: cost != null ? {cost, total: cd.total, cut: cd.cut || 0, looms: running} : null};
+}
 function fxBreakEvenChart(date) {
   if (!fxOn()) return null;
   const A = fxAll();
   if (!A) return el('p', {class: 'note', text: 'Loom realisation against break-even: loading the fabric masters…'});
-  const cd = (typeof cDays === 'function' ? cDays() : []).find((d) => d.date === date);
-  const running = new Set((D.loomdays || []).filter((x) => x.date === date && x.run > 0).map((x) => x.loom)).size;
-  const cost = cd && ok(cd.total) ? cd.total + (cd.cut || 0) : null, be = fcBreakEven(cost, running);
-  if (typeof wkPut === 'function') wkPut('B7', cost != null ? {cost, total: cd.total, cut: cd.cut || 0, looms: running} : null);   // Round J
+  const {cd, running, cost, be, wk} = fxBreakEven(date);
+  if (typeof wkPut === 'function') wkPut('B7', wk);   // Round J
   const R = A.rows.filter((r) => r.date === date && inW(r.width)), hg = bv('a-real') === 'hg';
   const G = (hg ? fcGroup(R, (r) => r.hg + '|' + r.width) : fcGroup(R, (r) => r.loom)).map((g) => {
     const [h, w] = hg ? g.key.split('|') : [[...new Set(g.rows.map((r) => r.hg))].join(', '), [...new Set(g.rows.map((r) => r.width))].join('+')];
