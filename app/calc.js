@@ -555,7 +555,24 @@ function airDay(L, comp) {
     apk: fp > 0 ? 1000 * air / fp : null, tapk: fp > 0 && nT ? 1000 * tair / fp : null,
     kwh: c ? c.kwh : null, rate: c ? c.rate : null, rupees: c ? c.rupees : null,
     rsCfm: c ? c.rupees / cfm : null, kwhLakh: c && picks > 0 ? 1e5 * c.kwh / picks : null, ppPick: c && picks > 0 ? 100 * c.rupees / picks : null,
-    kwhAir: c ? 1000 * c.kwh / air : null, rsAir: c ? 1000 * c.rupees / air : null};
+    kwhAir: c ? 1000 * c.kwh / air : null, rsAir: c ? 1000 * c.rupees / air : null,
+    ref: {bm: airRef(R, 'bm', air, run, fp, c), best: airRef(R, 'best', air, run, fp, c), tg: airRef(R, 'tcfm', air, run, fp, c)}};
+}
+// Round U (Divyam, 20 Nov 2026): the card's reference line, one per reference (bm benchmark, best, tg target; key = the
+// loom-day field holding that reference CFM). Each loom above its reference is brought down to it, a loom at or below it
+// or with none stays as it ran (counted in `none`), as the at-target figures of Round T did. The compressor's kWh and
+// rupees fall in step with the air, at the day's own kWh per ft³ (as Target cost per pick step 1), so Cost per CFM,
+// Energy per air and Cost per air have no line (they would not move). No loom with that reference = every figure null.
+// over / overApk: now − the line (CFM; ft³ per 1,000 picks), never below 0.
+function airRef(R, key, air, run, fp, c) {
+  let ra = 0, n = 0;
+  for (const x of R) { const v = x[key], a = x.cfm * x.run; if (ok(v)) { n++; ra += Math.min(x.cfm, v) * x.run; } else ra += a; }
+  const none = R.length - n;
+  if (!n) return {n, none, air: null, cfm: null, over: null, lcfm: null, apk: null, overApk: null, kwh: null, rupees: null, kwhLakh: null, ppPick: null};
+  const f = air > 0 ? ra / air : null, picks = fp / 39.37, kwh = c && ok(f) ? c.kwh * f : null, rupees = c && ok(f) ? c.rupees * f : null;
+  return {n, none, air: ra, cfm: ra / 1440, over: (air - ra) / 1440, lcfm: run > 0 ? ra / run : null,
+    apk: fp > 0 ? 1000 * ra / fp : null, overApk: fp > 0 ? 1000 * (air - ra) / fp : null,
+    kwh, rupees, kwhLakh: ok(kwh) && picks > 0 ? 1e5 * kwh / picks : null, ppPick: ok(rupees) && picks > 0 ? 100 * rupees / picks : null};
 }
 
 // ================================================================ Round F (Divyam, 18 Nov 2026): set point and target tiles
@@ -822,18 +839,20 @@ const WKL = {
   G3k: (d) => { if (!d || !ok(d.frac)) return null; const v = d.frac * d.kwh; return wkOut(`${wkF(d.frac * 100, 1)}% of the compressor's ${wkN(d.kwh)} kWh`, f0(v), 'kWh a day', v); },
   E2r: (d) => { if (!d || !ok(d.kwh)) return null; const v = d.kwh * d.rate; return wkOut(`${wkN(d.kwh, 1)} kWh × ₹${wkF(d.rate, 2)} a unit`, wkR(v), 'a day', v); },
   E2m: (d) => { if (!d || !ok(d.rs)) return null; return wkOut(`${wkR(d.rs, 2)} a day × 30 days`, wkR(d.rs * 30), '', d.rs * 30); },
-  E3d: (d) => d && ok(d.rupees) ? wkOut(`the costing sheet's Power (Compressor) line on ${d.date}, ${wkN(d.kwh)} kWh at ₹${wkF(d.rate, 2)} a unit`, wkR(d.rupees), '', d.rupees, ': ') : null,
-  E3k: (d) => d && ok(d.kwh) ? wkOut(`the costing sheet's Power (Compressor) line on ${d.date}`, f0(d.kwh), 'kWh', d.kwh, ': ') : null,
+  // Round U: d.src names where the kWh came from (5-19 Nov 2026: the power register, at the costing sheet's ₹ a unit)
+  E3d: (d) => d && ok(d.rupees) ? wkOut(`${d.src || 'the costing sheet\'s Power (Compressor) line'} on ${d.date}, ${wkN(d.kwh)} kWh at ₹${wkF(d.rate, 2)} a unit`, wkR(d.rupees), '', d.rupees, ': ') : null,
+  E3k: (d) => d && ok(d.kwh) ? wkOut(`${d.src || 'the costing sheet\'s Power (Compressor) line'} on ${d.date}`, f0(d.kwh), 'kWh', d.kwh, ': ') : null,
   E3e: (d) => { if (!d || !(d.ft3 > 0)) return null; const v = d.kwh / d.ft3 * 1000;   // Round T: ft³ only
     return wkOut(`${wkN(d.kwh)} kWh ÷ ${wkN(d.ft3)} ft³ of floor air × 1,000`, wkF(v, 2), 'kWh per 1,000 ft³', v); },
   E3a: (d) => { if (!d || !(d.ft3 > 0)) return null; const v = d.rupees / d.ft3 * 1000; return wkOut(`${wkR(d.rupees)} ÷ ${wkN(d.ft3)} ft³ of floor air × 1,000`, wkR(v, 2), 'per 1,000 ft³', v); },
   // Round T (20 Nov 2026): the CFM and Air per 1,000 picks views of the air and compressor card (calc.js airDay)
-  E7t: (d) => { if (!d || !ok(d.tair)) return null; const v = d.tair / 1440;
-    return wkOut(`${wkN(d.air)} ft³ now − ${wkN(d.air - d.tair)} ft³ (each loom above its target CFM brought down to it${d.noTarget ? `; ${d.noTarget} loom${d.noTarget === 1 ? '' : 's'} with no target as ${d.noTarget === 1 ? 'it' : 'they'} ran` : ''}) = ${wkN(d.tair)} ft³; ÷ 1,440 minutes`, f0(v), 'CFM', v); },
+  // Round U (20 Nov 2026): the gap to the reference line (calc.js airRef), on the switch's reference (d.w)
+  E7o: (d) => { if (!d || !ok(d.rair)) return null; const v = (d.air - d.rair) / 1440;
+    return wkOut(`${wkN(d.air)} ft³ now − ${wkN(d.rair)} ft³ with each loom above its ${d.w} CFM brought down to it${d.none ? ` (${d.none} loom${d.none === 1 ? '' : 's'} with no ${d.w} CFM as ${d.none === 1 ? 'it' : 'they'} ran)` : ''} = ${wkN(d.air - d.rair)} ft³; ÷ 1,440 minutes`, f0(v), 'CFM', v); },
   E7r: (d) => { if (!d || !ok(d.rupees) || !(d.air > 0)) return null; const c = d.air / 1440, v = d.rupees / c;
     return wkOut(`${wkR(d.rupees)} ÷ ${wkF(c, 2)} CFM (${wkN(d.air)} ft³ ÷ 1,440 minutes)`, wkR(v, 2), 'a day per CFM', v); },
-  E8t: (d) => { if (!d || !(d.fpicks > 0) || !ok(d.tair)) return null; const v = 1000 * d.tair / d.fpicks;
-    return wkOut(`${wkN(d.tair)} ft³ with every loom at or below its target CFM ÷ ${wkN(d.fpicks)} fabric picks × 1,000`, wkF(v, 1), 'ft³ per 1,000 picks', v); },
+  E8o: (d) => { if (!d || !(d.fpicks > 0) || !ok(d.rair)) return null; const v = 1000 * (d.air - d.rair) / d.fpicks;
+    return wkOut(`(${wkN(d.air)} ft³ now − ${wkN(d.rair)} ft³ with each loom above its ${d.w} CFM brought down to it) ÷ ${wkN(d.fpicks)} fabric picks × 1,000`, wkF(v, 1), 'ft³ per 1,000 picks', v); },
   E8k: (d) => { if (!d || !ok(d.kwh) || !(d.fpicks > 0)) return null; const p = d.fpicks / 39.37, v = 1e5 * d.kwh / p;
     return wkOut(`${wkN(d.kwh)} kWh ÷ ${wkN(p)} picks (${wkN(d.fpicks)} fabric picks ÷ 39.37) × 1,00,000`, f0(v), 'kWh per lakh picks', v); },
   E8r: (d) => { if (!d || !ok(d.rupees) || !(d.fpicks > 0)) return null; const p = d.fpicks / 39.37, v = 100 * d.rupees / p;
