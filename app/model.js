@@ -234,7 +234,7 @@ const SORT_DEFS = [
   [/^Reference vs running CFM/, 'Worth:d', 'Excess:d', 'Excess air:d'],
   [/^Reference vs running effective RPM/, 'Lost realisation:d', 'Shortfall:d', 'Gained if fixed:d'],
   [/^Reference vs running pressure/, 'Excess:d', 'Energy saved:d'],
-  [/^(Total CFM by day|Picks by day|Floor by day|Days|File health|Corrections)$/, 'Date:d', 'Day:d'],
+  [/^(Excess CFM by day|Picks by day|Floor by day|Days|File health|Corrections)$/, 'Date:d', 'Day:d'],
   [/^Head groups holding the floor up/, 'Days at top:d'],
   [/^Powered down on /, 'Powered down:d'], [/^Consistently low efficiency/, 'Below line:d'],
   [/^By quality$/, 'Rate:d'], [/^Loom-wise: /, 'Rate:d'], [/^Flagged looms/, 'Rate:d'], [/^Qualities breaking/, 'Median rate:d'],

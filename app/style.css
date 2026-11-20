@@ -564,6 +564,8 @@ dialog.nsheet::backdrop{background:rgba(0,0,0,.35)}
 /* Round F (18 Nov 2026): tiles that open something (the compressor set point editor, Target cost per pick) */
 .kpi.tap{cursor:pointer;outline-offset:2px}.kpi.tap:hover{box-shadow:0 0 0 2px var(--accent, #4a7) inset}.kpi.tap:focus-visible{outline:2px solid var(--accent, #4a7)}
 .kpi.tap .label::after{content:' ›';color:var(--muted)}
+/* Round T (20 Nov 2026): the Air and compressor card's tiles pick the figure its line charts; the one charted is ringed */
+.kpi.tap.sel{outline:2px solid var(--accent, #4a7);outline-offset:5px;border-radius:4px}
 .tcsteps table{table-layout:fixed;width:100%}.tcsteps th:first-child{width:auto}.tcsteps th:nth-child(2),.tcsteps th:nth-child(3){width:110px}
 .tcsteps td:first-child,.tcsteps td:first-child .note,.tcsteps td:first-child .link{white-space:normal;overflow-wrap:anywhere;text-align:left}
 .tcsteps .tcsame{display:inline-block;white-space:normal;overflow-wrap:anywhere;text-align:right}

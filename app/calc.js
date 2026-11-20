@@ -531,6 +531,33 @@ function wkMean(days, end, get, w, better) {
   return wkBy(pts, end, (p) => p.date, fig, better);
 }
 
+// ================================================================ Round T (Divyam, 20 Nov 2026): the air and compressor card
+// One day of the whole floor (both widths: one compressor serves them) for the CFM tab's top card, its three views
+// (CFM, Air per 1,000 picks, Compressor power). L: the day's loom-days that ran [{cfm, run, fpicks, tcfm}] (tcfm = the
+// head group's target CFM, null where it has none); comp: that day's own Power (Compressor) line {kwh, rate, rupees}, or
+// null (a day with no reading is a gap for the compressor figures, never borrowed and never 0).
+// Air = Σ CFM × minutes run (ft³). Floor CFM = air ÷ 1,440 (the 24-h average draw). Average CFM per loom = air ÷ minutes
+// run (CFM while running). At target: each loom with a target CFM at the lower of its CFM and the target (Target cost per
+// pick, step 1); a loom with no target stays as it ran and is counted in noTarget; with no target on any loom the
+// target figures are a gap (null), never the day's own figures. Air per 1,000 picks is on fabric picks
+// (as the Air column and the benchmarks); the per-pick figures are on picks = fabric picks ÷ 39.37 (the costing basis).
+function airDay(L, comp) {
+  const R = (L || []).filter((x) => x.run > 0 && ok(x.cfm));
+  if (!R.length) return null;
+  let air = 0, run = 0, fp = 0, tair = 0, nT = 0;
+  for (const x of R) {
+    const a = x.cfm * x.run; air += a; run += x.run; fp += ok(x.fpicks) ? x.fpicks : 0;
+    if (ok(x.tcfm)) { nT++; tair += Math.min(x.cfm, x.tcfm) * x.run; } else tair += a;
+  }
+  const picks = fp / 39.37, cfm = air / 1440, c = comp && ok(comp.kwh) && ok(comp.rupees) && air > 0 ? comp : null;
+  return {looms: R.length, noTarget: R.length - nT, air, run, fpicks: fp, picks, tair: nT ? tair : null,
+    cfm, tcfm: nT ? tair / 1440 : null, gap: nT ? (tair - air) / 1440 : null, lcfm: run > 0 ? air / run : null,
+    apk: fp > 0 ? 1000 * air / fp : null, tapk: fp > 0 && nT ? 1000 * tair / fp : null,
+    kwh: c ? c.kwh : null, rate: c ? c.rate : null, rupees: c ? c.rupees : null,
+    rsCfm: c ? c.rupees / cfm : null, kwhLakh: c && picks > 0 ? 1e5 * c.kwh / picks : null, ppPick: c && picks > 0 ? 100 * c.rupees / picks : null,
+    kwhAir: c ? 1000 * c.kwh / air : null, rsAir: c ? 1000 * c.rupees / air : null};
+}
+
 // ================================================================ Round F (Divyam, 18 Nov 2026): set point and target tiles
 // ---- Pressure. The set point needed = the floor (the highest main pressure of the day) + the margin from the Config
 // sheet's Settings tab (setpoint_margin_kgf, kgf/cm²; it replaced the 0.2 bar line drop). The saving, as a share of the
@@ -797,9 +824,20 @@ const WKL = {
   E2m: (d) => { if (!d || !ok(d.rs)) return null; return wkOut(`${wkR(d.rs, 2)} a day × 30 days`, wkR(d.rs * 30), '', d.rs * 30); },
   E3d: (d) => d && ok(d.rupees) ? wkOut(`the costing sheet's Power (Compressor) line on ${d.date}, ${wkN(d.kwh)} kWh at ₹${wkF(d.rate, 2)} a unit`, wkR(d.rupees), '', d.rupees, ': ') : null,
   E3k: (d) => d && ok(d.kwh) ? wkOut(`the costing sheet's Power (Compressor) line on ${d.date}`, f0(d.kwh), 'kWh', d.kwh, ': ') : null,
-  E3e: (d) => { if (!d || !(d.ft3 > 0)) return null; const v = d.kwh / (d.ft3 * 0.0283168) * 1000;
-    return wkOut(`${wkN(d.kwh)} kWh ÷ ${wkN(d.ft3)} ft³ of floor air = ${wkF(d.kwh / d.ft3 * 1000, 2)} kWh per 1,000 ft³; ÷ 0.0283168 m³ per ft³`, wkF(v, 1), 'kWh per 1,000 m³', v); },
-  E3a: (d) => { if (!d || !(d.ft3 > 0)) return null; const v = d.rupees / d.ft3 * 1000; return wkOut(`${wkR(d.rupees)} ÷ ${wkN(d.ft3)} ft³ of floor air × 1,000`, wkR(v), 'per 1,000 ft³', v); },
+  E3e: (d) => { if (!d || !(d.ft3 > 0)) return null; const v = d.kwh / d.ft3 * 1000;   // Round T: ft³ only
+    return wkOut(`${wkN(d.kwh)} kWh ÷ ${wkN(d.ft3)} ft³ of floor air × 1,000`, wkF(v, 2), 'kWh per 1,000 ft³', v); },
+  E3a: (d) => { if (!d || !(d.ft3 > 0)) return null; const v = d.rupees / d.ft3 * 1000; return wkOut(`${wkR(d.rupees)} ÷ ${wkN(d.ft3)} ft³ of floor air × 1,000`, wkR(v, 2), 'per 1,000 ft³', v); },
+  // Round T (20 Nov 2026): the CFM and Air per 1,000 picks views of the air and compressor card (calc.js airDay)
+  E7t: (d) => { if (!d || !ok(d.tair)) return null; const v = d.tair / 1440;
+    return wkOut(`${wkN(d.air)} ft³ now − ${wkN(d.air - d.tair)} ft³ (each loom above its target CFM brought down to it${d.noTarget ? `; ${d.noTarget} loom${d.noTarget === 1 ? '' : 's'} with no target as ${d.noTarget === 1 ? 'it' : 'they'} ran` : ''}) = ${wkN(d.tair)} ft³; ÷ 1,440 minutes`, f0(v), 'CFM', v); },
+  E7r: (d) => { if (!d || !ok(d.rupees) || !(d.air > 0)) return null; const c = d.air / 1440, v = d.rupees / c;
+    return wkOut(`${wkR(d.rupees)} ÷ ${wkF(c, 2)} CFM (${wkN(d.air)} ft³ ÷ 1,440 minutes)`, wkR(v, 2), 'a day per CFM', v); },
+  E8t: (d) => { if (!d || !(d.fpicks > 0) || !ok(d.tair)) return null; const v = 1000 * d.tair / d.fpicks;
+    return wkOut(`${wkN(d.tair)} ft³ with every loom at or below its target CFM ÷ ${wkN(d.fpicks)} fabric picks × 1,000`, wkF(v, 1), 'ft³ per 1,000 picks', v); },
+  E8k: (d) => { if (!d || !ok(d.kwh) || !(d.fpicks > 0)) return null; const p = d.fpicks / 39.37, v = 1e5 * d.kwh / p;
+    return wkOut(`${wkN(d.kwh)} kWh ÷ ${wkN(p)} picks (${wkN(d.fpicks)} fabric picks ÷ 39.37) × 1,00,000`, f0(v), 'kWh per lakh picks', v); },
+  E8r: (d) => { if (!d || !ok(d.rupees) || !(d.fpicks > 0)) return null; const p = d.fpicks / 39.37, v = 100 * d.rupees / p;
+    return wkOut(`${wkR(d.rupees)} ÷ ${wkN(p)} picks (${wkN(d.fpicks)} fabric picks ÷ 39.37) × 100`, wkF(v, 2), 'paise per pick', v); },
   E6: (d) => { if (!d || !ok(d.rsFt3)) return null; const v = d.ft3 * d.rsFt3; return wkOut(`${d.date}: this ${d.what}'s ${wkN(d.ft3)} ft³ × the floor's ₹${wkF(d.rsFt3 * 1000, 2)} per 1,000 ft³`, wkR(v), '', v); },
   // ---- F. Effective RPM
   F1n: (d) => d && ok(d.now) ? wkOut(`${wkN(d.now)} fabric picks ÷ 39.37 = ${wkN(d.now / 39.37)} picks`, wkF(d.now / 39.37 / 1e5, 2), 'lakh', d.now / 39.37 / 1e5) : null,

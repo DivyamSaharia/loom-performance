@@ -773,6 +773,7 @@ function pageCfm() {
   const s = el('section', {class: 'page', id: 'cfm'});
   s.append(el('div', {}, el('h2', {text: `CFM, ${wLabel()} looms, ${dfmt(D.latest)}`}),
     el('p', {class: 'lead', text: 'The compressor supplies the sum of every loom\'s air, so each loom brought down to its reference cuts total demand directly. Benchmark CFM is the head group\'s benchmark air per 1,000 picks (10th percentile) at the RPM the loom actually ran, so a loom is not rewarded for running slow; best CFM is the best loom-day\'s air per 1,000 picks at that RPM. Click any benchmark or best figure to see the loom runs behind it.'})));
+  s.append(airCard());   // Round T (Divyam, 20 Nov 2026): the air and compressor card, first on the tab
   const recs = latestRecs().map((x) => ({x, ...cfmRefs(x)}));
   const day = cfmDay(D.latest);
   const cc = compDay(D.latest);
@@ -793,7 +794,6 @@ function pageCfm() {
       kp('Compressor energy saved', [f1(pct)], '%', 'of compressor air; energy follows air on a variable-speed compressor')),
     el('p', {class: 'note', text: `Each loom above its reference is brought down to it; looms already below stay where they are. ${above.length} loom${above.length === 1 ? ' is' : 's are'} above reference by more than ${S().tol_air_pct}%.${noRef ? ` ${noRef} loom${noRef === 1 ? ' has' : 's have'} no head group or benchmark and stay as they are.` : ''} Pressure savings are on the Pressure tab and are not added here.`})));
   s.append(cfmMoneyCard(day, D.latest));
-  s.append(compPowerCard());   // 12 Nov 2026 (Divyam): third from the top
   s.append(cfmStackCard());
 
   // 12 Nov 2026: one card, Loom-wise / Head-group-wise (the head-group bars were their own card before)
@@ -846,9 +846,9 @@ function pageCfm() {
 
   s.append(trendCard('cfm', trDefault(recs.map((r) => ({x: r.x, w: r.ex * r.x.run})), CVIEW, sorted[0] && sorted[0].x)));
   const hist = (D.complete_days || []).slice().reverse().slice(0, 14).map((d) => ({d, c: cfmDay(d)})).filter((h) => h.c);
-  s.append(card('Total CFM by day', 'Both shifts, 24-h average draw; "at reference" uses today\'s benchmarks, best and targets for every day',
-    table(['Date', ['Total now', 'CFM'], ['At reference', 'CFM'], ['Excess', 'CFM'], ['Saving', '% of air'], ['Air in the day', 'ft³']],
-      hist.map((h) => [dfmt(h.d), f0(h.c.now), f0(h.c.after), f0(h.c.now - h.c.after), f1(100 * (h.c.now - h.c.after) / h.c.now), f0(h.c.air)]), [1, 2, 3, 4, 5])));
+  s.append(card('Excess CFM by day', 'Both shifts, 24-h average draw above the reference; the reference uses today\'s benchmarks, best and targets for every day',   // Round T: the excess only
+    table(['Date', ['Excess', 'CFM over reference'], ['Excess air', 'ft³ in the day'], ['Share', '% of the floor\'s air']],
+      hist.map((h) => [dfmt(h.d), f0(h.c.now - h.c.after), f0((h.c.now - h.c.after) * 1440), f1(100 * (h.c.now - h.c.after) / h.c.now)]), [1, 2, 3])));
   return s;
 }
 
@@ -869,29 +869,27 @@ function cfmHgRows(recs) {
   rows.sort((a, b) => b.ex - a.ex || a.label.localeCompare(b.label));
   return {rows, none};
 }
-// Total CFM day by day (24-h average draw), split into what the looms need at their reference and the excess above it,
-// the excess split by the head groups with the most of it over the period. Today's references for every day, as the table.
+// Excess CFM day by day (24-h average draw): the CFM above each loom's reference, split by the head groups with the most of
+// it over the period. Today's references for every day, as the table. Round T (Divyam, 20 Nov 2026): the excess only; the
+// floor's total CFM by day is the Floor CFM line of the Air and compressor card.
 const EXC_COLS = ['var(--bad)', 'var(--warn)', '#8e6bbf', 'var(--info)', '#c77d1a', '#d16ba5', 'var(--series)'];
-let CSTK = 'both';   // 'both' = needed and excess; 'ex' = the excess alone, on its own scale
+const EXC_CARD = 'Excess CFM by day, by head group';
 function cfmStackCard() {
   const dates = (D.complete_days || []).filter((d) => d <= D.latest).slice(-14);
-  const need = dates.map(() => 0), exc = new Map();
+  const tot = dates.map(() => 0), exc = new Map();
   dates.forEach((d, i) => {
     for (const x of (D.loomdays || []).filter((y) => y.date === d && inW(y.width) && y.run > 0)) {
-      const r = cfmRefs(x); need[i] += r.after * x.run / 1440;
+      const r = cfmRefs(x); tot[i] += x.cfm * x.run / 1440;
       if (r.ex > 0) { const k = `${x.hg} · ${x.width}`; if (!exc.has(k)) exc.set(k, dates.map(() => 0)); exc.get(k)[i] += r.ex * x.run / 1440; }
     }
   });
   const top = topLayers([...exc.entries()].map(([name, vals]) => ({name, vals})), 6, 'Other head groups');
   const exL = top.map((l, i) => ({...l, name: l.other ? `${l.name} (${l.other})` : l.name, color: l.other ? EXC_COLS[6] : EXC_COLS[i]}));
-  const layers = CSTK === 'ex' ? exL : [{name: 'Needed at reference', color: 'var(--muted)', fade: true, vals: need}, ...exL];
-  const b = (v, t) => el('button', {type: 'button', 'aria-pressed': CSTK === v ? 'true' : 'false', text: t, onclick: () => { CSTK = v; render(); }});
-  const exTot = dates.map((_, i) => exL.reduce((a, l) => a + (l.vals[i] || 0), 0)), sh = dates.length && need.at(-1) + exTot.at(-1) ? 100 * exTot.at(-1) / (need.at(-1) + exTot.at(-1)) : null;
-  return card('Total CFM by day: needed and excess', `${dates.length} days to ${dfmt(D.latest)} · 24-h average draw · excess by head group`,
-    el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'What the bars show'}, b('both', 'Needed and excess'), b('ex', 'Excess only')),
-      ok(sh) ? el('span', {class: 'note', text: `Excess on ${dfmt(D.latest)}: ${f0(exTot.at(-1))} CFM, ${f1(sh)}% of the total`}) : null),
-    dates.length ? hlStack({dates, layers, fmt: f0, aria: CSTK === 'ex' ? 'Excess CFM by day, by head group' : 'Total CFM by day, needed at reference and excess by head group'}, 'cfm-' + CSTK) : el('div', {class: 'empty', text: 'No complete day yet.'}),
-    el('p', {class: 'note', text: `Each bar is the floor's total CFM that day. The grey part is what every loom would draw at its reference (looms already below it at their own figure); the coloured parts are the excess above it, by the head groups with the most excess over these days. Uses today's ${CMODE === 'bm' ? 'benchmarks' : CMODE === 'best' ? 'best loom-days' : 'targets'} for every day, as the "Total CFM by day" table below. "Excess only" draws the coloured part on its own scale. Hover a bar for its figures.`}));
+  const exTot = dates.map((_, i) => exL.reduce((a, l) => a + (l.vals[i] || 0), 0)), sh = dates.length && tot.at(-1) ? 100 * exTot.at(-1) / tot.at(-1) : null;
+  return card(EXC_CARD, `${dates.length} days to ${dfmt(D.latest)} · 24-h average draw above the reference`,
+    ok(sh) ? el('div', {class: 'toolbar'}, el('span', {class: 'note', text: `Excess on ${dfmt(D.latest)}: ${f0(exTot.at(-1))} CFM, ${f1(sh)}% of the floor's air`})) : null,
+    dates.length ? hlStack({dates, layers: exL, fmt: f0, aria: 'Excess CFM by day, by head group'}, 'cfm-ex') : el('div', {class: 'empty', text: 'No complete day yet: the bars appear after the first full day of loom data. Check again after the daily run.'}),
+    el('p', {class: 'note', text: `Each bar is the CFM the looms drew above their reference that day (looms at or below it add nothing), split by the head groups with the most excess over these days. Uses today's ${CMODE === 'bm' ? 'benchmarks' : CMODE === 'best' ? 'best loom-days' : 'targets'} for every day, as the "Excess CFM by day" table below. The floor's total CFM by day is the Floor CFM line in the Air and compressor card (CFM view). Hover a bar for its figures.`}));
 }
 
 // ---------------------------------------------------------------- Effective RPM

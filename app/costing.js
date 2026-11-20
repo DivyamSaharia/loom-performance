@@ -771,32 +771,91 @@ function cfmMoneyCard(day, date) {
       wkPut('E2:kwh', {ft3: saved, kwhFt3: c.kwhFt3}); wkPut('E2:rs', {kwh, rate: c.rate}); wkPut('E2', {kwh, rate: c.rate}); wkPut('A8:cfm', {rs: r, picks: day.cpk}); wkPut('E2:month', {rs: r});
       wkPut('E3:day', {date: dfmt(c.date), kwh: c.kwh, rate: c.rate, rupees: c.rupees}); }
     body.push(moneyKpis(c, saved * c.kwhFt3, saved * c.kwhFt3, day.cpk, `${wLabel()} looms on ${dfmt(date)}`));
-    body.push(el('p', {class: 'note', text: `Saved air ${f0(saved)} ft³ a day × ${f2(c.kwhFt3 * 1000)} kWh per 1,000 ft³ (${f1(c.kwhKm3)} kWh per 1,000 m³) × ₹${f2(c.rate)} a unit. Cost per pick saved = rupees saved ÷ the same looms' picks that day, in paise. Picks are fabric picks ÷ 39.37, the costing sheet's basis, so it compares with the Costing tab's cost per pick. In the tables it is per loom or per head group, over that loom's or head group's own picks.`}));
+    body.push(el('p', {class: 'note', text: `Saved air ${f0(saved)} ft³ a day × ${f2(c.kwhFt3 * 1000)} kWh per 1,000 ft³ × ₹${f2(c.rate)} a unit. Cost per pick saved = rupees saved ÷ the same looms' picks that day, in paise. Picks are fabric picks ÷ 39.37, the costing sheet's basis, so it compares with the Costing tab's cost per pick. In the tables it is per loom or per head group, over that loom's or head group's own picks.`}));
   }
   body.push(el('p', {class: 'note', text: compNote(c, date) + ' Pressure savings are on the Pressure tab and are not added to this.'}));
   if (typeof fxRpmGainNote === 'function') body.push(fxRpmGainNote(date, false));   // R2: realisation gained at benchmark RPM (owner, analysis on)
   return card('What the CFM saving is worth', 'Excess air brought down to the reference, in kWh and rupees', ...body);
 }
-// Period for the compressor trend line: 7, 14 or 30 days, all days with a reading (default) or the shared "Dates" range.
+// Period for the air and compressor card's line: 7, 14 or 30 days, all days (default) or the shared "Dates" range.
 let CPWPER = 'all';
 try { const v = localStorage.getItem('w2-comp-period'); if (['7', '14', '30', 'all', 'range'].includes(v)) CPWPER = v; } catch (e) {}
-function compPowerCard() {
-  const P = (D.power && D.power.days) || {}, ds = Object.keys(P).sort();
-  if (!ds.length) return card('Compressor power', 'from the costing sheet', el('p', {class: 'note', text: compNote(null)}));
-  const allRows = ds.map((d) => ({d, c: compDay(d)})).filter((r) => r.c);
-  const last = allRows.at(-1);
-  const inR = CPWPER === 'range' ? new Set(rngDays(allRows.map((r) => r.d))) : null;
-  const rows = CPWPER === 'all' ? allRows : inR ? allRows.filter((r) => inR.has(r.d)) : allRows.slice(-(+CPWPER));
-  const b = (v, t) => el('button', {type: 'button', 'aria-pressed': CPWPER === v ? 'true' : 'false', text: t, onclick: () => { CPWPER = v; try { localStorage.setItem('w2-comp-period', v); } catch (e) {} render(); }});
-  const bar = allRows.length > 1 ? el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days'), b('14', '14 days'), b('30', '30 days'), b('all', 'All days'), b('range', 'Dates')),
-    CPWPER === 'range' ? rngCtl(allRows.map((r) => r.d), render) : null, rows.length ? el('span', {class: 'note', text: `${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} days`}) : null,
-    // Round D: energy per air, the week's kWh ÷ the week's air (each day weighted by its air), to the day shown on the loom tabs
-    wkPill(wkMean(allRows.map((r) => ({date: r.d, v: r.c.kwhKm3, w: r.c.ft3})), D.latest, (r) => r.v, (r) => r.w, 'down'), {what: 'Energy per air', fmt: f1, unit: 'kWh per 1,000 m³'})) : null;
-  if (last && typeof wkPut === 'function') { const c = last.c, d = dfmt(last.d);   // Round J
-    wkPut('E3:kwh', {date: d, kwh: c.kwh}); wkPut('E3:cost', {date: d, kwh: c.kwh, rate: c.rate, rupees: c.rupees}); wkPut('E3:air', {kwh: c.kwh, ft3: c.ft3}); wkPut('E3:rsair', {rupees: c.rupees, ft3: c.ft3}); }
-  return card('Compressor power', 'Power (Compressor) from the costing sheet, against the floor\'s air',
-    last ? el('div', {class: 'kpis'}, kpiC('Compressor energy', f0(last.c.kwh), 'kWh', dfmt(last.d)), kpiC('Cost', rs(last.c.rupees), '', `₹${f2(last.c.rate)} a unit`), kpiC('Energy per air', f1(last.c.kwhKm3), 'kWh per 1,000 m³', `${f2(last.c.kwhFt3 * 1000)} kWh per 1,000 ft³`), kpiC('Cost per air', rs(last.c.rsFt3 * 1000), 'per 1,000 ft³', null)) : null,
-    bar, rows.length > 1 ? lineChart({dates: rows.map((r) => r.d), aria: 'Compressor energy per 1,000 m³ of air', fmt: f1, series: [{name: 'kWh per 1,000 m³', vals: rows.map((r) => r.c.kwhKm3)}]}) : el('p', {class: 'note', text: allRows.length > 1 ? 'Pick a longer period: the line needs two days with a compressor reading.' : 'The trend line starts once a second day with a compressor reading is in.'}));
+// Round T (Divyam, 20 Nov 2026): the CFM tab's top card. Three views (CFM, Air per 1,000 picks, Compressor power); it opens
+// on Air per 1,000 picks on every load (not kept). Each view has four tiles; tapping a tile charts its own figure day by day
+// (the first tile to begin with), and the period bar's week line follows the figure charted. Whole floor, both widths: one
+// compressor serves them. Figures: calc.js airDay. A day with no compressor reading of its own is a gap in the compressor
+// figures (the tiles use the latest day with one and name it); a loom with no target CFM stays as it ran in "at target".
+const AP_CARD = 'Air and compressor';
+let APVIEW = 'air';
+const APPICK = {cfm: 'cfm', air: 'apk', pow: 'kwhAir'};
+const AP_VIEWS = [['cfm', 'CFM', 'CFM'], ['air', 'Air per 1,000 picks', 'Air'], ['pow', 'Compressor power', 'Compressor']];   // short labels on a phone
+const rsP2 = (x) => !ok(x) ? '—' : '₹' + x.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+function airRows() {
+  const P = (D.power && D.power.days) || {};
+  const ds = (D.complete_days || []).filter((d) => d <= D.latest).slice().sort();
+  return ds.map((d) => {
+    const L = (D.loomdays || []).filter((x) => x.date === d && x.run > 0).map((x) => { const t = x.hg !== 'Unassigned' ? tgt(x.width, x.hg) : null;
+      return {cfm: x.cfm, run: x.run, fpicks: ok(x.fpicks) ? x.fpicks : x.picks, tcfm: t && ok(t.cfm) ? t.cfm : null}; });
+    return {d, a: airDay(L, P[d] || null)};
+  }).filter((r) => r.a);
+}
+function apFigs() {
+  const they = (n) => n === 1 ? 'it' : 'they', s = (n) => n === 1 ? '' : 's';
+  const noT = () => `no loom has a target CFM yet: ${typeof canEdit === 'function' && canEdit() ? 'set them on Targets' : 'tell the owner'}`;
+  return {
+    cfm: [
+      {k: 'cfm', id: 'E7:cfm', label: 'Floor CFM', unit: 'CFM', fmt: f0, get: (a) => a.cfm, w: () => 1, wu: 'CFM', note: (a) => `24-h average draw · ${f0(a.air)} ft³ in the day`, put: (a) => ({air: a.air})},
+      {k: 'tcfm', id: 'E7:tcfm', label: 'Floor CFM at target', unit: 'CFM', fmt: f0, get: (a) => a.tcfm, w: () => 1, wu: 'CFM',
+        note: (a) => !ok(a.tcfm) ? noT() : `${a.gap < -0.5 ? '−' + f0(-a.gap) : '±0'} CFM against now${a.noTarget ? ` · ${a.noTarget} loom${s(a.noTarget)} with no target CFM as ${they(a.noTarget)} ran` : ''}`, put: (a) => ({air: a.air, tair: a.tair, noTarget: a.noTarget})},
+      {k: 'lcfm', id: 'E7:lcfm', label: 'Average CFM per loom', unit: 'CFM', fmt: f1, get: (a) => a.lcfm, w: (a) => a.run, wu: 'CFM', note: (a) => `while running · ${a.looms} looms`, put: (a) => ({air: a.air, run: a.run})},
+      {k: 'rsCfm', id: 'E7:rscfm', label: 'Cost per CFM', unit: 'a day per CFM', fmt: rsP2, get: (a) => a.rsCfm, w: (a) => a.cfm, wu: 'a day per CFM', comp: true, note: () => 'compressor ₹ for the day ÷ floor CFM', put: (a) => ({rupees: a.rupees, air: a.air})}],
+    air: [
+      {k: 'apk', id: 'E8:apk', label: 'Air per 1,000 picks', unit: 'ft³', fmt: f1, get: (a) => a.apk, w: (a) => a.fpicks, wu: 'ft³', note: (a) => `floor air ÷ fabric picks × 1,000 · ${a.looms} looms`, put: (a) => ({air: a.air, fpicks: a.fpicks})},
+      {k: 'tapk', id: 'E8:tapk', label: 'Air per 1,000 picks at target', unit: 'ft³', fmt: f1, get: (a) => a.tapk, w: (a) => a.fpicks, wu: 'ft³',
+        note: (a) => !ok(a.tapk) ? noT() : `same picks, every loom at or below its target CFM${a.noTarget ? ` · ${a.noTarget} loom${s(a.noTarget)} with no target as ${they(a.noTarget)} ran` : ''}`, put: (a) => ({tair: a.tair, fpicks: a.fpicks})},
+      {k: 'kwhLakh', id: 'E8:kwh', label: 'Energy per lakh picks', unit: 'kWh', fmt: f0, get: (a) => a.kwhLakh, w: (a) => a.picks, wu: 'kWh', comp: true, note: () => 'compressor kWh · picks = fabric picks ÷ 39.37, as on Costing', put: (a) => ({kwh: a.kwh, fpicks: a.fpicks})},
+      {k: 'ppPick', id: 'E8:pp', label: 'Compressor cost per pick', unit: 'paise', fmt: f2, get: (a) => a.ppPick, w: (a) => a.picks, wu: 'paise', comp: true, note: () => 'picks = fabric picks ÷ 39.37, as on Costing', put: (a) => ({rupees: a.rupees, fpicks: a.fpicks})}],
+    pow: [
+      {k: 'kwh', id: 'E3:kwh', label: 'Compressor energy', unit: 'kWh', fmt: f0, get: (a) => a.kwh, w: () => 1, wu: 'kWh', comp: true, note: () => 'Power (Compressor) on the costing sheet', put: (a, d) => ({date: d, kwh: a.kwh})},
+      {k: 'rupees', id: 'E3:cost', label: 'Cost', unit: '', fmt: rs, get: (a) => a.rupees, w: () => 1, wu: '', comp: true, note: (a) => `₹${f2(a.rate)} a unit`, put: (a, d) => ({date: d, kwh: a.kwh, rate: a.rate, rupees: a.rupees})},
+      {k: 'kwhAir', id: 'E3:air', label: 'Energy per air', unit: 'kWh per 1,000 ft³', fmt: f2, get: (a) => a.kwhAir, w: (a) => a.air, wu: 'kWh per 1,000 ft³', comp: true, note: () => 'compressor kWh ÷ floor air', put: (a) => ({kwh: a.kwh, ft3: a.air})},
+      {k: 'rsAir', id: 'E3:rsair', label: 'Cost per air', unit: 'per 1,000 ft³', fmt: rsP2, get: (a) => a.rsAir, w: (a) => a.air, wu: 'per 1,000 ft³', comp: true, note: () => 'compressor ₹ ÷ floor air', put: (a) => ({rupees: a.rupees, ft3: a.air})}]};
+}
+function airCard() {
+  const all = airRows(), F = apFigs(), figs = F[APVIEW], last = all.at(-1), lastC = all.filter((r) => ok(r.a.kwh)).at(-1);
+  if (typeof wkPut === 'function') for (const v of Object.values(F)) for (const f of v) { const r = f.comp ? lastC : last; wkPut(f.id, r ? f.put(r.a, dfmt(r.d)) : null); }   // Round J
+  const pick = figs.find((f) => f.k === APPICK[APVIEW]) || figs[0];
+  const tile = (f) => {
+    const r = f.comp ? lastC : last, v = r ? f.get(r.a) : null;
+    const note = !r ? (f.comp ? `no Power (Compressor) line on the costing sheet yet: ${tcNext()}` : 'no loom data yet: press Refresh (the round arrow)')
+      : `${f.note(r.a)}${f.comp && last && r.d !== last.d ? ` · ${dfmt(r.d)}, the latest day with a compressor reading` : ''}`;
+    const t = kpiC(f.label, ok(v) ? f.fmt(v) : '—', ok(v) ? f.unit : '', note), k = t.querySelector('.kpi'), on = f.k === pick.k;
+    k.classList.add('tap'); if (on) k.classList.add('sel');
+    k.setAttribute('role', 'button'); k.setAttribute('tabindex', '0'); k.setAttribute('aria-pressed', on ? 'true' : 'false'); k.setAttribute('aria-label', `${f.label}: chart it day by day`);
+    const go = () => { APPICK[APVIEW] = f.k; render(); };
+    k.addEventListener('click', go); k.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    return t;
+  };
+  const vb = (v, t, sh) => el('button', {type: 'button', 'aria-pressed': APVIEW === v ? 'true' : 'false', 'aria-label': t, onclick: () => { APVIEW = v; render(); }}, el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh}));
+  const views = el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'View'}, ...AP_VIEWS.map(([v, t, sh]) => vb(v, t, sh))));
+  const allF = all.filter((r) => ok(pick.get(r.a)));   // the days with the charted figure (compressor figures: from 7 Nov 2026)
+  const inR = CPWPER === 'range' ? new Set(rngDays(allF.map((r) => r.d))) : null;
+  const rows = CPWPER === 'all' ? allF : inR ? allF.filter((r) => inR.has(r.d)) : allF.slice(-(+CPWPER));
+  const b = (v, t, sh) => el('button', {type: 'button', 'aria-pressed': CPWPER === v ? 'true' : 'false', 'aria-label': t, onclick: () => { CPWPER = v; try { localStorage.setItem('w2-comp-period', v); } catch (e) {} render(); }}, el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh || t}));
+  const name = pick.label + (pick.unit ? `, ${pick.unit}` : '');
+  const bar = allF.length > 1 ? el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days', '7d'), b('14', '14 days', '14d'), b('30', '30 days', '30d'), b('all', 'All days', 'All'), b('range', 'Dates')),
+    CPWPER === 'range' ? rngCtl(allF.map((r) => r.d), render) : null, rows.length ? el('span', {class: 'note', text: `${dfmt(rows[0].d)} – ${dfmt(rows.at(-1).d)} · ${rows.length} days`}) : null,
+    // Round D: the charted figure, this week vs last week (each day weighted as the figure is: by picks, air or minutes run)
+    wkPill(wkMean(all.map((r) => ({date: r.d, a: r.a})), D.latest, (r) => pick.get(r.a), (r) => pick.w(r.a), 'down'), {what: pick.label, fmt: pick.fmt, unit: pick.wu})) : null;
+  const chart = rows.length > 1 ? lineChart({dates: rows.map((r) => r.d), aria: `${name}, day by day`, fmt: pick.fmt, series: [{name, vals: rows.map((r) => pick.get(r.a))}]})
+    : el('p', {class: 'note', text: allF.length > 1 ? 'Pick a longer period: the line needs two days with this figure.' : pick.comp ? `The line starts once a second day with a compressor reading is in (${tcNext()} if it does not come).` : 'The line starts once a second complete day is in: check again after the daily run.'});
+  // the costing sheet's compressor kWh has so far been a near-fixed figure, not a daily meter reading (energy-rate analysis,
+  // 19 Nov 2026): say so only while the days charted show it (less than 2% between the highest and lowest)
+  const kw = rows.map((r) => r.a.kwh).filter(ok), flat = kw.length > 1 && Math.max(...kw) - Math.min(...kw) < 0.02 * Math.max(...kw);
+  const sub = {cfm: 'Whole floor, both widths · the 24-h average draw and what the compressor costs per CFM', air: 'Whole floor, both widths · air and compressor cost for the picks woven', pow: 'Whole floor, both widths · Power (Compressor) from the costing sheet, against the floor\'s air'}[APVIEW];
+  return card(AP_CARD, sub, views, el('div', {class: 'kpis sc sc4'}, ...figs.map(tile)),   // 2 × 2 on a phone
+    el('p', {class: 'note', text: `Tap a tile to chart it day by day; now charting ${pick.label}.${APVIEW === 'pow' && flat ? ' Over these days the costing sheet\'s compressor kWh hardly changes, so energy and cost per air move mostly with the floor\'s air (and cost with the ₹ a unit).' : ''}`}),
+    bar, chart);
 }
 function pressureMoneyCard(pp) {
   const c = compDay(D.latest);
@@ -832,13 +891,8 @@ function compTrendBlock(s, dates) {
   if (typeof wkPut === 'function') { const i = ds.length - 1; wkPut('E6', {date: dfmt(ds[i].d), ft3: air[i], rsFt3: ds[i].c.rsFt3, what: s.kind === 'loom' ? 'loom' : 'head group'}); }   // Round J
   return card('Compressor cost of this air', 'Whole-floor compressor energy per ft³ × this ' + (s.kind === 'loom' ? 'loom' : 'head group') + '\'s air, per day',
     lineChart({dates: ds.map((r) => r.d), aria: 'Compressor cost of this air per day', fmt: rs, series: [{name: 'Cost of the air (₹ a day)', vals: ds.map((r, i) => air[i] * r.c.rsFt3)}]}),
-    lineChart({dates: ds.map((r) => r.d), aria: 'Compressor energy per 1,000 cubic metres', fmt: f1, series: [{name: 'Floor compressor kWh per 1,000 m³', vals: ds.map((r) => r.c.kwhKm3)}]}),
+    lineChart({dates: ds.map((r) => r.d), aria: 'Compressor energy per 1,000 ft³ of air', fmt: f2, series: [{name: 'Floor compressor kWh per 1,000 ft³', vals: ds.map((r) => r.c.kwhFt3 * 1000)}]}),   // Round T: ft³ only
     el('p', {class: 'note', text: 'The compressor is shared, so this is an allocation by air drawn, not a meter on this loom or quality.'}));
-}
-function compTrendCard() {
-  const P = (D.power && D.power.days) || {};
-  if (!Object.keys(P).length) return null;
-  return compPowerCard();
 }
 function powerRuleCard() {
   const inp = el('input', {type: 'number', step: '0.5', min: '1', max: '30', value: String(POWER_PCT), 'aria-label': 'Percent of compressor energy saved per 1 kgf/cm²', style: 'width:90px'});
