@@ -275,8 +275,8 @@ function waterfall(items, aria, Wd, o = {}) {
     const col = b.total ? 'var(--muted-2)' : (o.flip ? b.v < 0 : b.v > 0) ? 'var(--bad)' : 'var(--good)';
     if (i < bars.length - 1) { const lv = b.total ? b.v : b.b, nx = L + slot * (i + 1) + slot / 2; svg.append(svgEl('line', {x1: cx + bw / 2, x2: nx - bw / 2, y1: Y(lv), y2: Y(lv), style: 'stroke:var(--muted);stroke-width:1;stroke-dasharray:3 2'})); }
     const r = svgEl('rect', {x: cx - bw / 2, y: b.total ? Y(b.v) : y1, width: bw, height: Math.max(2, b.total ? Y(a0) - Y(b.v) : y2 - y1), style: `fill:${col};opacity:${b.total ? 0.75 : 1}`});
-    const tt = svgEl('title'); tt.textContent = b.tip || `${b.label}: ${b.total ? pn(b.v, 2) : sg(b.v)} ${unit}`; r.append(tt); svg.append(r);
-    const t = svgEl('text', {x: cx, y: (b.total ? Y(b.v) : y1) - 5, 'text-anchor': 'middle', style: 'fill:var(--ink);font-size:11px;font-weight:600'}); t.textContent = b.total ? pn(b.v, dec) : sg(b.v); svg.append(t);
+    const tt = svgEl('title'); tt.textContent = b.tip || `${b.label}: ${b.total ? pn(b.v, 2).replace(/^-(?=.*[1-9])/, '−').replace(/^-/, '') : sg(b.v)} ${unit}`; r.append(tt); svg.append(r);
+    const t = svgEl('text', {x: cx, y: (b.total ? Y(b.v) : y1) - 5, 'text-anchor': 'middle', style: 'fill:var(--ink);font-size:11px;font-weight:600'}); t.textContent = b.total ? pn(b.v, dec).replace(/^-(?=.*[1-9])/, '−').replace(/^-/, '') : sg(b.v); svg.append(t);   // Round Y: a negative total with a proper minus, as every figure
     const words = b.label.length > 11 && b.label.includes(' ') ? [b.label.slice(0, b.label.lastIndexOf(' ', 11) > 0 ? b.label.lastIndexOf(' ', 11) : b.label.indexOf(' ')), b.label.slice((b.label.lastIndexOf(' ', 11) > 0 ? b.label.lastIndexOf(' ', 11) : b.label.indexOf(' ')) + 1)] : [b.label];
     words.forEach((w, k) => { const lt = svgEl('text', {x: cx, y: H - B + 16 + k * 13, 'text-anchor': 'middle', style: 'fill:var(--muted);font-size:10.5px'}); lt.textContent = w.length > 14 ? w.slice(0, 13) + '…' : w; svg.append(lt); });
   });

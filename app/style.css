@@ -609,4 +609,6 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
 /* Round W (20 Nov 2026): the Realisation tiles, five with Break-even realisation. 1,280 px and wider: five across, the tile
    after Realisation. Narrower: the first four as before (2 × 2 on a phone) and Break-even full width under them, so no row is half empty. */
 .kpis.fx5 .fxbe{order:9;grid-column:1/-1}
+.fxkpi .fxunrec{display:block;text-align:left;padding:2px 0;font-size:12px;white-space:normal}.fxkpi .fxpp{margin-top:2px}
+@media (max-width:560px){.kpi .label[data-sm]{font-size:0;letter-spacing:0}.kpi .label[data-sm]::before{content:attr(data-sm);font-size:12px;letter-spacing:.06em}}
 @media (min-width:1280px){.kpis.fx5{grid-template-columns:repeat(5,minmax(0,1fr))}.kpis.fx5 .fxbe{order:0;grid-column:auto}}

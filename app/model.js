@@ -242,7 +242,7 @@ const SORT_DEFS = [
   [/^Why cost per pick moved/, 'Effect:d'], [/^Fixed against variable cost/, 'Amount:d'],
   [/^Production by quality head group/, 'Total:d'], [/^B grade by head group$/, 'B grade:d'], [/^B grade share by head group/, 'Period:d'],
   [/^Loom-wise B grade/, 'B-grade metres produced:d'], [/^B-grade reasons/, 'B grade where named:d', 'B grade:d'],
-  [/^Month to date$/, 'Month total:d'], [/^By loom$|^By head group$/, 'Profit#₹/loom/day:a', 'Realisation#paise/pick:a'],
+  [/^Month to date$/, 'Month total:d'], [/^By loom$|^By head group$/, 'Profit (loom cost)#₹/loom/day:a', 'Profit (per pick)#₹/loom/day:a', 'Realisation#paise/pick:a'],   // Round Y: the loom cost basis first
   [/^Realisation targets/, 'Now vs target:a'], [/^Coverage$/, 'Picks:d'], [/^Files$/, 'Checked:d'],
   [/^Where the saving is$/, 'Effect on cost per pick:a'],   // Round F: the biggest saving (most negative effect) first
 ];
