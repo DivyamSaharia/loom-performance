@@ -123,17 +123,20 @@ function hbars0(rows, o = {}) {
 // ---------------------------------------------------------------- signed ranked bars (horizontal, either side of zero)
 // Like hbars, for a figure that can be negative (profit per pick, R1 11 Nov 2026): bars grow right from zero when positive
 // and left when negative, with one dashed reference line (the plant average). rows: {label, v, text, title, onClick, color};
-// o: {aria, fmt, axis, ref: {v, label}, labelW}.
+// o: {aria, fmt, axis, ref: {v, label}, labelW}. Round A5 (25 Nov 2026): a row with split {cost, cover, over, short} (from
+// fcRealLessFold, its cost known) is drawn in three parts: the cost covered (grey, 0 → the lower of v and cost), then green
+// from the cost up to v, or red from v up to the cost. split {cost: null} = cost not known: the bar alone, faded.
 function signedBars0(rows, o = {}) {
   const fmt = o.fmt || pn;
   return fitted((W) => {
-    const rowH = 24, L = Math.round(Math.max(64, Math.min(o.labelW || 170, W * (W < 480 ? 0.38 : 0.32)))), R = W < 420 ? 52 : 70, T = o.ref ? 20 : 6, B = 32;
+    const rowH = 24, L = Math.round(Math.max(64, Math.min(o.labelW || 170, W * (W < 480 ? 0.38 : 0.32)))), R = (W < 420 ? 52 : 70) + (o.wideText ? 40 : 0), T = o.ref ? 20 : 6, B = 32;   // Round A5: o.wideText leaves room for a two-figure value
     const H = T + B + rows.length * rowH;
-    const vs = rows.map((r) => r.v).filter(ok).concat(o.ref && ok(o.ref.v) ? [o.ref.v] : []);
+    const vs = rows.flatMap((r) => [r.v, r.split ? r.split.cost : null]).filter(ok).concat(o.ref && ok(o.ref.v) ? [o.ref.v] : []);
     const lo = Math.min(0, ...vs), hi = Math.max(0, ...vs, 1e-9);
     const [a, b, ticks] = niceRange(lo, hi);
     const x = (v) => L + (W - L - R) * (v - a) / ((b - a) || 1);
     const svg = svgRoot(W, H, o.aria);
+    const seg = (y, v0, v1, fill, op) => svg.append(svgEl('rect', {x: Math.min(x(v0), x(v1)), y: y + 6, width: Math.max(1, Math.abs(x(v1) - x(v0))), height: 12, rx: 2, style: `fill:${fill}${op ? `;opacity:${op}` : ''}`}));
     for (const t of ticks) { svg.append(svgEl('line', {x1: x(t), x2: x(t), y1: T - 4, y2: H - B, style: `stroke:var(--line);stroke-width:${Math.abs(t) < 1e-9 ? 1.6 : 1}`})); svg.append(tx({x: x(t), y: H - B + 14, 'text-anchor': 'middle'}, axisFmt(t))); }
     if (o.axis) svg.append(tx({x: L + (W - L - R) / 2, y: H - 3, 'text-anchor': 'middle'}, o.axis));
     const chars = Math.floor((L - 8) / 6.3);
@@ -142,10 +145,15 @@ function signedBars0(rows, o = {}) {
       const lt = tx({x: L - 8, y: y + 16, 'text-anchor': 'end', class: r.onClick ? 'lkt' : null}, clip(r.label, chars), 'fill:var(--ink);font-size:11.5px');
       if (r.onClick) lt.addEventListener('click', r.onClick);
       tip(lt, r.title || r.label); svg.append(lt);
-      if (ok(r.v)) svg.append(svgEl('rect', {x: Math.min(x(0), x(v)), y: y + 6, width: Math.max(1, Math.abs(x(v) - x(0))), height: 12, rx: 2, style: `fill:${col}`}));
+      const sp = r.split, top = sp && ok(sp.cost) ? Math.max(v, sp.cost) : v;
+      if (ok(r.v) && sp && ok(sp.cost)) {   // Round A5: cost covered, then what is left above it or how far the cost runs past
+        if (sp.cover > 0) seg(y, 0, sp.cover, 'var(--muted-2)', 0.55);
+        if (sp.over > 0) seg(y, sp.cost, v, 'var(--good)');
+        if (sp.short > 0) seg(y, v, sp.cost, 'var(--bad)');
+      } else if (ok(r.v)) seg(y, 0, v, col, sp ? 0.45 : 0);
       const hit = svgEl('rect', {x: L, y, width: W - L - R, height: rowH, style: `fill:transparent;${r.onClick ? 'cursor:pointer' : ''}`});
       tip(hit, r.title || `${r.label}: ${fmt(r.v)}`); if (r.onClick) hit.addEventListener('click', r.onClick); svg.append(hit);
-      const vx = ok(r.v) ? Math.max(x(0), x(v)) + 6 : x(0) + 6;
+      const vx = ok(r.v) ? Math.max(x(0), x(top)) + 6 : x(0) + 6;
       svg.append(tx({x: Math.min(W - 2, vx), y: y + 16, 'text-anchor': vx > W - R + 30 ? 'end' : 'start'}, r.text != null ? r.text : fmt(r.v), 'fill:var(--ink);font-size:11px;font-weight:600'));
     });
     if (o.ref && ok(o.ref.v)) {
