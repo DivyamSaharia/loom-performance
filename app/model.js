@@ -230,7 +230,7 @@ function sortSpecs(t) {
 const SORT_DEFS = [
   [/^RPM · /, 'Lost:d'], [/^Efficiency · /, 'Picks short:d'], [/^CFM · /, 'Excess:d'], [/^Pressure · /, 'Excess:d'],
   [/^Gap to the reference, by head group/, 'Loom realisation gap#₹ total in the day:a', 'Eff. RPM:a'],
-  [/^Current vs reference$/, 'Profit:a', 'Looms:d', 'Realisation:a', 'Loom:a'],
+  [/^Current vs reference$/, 'Profit (loom cost):a', 'Looms:d', 'Realisation:a', 'Loom:a'],
   [/^Reference vs running CFM/, 'Worth:d', 'Excess:d', 'Excess air:d'],
   [/^Reference vs running effective RPM/, 'Lost realisation:d', 'Shortfall:d', 'Gained if fixed:d'],
   [/^Reference vs running pressure/, 'Excess:d', 'Energy saved:d'],

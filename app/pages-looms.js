@@ -440,7 +440,7 @@ function pageQuality() {
   const money = typeof fxOn === 'function' && fxOn();
   const groups = [...by.entries()].map(([k, recs]) => ({k, w: recs[0].width, hg: recs[0].hg, recs, A: agg(recs)})).filter((g) => g.A)
     .sort((a, b) => (a.hg === 'Unassigned') - (b.hg === 'Unassigned') || a.w.localeCompare(b.w) || b.A.picks - a.A.picks);
-  if (typeof wkPut === 'function') { wkPut('C2', null); wkPut('C3', null); wkPut('C4', null); }   // Round J: filled by the first head group drawn
+  if (typeof wkPut === 'function') { wkPut('C2', null); wkPut('C3', null); wkPut('C4', null); wkPut('C5', null); }   // Round J: filled by the first head group drawn
   s.append(qualityHeat(groups.filter((g) => g.hg !== 'Unassigned')));
   { const g = groups.find((x) => x.hg !== 'Unassigned'), b = g && bench(g.w, g.hg), t = g && (tgt(g.w, g.hg) || {});   // Round J: A5, the first head group's RPM
     let rv = !g ? null : QREF === 'tgt' ? t.rpm : QREF === 'best' ? bestVal(g.w, g.hg, 'rpm') : b && b.rpm, nm = REF_NAME[QREF];
@@ -449,7 +449,7 @@ function pageQuality() {
   MREF = QREF;   // 12 Nov 2026: one reference at a time in this card (reset below)
   const t = el('table');
   // 13 Nov 2026 (Divyam): the money columns sit right after Looms ran, with Total loom realisation (looms ran × ₹ per loom).
-  const hdr = ['Head group', ['Looms', 'ran'], ...(money ? [['Realisation', 'paise/pick · ₹/loom/day'], ['Total loom realisation', '₹ in the day · looms × ₹/loom'], ['Profit', 'paise/pick · ₹/loom/day']] : []),
+  const hdr = ['Head group', ['Looms', 'ran'], ...(money ? [['Realisation', 'paise/pick · ₹/loom/day'], ['Total loom realisation', '₹ in the day · looms × ₹/loom'], ['Profit (loom cost)', 'paise/pick · ₹/loom/day']] : []),
     ['RPM', 'picks/min'], ['Efficiency', '%'], ['Eff. RPM', 'RPM × eff'], ['CFM', 'ft³/min running'], ['Air', 'ft³/1,000 picks'], ['Main pressure', 'kgf/cm², highest'], ['Warp breaks', 'total · /100k picks'], 'Benchmark basis', ''];
   t.append(el('thead', {}, el('tr', {}, hdr.map((h, i) => Array.isArray(h) ? th(h[0], h[1], i > 0 && i < hdr.length - 2) : th(h, null, false)))));
   const tb = el('tbody');
@@ -462,7 +462,7 @@ function pageQuality() {
     tb.append(el('tr', {},
       el('td', {}, hgLink(g.hg, g.w, D.latest), el('div', {class: 'note', text: g.w + ' cm · ' + [...new Set(g.recs.map((x) => x.type))].join(', ')}), String(g.w) === '280' && g.hg !== 'Unassigned' ? el('div', {class: 'note', text: pf(g.w, g.hg) === 2 ? 'double panna' : 'single panna'}) : null),
       el('td', {class: 'num', text: A.looms}),
-      ...(money ? (() => { const c = fxHgCells(D.latest, g.w, g.hg) || []; return [c[0], fxHgTotalCell(D.latest, g.w, g.hg, A.looms), c[1]]; })() : []),
+      ...(money ? (() => { const c = fxHgCells(D.latest, g.w, g.hg, QREF) || []; return [c[0], fxHgTotalCell(D.latest, g.w, g.hg, A.looms), c[1]]; })() : []),
       el('td', {class: 'mvc'}, mcell(A.rpm, b.rpm, tg.rpm, f0, true, tolRpm, tolRpm, {w: g.w, hg: g.hg, m: 'rpm'})),
       el('td', {class: 'mvc'}, effCell(A.eff)),
       el('td', {class: 'mvc'}, mcell(A.erpm, b.erpm, tgtE(g.w, g.hg), f0, true, tolRpm, tolRpm, {w: g.w, hg: g.hg, m: 'erpm'})),
@@ -476,7 +476,7 @@ function pageQuality() {
   }
   t.append(tb);
   // 18 Nov 2026: the By picks / By profit per pick switch is gone; Sorting basis above the table does it (Profit, lowest first, by default)
-  const sortSeg = money ? el('p', {class: 'note', text: 'Realisation and profit per pick are the day\'s, As sold, from the Realisation tab; the pill is the margin over conversion cost.'}) : null;
+  const sortSeg = money ? el('p', {class: 'note', text: 'Realisation and profit are the day\'s, As sold, from the Realisation tab; profit is on the loom cost basis and the pill is the margin over loom cost. Point at a profit for the head group\'s profit at the reference above; on a phone, By head group on the Realisation tab gives the same figure at Benchmark, Best or Target.'}) : null;
   MREF = null;
   const nTq = groups.filter((g) => { const x = tgt(g.w, g.hg); return x && (ok(x.rpm) || ok(x.cfm)); }).length;   // Round A2: pressure targets are not counted
   const qb = (v, text) => el('button', {type: 'button', 'aria-pressed': QREF === v ? 'true' : 'false', text, onclick: () => { QREF = v; try { localStorage.setItem('w2-q-ref', v); } catch (e) {} render(); }});
@@ -517,7 +517,7 @@ function qualityHeat(groups) {
   const nowOf = (A, m) => m === 'main' ? (A.main_max > 0 ? A.main_max : null) : m === 'warp' ? A.warpRate : A[m];
   const money = typeof fxOn === 'function' && fxOn();   // 12 Nov 2026: loom realisation per loom and in total, first (owner)
   const rows = groups.map((g) => ({hg: g.hg, label: el('div', {}, hgLink(g.hg, g.w, D.latest), el('div', {class: 'note', text: `${g.w} cm · ${g.A.looms} loom${g.A.looms === 1 ? '' : 's'}`})),
-    cells: [...(money ? fxHeatReal(D.latest, g.w, g.hg, QHM === 'tgt' ? 'tg' : QHM) : []), ...HEAT_M.map(([m, label, unit, hi, fmt]) => {
+    cells: [...(money ? fxHeatReal(D.latest, g.w, g.hg, QHM === 'tgt' ? 'tg' : QHM) : []), ...(money ? [fxHeatFold(D.latest, g.w, g.hg, QHM === 'tgt' ? 'tg' : QHM)] : []), ...HEAT_M.map(([m, label, unit, hi, fmt]) => {
       const now = nowOf(g.A, m), R = heatRef(g, m, QHM);
       // Round A2 (Divyam, 24 Nov 2026): pointing at any cell shows the head group's figure and the reference's
       const head = `${g.hg}, ${g.w} cm · ${label}`, cur = `Current: ${ok(now) ? `${fmt(now)} ${unit}` : 'no figure on this day'}`, cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -538,9 +538,9 @@ function qualityHeat(groups) {
   const b = (v, text) => el('button', {type: 'button', 'aria-pressed': QHM === v ? 'true' : 'false', text, onclick: () => { QHM = v; try { localStorage.setItem('w2-heat-ref', v); } catch (e) {} render(); }});
   return card('Gap to the reference, by head group', `% of the ${HEAT_REF[QHM]} · ${dfmt(D.latest)} · ${wLabel()}`,
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference for the heat grid'}, b('bm', 'Benchmark'), b('best', 'Best'), b('tgt', `Target (${nT} set)`))),
-    rows.length ? heatTable([...(money ? [{label: 'Loom realisation gap', unit: '₹ per loom per day'}, {label: 'Loom realisation gap', unit: '₹ total in the day'}] : []), ...HEAT_M.map(([, label, unit]) => ({label, unit}))], rows, {first: 'Head group'}) : el('div', {class: 'empty', text: 'No head group ran on this width on this day.'}),
+    rows.length ? heatTable([...(money ? [{label: 'Loom realisation gap', unit: '₹ per loom per day'}, {label: 'Loom realisation gap', unit: '₹ total in the day'}, {label: 'Folded cost per pick', unit: '% of the reference'}] : []), ...HEAT_M.map(([, label, unit]) => ({label, unit}))], rows, {first: 'Head group'}) : el('div', {class: 'empty', text: 'No head group ran on this width on this day.'}),
     heatKey(`full colour at ${HEAT_FULL}% or more`),
-    el('p', {class: 'note', text: `Each cell is the head group's figure for the day (looms that ran at least 60 min) against its ${HEAT_REF[QHM]}, as a % of it: + above, − below. Efficiency is always against the ${f0(EFF_BAD())}% line, and warp breaks against the head group's median rate (it has no best or target). CFM is compared at the RPM the head group ran. Point at a cell for the head group's figure and the reference's; click it to open the head group.${money ? ` Loom realisation gap (As sold) is the rupees above (+, green) or below (−, red) the same loom-days re-worked at the ${HEAT_REF[QHM]} effective RPM; point at it for both figures.` : ''}`}));
+    el('p', {class: 'note', text: `Each cell is the head group's figure for the day (looms that ran at least 60 min) against its ${HEAT_REF[QHM]}, as a % of it: + above, − below. Efficiency is always against the ${f0(EFF_BAD())}% line, and warp breaks against the head group's median rate (it has no best or target). CFM is compared at the RPM the head group ran. Point at a cell for the head group's figure and the reference's; click it to open the head group.${money ? ` Loom realisation gap (As sold) is the rupees above (+, green) or below (−, red) the same loom-days re-worked at the ${HEAT_REF[QHM]} effective RPM; point at it for both figures. Folded cost per pick (loom cost method, the Actions view Folded cost per pick by quality) is the head group's paise against the same loom-days at the ${HEAT_REF[QHM]} effective RPM, their loom cost held and B grade scaled with the picks: − below (green, cheaper now), + above (red); point at it for both figures.` : ''}`}));
 }
 
 // ---------------------------------------------------------------- Pressure
