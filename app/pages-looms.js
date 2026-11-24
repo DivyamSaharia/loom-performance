@@ -192,6 +192,7 @@ function pageActions() {
   if (day) { const v = actView(); if (v) s.append(v); }   // Round A1: the open tile's view, under the tiles
   if (day) s.append(priorityCard());
   if (day && typeof tcCard === 'function') { const c = tcCard(); if (c) s.append(c); }   // Round F: Where the saving is (opens from the Target cost per pick tile)
+  s.append(trendCard('actions', trendSubj0()));   // Round A2 (Divyam, 24 Nov 2026): the Trend card, moved here from Quality
 
   const al = (D.alerts || []).filter((a) => a.level === 'Critical');
   if (al.length) s.append(card('Data and floor flags', null, el('ul', {class: 'alerts'}, al.slice(0, 8).map((a) => el('li', {}, el('span', {class: 'pill bad', text: a.scope}), el('span', {}, linkify(a.msg)))))));
@@ -420,6 +421,13 @@ function loomTable(recs) {
   return table(['Loom', ['RPM', 'picks/min'], ['Eff', '%'], ['Eff. RPM', 'RPM × eff'], ['CFM', 'ft³/min'], ['Air', 'ft³/1,000 picks'], ['Main', 'kgf/cm², max'], ['Warp', 'breaks'], 'Beam', ['Run', 'h'],
     ...(money ? [['Realisation', '₹ in the day · paise/pick']] : [])], rows, money ? [1, 2, 3, 4, 5, 6, 7, 9, 10] : [1, 2, 3, 4, 5, 6, 7, 9]);
 }
+// The Trend card's first head group (Round A2: on Actions, as it was on Quality): the day's biggest by picks, width by width.
+function trendSubj0() {
+  const by = new Map();
+  for (const x of latestRecs()) { if (x.hg === 'Unassigned') continue; const k = key(x.width, x.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
+  const g = [...by.values()].map((r) => ({w: r[0].width, hg: r[0].hg, A: agg(r)})).filter((x) => x.A).sort((a, b) => String(a.w).localeCompare(String(b.w)) || b.A.picks - a.A.picks)[0];
+  return g ? {kind: 'hg', w: String(g.w), hg: g.hg} : null;
+}
 function pageQuality() {
   const s = el('section', {class: 'page', id: 'quality'});
   s.append(el('div', {}, el('h2', {text: `Head groups on ${wLabel()} looms, ${dfmt(D.latest)}`}),
@@ -473,9 +481,8 @@ function pageQuality() {
   const qb = (v, text) => el('button', {type: 'button', 'aria-pressed': QREF === v ? 'true' : 'false', text, onclick: () => { QREF = v; try { localStorage.setItem('w2-q-ref', v); } catch (e) {} render(); }});
   s.append(card('Current vs reference', `Against the ${HEAT_REF[QREF]} · CFM references are air per 1,000 picks at the RPM actually run`,
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference'}, qb('bm', 'Benchmark'), qb('best', 'Best'), qb('tgt', `Target (${nTq} set)`))),
-    sortSeg, el('div', {class: 'tablebox'}, t), keyline()));
-  const g0 = groups.find((g) => g.hg !== 'Unassigned');
-  s.append(trendCard('quality', g0 ? {kind: 'hg', w: String(g0.w), hg: g0.hg} : null));
+    sortSeg, el('div', {class: 'tablebox'}, t)));   // Round A2 (Divyam, 24 Nov 2026): no key note under this table
+  // Round A2 (Divyam, 24 Nov 2026): the Trend card moved to Actions (trendSubj0 gives it the same first head group)
   const dr = (D.alerts || []).filter((a) => a.scope === 'Quality' && (W === 'all' || a.msg.includes(W + ' cm')));
   s.append(card('Drift alerts', 'Latest day vs the 7 days before, and week on week once 14 days exist', dr.length ? el('ul', {class: 'alerts'}, dr.map((a) => el('li', {}, el('span', {class: 'pill warn', text: a.level}), el('span', {}, linkify(a.msg))))) : el('div', {class: 'empty', text: 'No drift on this width.'})));
   return s;
@@ -511,12 +518,14 @@ function qualityHeat(groups) {
   const rows = groups.map((g) => ({hg: g.hg, label: el('div', {}, hgLink(g.hg, g.w, D.latest), el('div', {class: 'note', text: `${g.w} cm · ${g.A.looms} loom${g.A.looms === 1 ? '' : 's'}`})),
     cells: [...(money ? fxHeatReal(D.latest, g.w, g.hg, QHM === 'tgt' ? 'tg' : QHM) : []), ...HEAT_M.map(([m, label, unit, hi, fmt]) => {
       const now = nowOf(g.A, m), R = heatRef(g, m, QHM);
-      if (R.none) return {none: R.none, title: `${label}: ${R.none} for ${g.hg}`};
+      // Round A2 (Divyam, 24 Nov 2026): pointing at any cell shows the head group's figure and the reference's
+      const head = `${g.hg}, ${g.w} cm · ${label}`, cur = `Current: ${ok(now) ? `${fmt(now)} ${unit}` : 'no figure on this day'}`, cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+      if (R.none) return {none: R.none, tip: `${head}\n${cur}\n${cap(HEAT_REF[QHM])}: none (${R.none})`};
       const G = gapPct(now, R.v, hi);
-      if (!G) return {none: 'no figure', title: `${label}: no figure for ${g.hg} on this day`};
+      if (!G) return {none: 'no figure', tip: `${head}\n${cur}\n${cap(R.name)}: ${fmt(R.v)} ${unit}`};
       const txt = `${Math.abs(G.p) < 0.05 ? '±' : G.p > 0 ? '+' : '−'}${Math.abs(G.p).toFixed(1)}%`;
       return {text: txt, level: heatLevel(G.p), tone: Math.abs(G.p) < 0.05 ? 'none' : G.worse ? 'bad' : 'good',
-        title: `${g.hg}, ${g.w} cm · ${label} ${fmt(now)} ${unit} against ${R.name} ${fmt(R.v)} (${txt}). Click to open the head group.`,
+        tip: `${head}\n${cur}\n${cap(R.name)}: ${fmt(R.v)} ${unit} (${txt})\nClick to open the head group.`,
         onClick: () => openHg(g.hg, g.w, D.latest)};
     })]}));
   if (typeof wkPut === 'function') {   // Round J: C1, the first cell of the grid that has a reference
@@ -530,7 +539,7 @@ function qualityHeat(groups) {
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference for the heat grid'}, b('bm', 'Benchmark'), b('best', 'Best'), b('tgt', `Target (${nT} set)`))),
     rows.length ? heatTable([...(money ? [{label: 'Loom realisation gap', unit: '₹ per loom per day'}, {label: 'Loom realisation gap', unit: '₹ total in the day'}] : []), ...HEAT_M.map(([, label, unit]) => ({label, unit}))], rows, {first: 'Head group'}) : el('div', {class: 'empty', text: 'No head group ran on this width on this day.'}),
     heatKey(`full colour at ${HEAT_FULL}% or more`),
-    el('p', {class: 'note', text: `Each cell is the head group's figure for the day (looms that ran at least 60 min) against its ${HEAT_REF[QHM]}, as a % of it: + above, − below. Efficiency is always against the ${f0(EFF_BAD())}% line, and warp breaks against the head group's median rate (it has no best or target). CFM is compared at the RPM the head group ran. Hover a cell for the figures; click it to open the head group.${money ? ` Loom realisation gap (As sold) is the rupees above (+, green) or below (−, red) the same loom-days re-worked at the ${HEAT_REF[QHM]} effective RPM; hover for both figures.` : ''}`}));
+    el('p', {class: 'note', text: `Each cell is the head group's figure for the day (looms that ran at least 60 min) against its ${HEAT_REF[QHM]}, as a % of it: + above, − below. Efficiency is always against the ${f0(EFF_BAD())}% line, and warp breaks against the head group's median rate (it has no best or target). CFM is compared at the RPM the head group ran. Point at a cell for the head group's figure and the reference's; click it to open the head group.${money ? ` Loom realisation gap (As sold) is the rupees above (+, green) or below (−, red) the same loom-days re-worked at the ${HEAT_REF[QHM]} effective RPM; point at it for both figures.` : ''}`}));
 }
 
 // ---------------------------------------------------------------- Pressure

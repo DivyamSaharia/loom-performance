@@ -425,14 +425,6 @@ function effCell(now) {
 }
 const tolAir = (r) => r * (S().tol_air_pct || 5) / 100;
 const tolP = () => PRESS_TOL;
-function keyline(extra) {
-  return el('div', {class: 'keyline'},
-    el('span', {}, `bm = benchmark (90th percentile for RPM and effective RPM, 10th for air and pressure, all history) · best = the single best loom-day · click either to see the loom-days behind it · tgt = your target (effective RPM: ${f0(ERPM_TGT * 100)}% of target RPM) · line = efficiency below ${f0(EFF_BAD())}% is bad, whatever the quality`),
-    el('span', {}, 'Loom numbers and head groups are clickable too. 280 cm picks and air per 1,000 picks count double panna unless switched to single.'),
-    el('span', {}, el('b', {text: '▼ ▲'}), ' worse than a reference by more than its tolerance; the missed one is ', el('u', {text: 'underlined'})),
-    extra ? el('span', {text: extra}) : null);
-}
-
 // ---- This week vs last week on a period bar (Round D, Divyam 17 Nov 2026). c: a wkMean / wkBy result (calc.js);
 // o: {what (the figure's name), fmt (number only), unit, dunit (the change's unit, if not unit), basis (named when the figure sits on a basis switch)}.
 // "This week" = the 7 days to the day shown, "last week" = the 7 before (D1); a week with missing days shows "5 of 7 days"

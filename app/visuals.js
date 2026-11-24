@@ -26,16 +26,40 @@ function heatTable(cols, rows, o = {}) {
   const tb = el('tbody');
   for (const r of rows) {
     tb.append(el('tr', {'data-hg': r.hg || null}, el('td', {}, r.label), r.cells.map((c) => {
-      if (!c || c.none) return el('td', {class: 'hc none', title: c && c.title || (c && c.none) || 'No figure'}, el('span', {text: c && c.none ? c.none : '—'}));
+      // Round A2 (Divyam, 24 Nov 2026): pointing at a cell shows its note at once (htip below), not the browser's slow title
+      if (!c || c.none) return el('td', {class: 'hc none', 'data-htip': c && (c.tip || c.title) || (c && c.none) || 'No figure'}, el('span', {text: c && c.none ? c.none : '—'}));
       const a = Math.round(10 + 50 * Math.max(0, Math.min(1, c.level || 0)));
       const col = c.tone === 'good' ? 'var(--good)' : c.tone === 'bad' ? 'var(--bad)' : 'var(--muted)';
-      const inner = c.onClick ? el('button', {type: 'button', class: 'hcb', title: c.title || null, onclick: c.onClick, text: c.text}) : el('span', {title: c.title || null, text: c.text});
+      const tip = c.tip || c.title || null;
+      const inner = c.onClick ? el('button', {type: 'button', class: 'hcb', 'data-htip': tip, 'aria-label': tip ? `${c.text}. ${tip.replace(/\n/g, '. ')}` : null, onclick: c.onClick, text: c.text}) : el('span', {'data-htip': tip, text: c.text});
       return el('td', {class: 'hc', style: `background:color-mix(in srgb, ${col} ${a}%, transparent)`}, inner);
     })));
   }
   t.append(tb);
   return el('div', {class: 'heatbox'}, t);
 }
+// Round A2 (Divyam, 24 Nov 2026): the note for whatever carries data-htip (the heat grids' cells), shown at once on pointing
+// at it with a mouse or moving to it with the keyboard; one box for the page, fixed to the screen, so a table that scrolls
+// sideways does not clip it. A touch screen cannot point: a tap does what it always did (opens the head group).
+let HTIP = null;
+function htipShow(t) {
+  const txt = t.dataset.htip; if (!txt) return;
+  if (!HTIP) { HTIP = el('div', {class: 'htip', role: 'tooltip', id: 'htip'}); document.body.append(HTIP); }
+  HTIP.textContent = txt; HTIP.hidden = false;
+  const r = t.getBoundingClientRect(), w = Math.min(320, window.innerWidth - 16);
+  HTIP.style.maxWidth = w + 'px'; HTIP.style.left = '0px'; HTIP.style.top = '0px';
+  const b = HTIP.getBoundingClientRect();
+  const left = Math.max(8, Math.min(window.innerWidth - b.width - 8, r.left + r.width / 2 - b.width / 2));
+  const top = r.bottom + 6 + b.height <= window.innerHeight - 8 ? r.bottom + 6 : Math.max(8, r.top - 6 - b.height);
+  HTIP.style.left = Math.round(left) + 'px'; HTIP.style.top = Math.round(top) + 'px';
+}
+function htipHide() { if (HTIP) HTIP.hidden = true; }
+document.addEventListener('pointerover', (e) => { if (e.pointerType === 'touch') return; const t = e.target.closest && e.target.closest('[data-htip]'); if (t) htipShow(t); });
+document.addEventListener('pointerout', (e) => { const t = e.target.closest && e.target.closest('[data-htip]'); if (t && !(e.relatedTarget && t.contains(e.relatedTarget))) htipHide(); });
+document.addEventListener('focusin', (e) => { const t = e.target.closest && e.target.closest('[data-htip]'); if (t && t.matches(':focus-visible')) htipShow(t); else htipHide(); });
+document.addEventListener('focusout', htipHide);
+window.addEventListener('scroll', htipHide, {passive: true});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') htipHide(); });
 // The colour key under a heat grid.
 function heatKey(text, seq, noneText) {
   const sw = (col, a) => el('i', {style: `background:color-mix(in srgb, ${col} ${a}%, transparent)`});

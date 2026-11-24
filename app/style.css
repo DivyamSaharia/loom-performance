@@ -74,6 +74,10 @@ button{font:inherit;color:inherit}
 .asof b{color:var(--ink);font-weight:600}
 .asof .past{color:var(--accent);font-weight:600}
 .filters{display:grid;gap:10px;margin:16px 0 4px;max-width:900px}
+/* Round A2 (Divyam, 24 Nov 2026): the loom-width switch stays at the top of the screen while you scroll, above the section bar */
+.wbar{position:sticky;top:0;z-index:22;background:var(--bg);padding:8px 0;margin:2px 0 8px;box-shadow:0 .5px 0 var(--line)}
+.wbar[hidden]{display:none}
+@media (min-width:720px){.wbar>.segmented{width:380px}}
 .frow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .search{display:flex;align-items:center;gap:8px;height:42px;background:var(--fill);border-radius:10px;padding:0 12px;color:var(--muted);position:relative}
 .search input{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:17px;color:var(--ink);padding:0}
@@ -212,9 +216,6 @@ svg text{font-family:var(--f-body)}
 .mv .ref .miss{color:var(--bad);font-weight:600;text-decoration:underline;text-underline-offset:2px}
 td.mvc{text-align:right}
 .unit{font-weight:400;color:var(--muted)}
-.keyline{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted);margin-top:10px}
-.keyline b{color:var(--bad);font-weight:700}
-.keyline u{color:var(--bad);text-underline-offset:2px}
 button.link{font:inherit;font-size:13px;border:0;background:none;color:var(--accent);cursor:pointer;padding:4px 0;text-align:left;font-weight:600}
 button.drill{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:16px;padding:3px 10px;cursor:pointer;white-space:nowrap}
 button.drill[aria-expanded="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
@@ -273,7 +274,7 @@ td.d{white-space:nowrap}
 @keyframes drawer{from{transform:translateX(28px);opacity:.5}to{transform:none;opacity:1}}
 /* Benchmarks tab */
 .bench-layout{display:grid;gap:16px}
-@media (min-width:1180px){.bench-layout{grid-template-columns:minmax(300px,380px) minmax(0,1fr);align-items:start}.bench-list{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}}
+@media (min-width:1180px){.bench-layout{grid-template-columns:minmax(300px,380px) minmax(0,1fr);align-items:start}.bench-list{position:sticky;top:calc(var(--w-top,0px) + 12px);max-height:calc(100vh - 24px - var(--w-top,0px));overflow:auto}}
 .bench-list .search{margin-bottom:10px}
 .qrow{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;text-align:left;padding:10px 8px;border-radius:8px;cursor:pointer;color:var(--ink);position:relative}
 .qrow+.qrow::before{content:"";position:absolute;top:0;left:8px;right:0;border-top:.5px solid var(--line)}
@@ -352,7 +353,7 @@ button.trb:hover{background:var(--accent-soft)}
 @media (max-width:640px){.assign .row{grid-template-columns:minmax(0,1fr) auto}.assign .row>:first-child,.assign .row>:last-child{grid-column:1/-1}.assign .row>:last-child:empty{display:none}}
 /* Section bar on every tab with 3+ sections (laptop and phone). One row, never scrolls: the section on screen, as many
    group / section chips as fit, and an "All sections" button that opens every section at once */
-.jump{position:sticky;top:0;z-index:20;min-width:0;max-width:100%;display:flex;align-items:center;gap:8px;padding:8px 0;margin:-8px 0 0;background:var(--bg);box-shadow:0 .5px 0 var(--line)}
+.jump{position:sticky;top:var(--w-top,0px);z-index:20;min-width:0;max-width:100%;display:flex;align-items:center;gap:8px;padding:8px 0;margin:-8px 0 0;background:var(--bg);box-shadow:0 .5px 0 var(--line)}
 .jump .jnow{flex:1 1 0;min-width:120px;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jump .jnow b{color:var(--ink);font-weight:600}
 .jump .jgroups{display:flex;gap:6px;flex:0 1 auto;min-width:0;overflow:hidden}
@@ -368,7 +369,7 @@ button.trb:hover{background:var(--accent-soft)}
 .jpanel .jg button{display:block;width:100%;height:auto;border:0;border-radius:7px;background:none;text-align:left;padding:6px 8px;margin-left:-8px;font-size:14px;white-space:normal}
 .jpanel .jg button:hover,.jpanel .jg button[aria-current="true"]{background:var(--accent-soft);color:var(--accent-ink)}
 @media (max-width:640px){.jump .jnow{display:none}.jump .jgroups{flex:1 1 auto}.jump .jall .w{display:none}.jpanel{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;padding:12px}}
-.jumped{scroll-margin-top:56px}
+.jumped{scroll-margin-top:calc(var(--w-top,0px) + 56px)}
 /* every block on a page may shrink to the screen; a period switch that is too wide scrolls inside itself */
 section.page>*,.stack>*{min-width:0}
 /* custom date range beside a period switch */
@@ -401,6 +402,8 @@ table.heat th:first-child,table.heat td:first-child{text-align:left;position:sti
 table.heat td:first-child .note{white-space:nowrap}
 table.heat td.hc{border-left:2px solid var(--panel);font-weight:650;white-space:nowrap;min-width:60px}
 table.heat td.hc.none{background:var(--soft);color:var(--muted);font-weight:400;font-size:11px;white-space:normal;line-height:1.2;min-width:60px}
+.htip{position:fixed;z-index:60;padding:7px 10px;border-radius:8px;background:var(--panel);color:var(--ink);box-shadow:0 6px 22px rgba(0,0,0,.22);font-size:12.5px;line-height:1.4;white-space:pre-line;pointer-events:none}
+.htip[hidden]{display:none}
 .hcb{all:unset;cursor:pointer;display:block;width:100%;text-align:center;border-radius:4px}
 .hcb:hover{text-decoration:underline}
 .hcb:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -459,7 +462,7 @@ ol.prio p{margin:3px 0 0;line-height:1.45}
 #bg-loomwise{scroll-margin-top:110px}
 /* Sticky period switches (10 Nov 2026): a period bar stays in view, under the section bar, while you scroll through the
    cards it governs (its parent: a card, or a stack of cards). --stick-top = the section bar's height, set after each render. */
-.stickper{position:sticky;top:var(--stick-top,0px);z-index:15;background:var(--bg);padding:6px 0;margin-top:-6px;box-shadow:0 6px 8px -8px rgba(0,0,0,.18)}
+.stickper{position:sticky;top:calc(var(--w-top,0px) + var(--stick-top,0px));z-index:15;background:var(--bg);padding:6px 0;margin-top:-6px;box-shadow:0 6px 8px -8px rgba(0,0,0,.18)}
 .card .stickper{background:var(--panel)}
 .pergrp{display:grid;gap:16px;min-width:0}
 .card td button.lk{white-space:nowrap}

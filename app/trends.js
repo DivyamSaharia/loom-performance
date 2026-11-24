@@ -28,7 +28,7 @@ const rsShort = (v) => !ok(v) ? '—' : (v < 0 ? '−₹' : '₹') + (Math.abs(v
 const REAL_M = new Set(['real_ld', 'real_tot']);
 // What each tab plots: metric switch (first = default) and whose reference switch colours the points.
 const TRTABS = {
-  quality: {get metrics() { return ['eff', 'rpm', 'erpm', 'cfm', 'apk', 'main_max', 'warp', ...(typeof fxOn === 'function' && fxOn() ? ['real_ld', 'real_tot'] : [])]; }, mode: () => 'bm'},
+  actions: {get metrics() { return ['eff', 'rpm', 'erpm', 'cfm', 'apk', 'main_max', 'warp', ...(typeof fxOn === 'function' && fxOn() ? ['real_ld', 'real_tot'] : [])]; }, mode: () => 'bm'},
   cfm: {metrics: ['cfm'], stack: ['cfm', 'apk'], mode: () => CMODE},
   erpm: {metrics: ['erpm', 'rpm', 'eff'], mode: () => EMODE},
   pressure: {metrics: ['main_max'], mode: () => PMODE, allWidths: true},

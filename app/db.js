@@ -121,7 +121,7 @@ async function signOut() { otpSet(''); try { const c = await sbClient(); await c
 
 function showSignIn(msg) {
   $('#asof').textContent = 'Signed out';
-  $('.filters').hidden = true;
+  $('.filters').hidden = true; { const wb = $('#wbar'); if (wb) wb.hidden = true; }
   const email = el('input', {type: 'email', id: 'email', autocomplete: 'email', placeholder: 'you@example.com', 'aria-label': 'Email', required: true});
   const go = el('button', {type: 'submit', text: 'Email me a code'});
   const form = el('form', {class: 'gate'}, el('img', {class: 'gate-logo', src: 'logo.svg', alt: 'Hanuman', width: '72', height: '72'}), el('h2', {text: 'Sign in to W2 Looms'}),
@@ -175,7 +175,7 @@ function showCode(addr, msg) {
 function showNoAccess() {
   const rejected = ME.status === 'rejected';
   $('#asof').textContent = rejected ? 'No access' : 'Waiting for approval';
-  $('.filters').hidden = true;
+  $('.filters').hidden = true; { const wb = $('#wbar'); if (wb) wb.hidden = true; }
   $('#main').replaceChildren(el('div', {class: 'gate'}, el('img', {class: 'gate-logo', src: 'logo.svg', alt: 'Hanuman', width: '72', height: '72'}),
     el('h2', {text: rejected ? 'No access' : 'Waiting for approval'}),
     el('p', {class: 'note', style: 'margin:0', text: rejected

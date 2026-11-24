@@ -86,7 +86,7 @@ function render() {
   { // only the filters that change what the tab shows: Costing, Access and Data health don't follow the loom width or the day
     const noF = TAB === 'costing' || (ADMIN_TABS.includes(TAB) && TAB !== 'realisation');   // Realisation follows the width and the day (12 Nov 2026)
     const fl = $('.filters'); if (fl) fl.hidden = noF;
-    const ws = $('.segmented[aria-label="Loom width"]'); if (ws) ws.hidden = TAB === 'pressure' || TAB === 'data';
+    const wb = $('#wbar'); if (wb) wb.hidden = noF || TAB === 'pressure' || TAB === 'data';   // Round A2: the sticky width row (one compressor: none on Pressure)
     const dy = $('#day'); if (dy) dy.hidden = TAB === 'data';
     const as = $('#asof'); if (as) as.hidden = ADMIN_TABS.includes(TAB) && TAB !== 'realisation'; }
   $('#main').replaceChildren(PAGES[TAB]());
@@ -98,8 +98,13 @@ function render() {
   window.scrollTo(0, y);
   navPaint();
 }
-// Sticky period bars sit just under the sticky section bar: tell CSS how tall that bar is (0 when the tab has none).
-function setStickTop() { const j = $('#main .jump'); document.documentElement.style.setProperty('--stick-top', (j && !j.hidden ? j.offsetHeight : 0) + 'px'); }
+// Sticky period bars sit just under the sticky section bar, which sits under the sticky loom-width row (Round A2): tell CSS
+// how tall each is (0 when the tab has none).
+function setStickTop() {
+  const j = $('#main .jump'), w = $('#wbar'), r = document.documentElement.style;
+  r.setProperty('--w-top', (w && !w.hidden ? w.offsetHeight : 0) + 'px');
+  r.setProperty('--stick-top', (j && !j.hidden ? j.offsetHeight : 0) + 'px');
+}
 window.addEventListener('resize', () => setStickTop());
 // No half-empty rows anywhere in the app: in a grid of cards or charts, the last item of a short final row stretches across
 // the space left (a lone card in a two-column grid takes the full width). Runs after every redraw and on resize.
@@ -202,7 +207,7 @@ function jumpNav(page) {
 // Data health either (10 Nov 2026). The database enforces the same with RLS.
 const tabAllowed = (t) => !!PAGES[t] && (!ADMIN_TABS.includes(t) || isAdmin()) && (!['approvals', 'masters', 'links'].includes(t) || fxIsOwner()) && (t !== 'realisation' || fxAnalysisOn()) && !(t === 'data' && isPlant());
 function setTab(t) {
-  if (t === 'trends') t = 'quality';
+  if (t === 'trends') t = 'actions';   // Round A2: the Trend card moved from Quality to Actions
   const was = TAB;
   TAB = tabAllowed(t) ? t : 'actions'; if (location.hash.slice(1) !== TAB) history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0);
   if (TAB !== was && !NAV_QUIET && typeof navPlace === 'function') navPlace({id: 't:' + TAB, label: TITLES[TAB], sub: navTabSub(TAB)}, true);   // Round E: a tab visit
@@ -511,5 +516,5 @@ buildNav();
 for (const b of document.querySelectorAll('.segmented[aria-label="Loom width"] button')) b.addEventListener('click', () => { W = b.dataset.w; try { localStorage.setItem('w2-width', W); } catch (e) {} render(); });
 window.addEventListener('hashchange', () => setTab(location.hash.slice(1)));
 try { const w = localStorage.getItem('w2-width'); if (w === '190' || w === '280' || w === 'all') W = w; } catch (e) {}
-TAB = location.hash.slice(1) === 'trends' ? 'quality' : PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'actions';
-if (location.hash.slice(1) === 'trends') history.replaceState(null, '', '#quality');
+TAB = location.hash.slice(1) === 'trends' ? 'actions' : PAGES[location.hash.slice(1)] ? location.hash.slice(1) : 'actions';
+if (location.hash.slice(1) === 'trends') history.replaceState(null, '', '#actions');

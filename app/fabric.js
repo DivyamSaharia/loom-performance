@@ -932,7 +932,7 @@ function fxRefLd(rows, w, hg, eR) {
   for (const [k, o] of by) { const v = fcRealAtErpm(eR, M.get(k), pf(w, hg), o.real / o.picks * 100); if (v != null) { tot += v; n++; } }
   return n ? {ld: tot / n, tot, n, erpm: eR} : null;
 }
-// Trend card (Quality, 12 Nov 2026): loom realisation of a slot's loom-day records (one loom, or a head group's looms) on a
+// Trend card (on Quality from 12 Nov 2026, on Actions since Round A2): loom realisation of a slot's loom-day records (one loom, or a head group's looms) on a
 // day: {real, n} over the priced loom-days, or null (not priced: a gap, never ₹0).
 function fxRecsReal(d, recs) {
   if (!fxOn() || !fxAll()) return null;
@@ -950,19 +950,21 @@ function fxSlotRefs(d, s, w, hg, m) {
 // figure at the reference effective RPM (benchmark, best or target, as the grid's switch). Owner only; gaps never ₹0.
 function fxHeatReal(date, w, hg, mode) {
   if (!fxOn()) return null;
-  if (!fxAll()) return [{none: '…', title: 'Loading the realisation analysis'}, {none: '…'}];
+  if (!fxAll()) return [{none: '…', tip: 'Loading the realisation analysis'}, {none: '…', tip: 'Loading the realisation analysis'}];
   const h = hg === 'Unassigned' ? null : fxHgPp(date, w, hg);
-  if (!h) return [{none: 'not priced', title: 'No priced loom-day for this head group on this day: see Coverage on the Realisation tab'}, {none: 'not priced'}];
+  if (!h) { const t = `${hg}, ${w} cm · Loom realisation\nCurrent: not priced (no priced loom-day for this head group on this day)\nNext: see Coverage on the Realisation tab`; return [{none: 'not priced', tip: t}, {none: 'not priced', tip: t}]; }
   const name = {bm: 'benchmark', best: 'best', tg: 'target'}[mode];
   const R = fxRefLd(fxDayRows(date), w, hg, fxRefErpm(w, hg, mode));
   const cov = h.coverage < 1 - 1e-9 ? ` · ${fxPct(h.coverage)} of picks priced` : '';
   // 13 Nov 2026 (Divyam): each cell shows the gap in rupees (− deficit in red, + surplus in green), not the figure itself.
   const Gp = fcRealGap(h.real_ld, R && R.ld, h.T.priced_ld);
   const cell = (now, ref, gap, what) => {
-    if (!R || gap == null) return {none: `no ${name}`, title: `${hg}, ${w} cm · ${what} ${fxMoney(now)}: no ${name} effective RPM to compare with${cov}`};
+    // Round A2 (Divyam, 24 Nov 2026): the note on pointing gives the current figure and the reference's, one a line
+    const Nm = name.charAt(0).toUpperCase() + name.slice(1), head = `${hg}, ${w} cm · Loom ${what}`;
+    if (!R || gap == null) return {none: `no ${name}`, tip: `${head}\nCurrent: ${fxMoney(now)}\n${Nm}: none (no ${name} effective RPM to compare with)${cov}`};
     const G = gapPct(now, ref, true), p = G ? G.p : 0, z = Math.abs(gap) < 0.5;
     return {text: z ? '±₹0' : (gap > 0 ? '+' : '') + fxMoney(gap), level: heatLevel(p), tone: z ? 'none' : gap < 0 ? 'bad' : 'good',
-      title: `${hg}, ${w} cm · ${what} ${fxMoney(now)} against ${fxMoney(ref)} at the ${name} effective RPM ${f0(R.erpm)}: ${z ? 'level' : gap < 0 ? 'a deficit of ' + fxMoney(-gap) : 'a surplus of ' + fxMoney(gap)} (${p >= 0 ? '+' : '−'}${Math.abs(p).toFixed(1)}%)${cov}. Click to open the head group.`,
+      tip: `${head}\nCurrent: ${fxMoney(now)}\n${Nm} (at its effective RPM ${f0(R.erpm)}): ${fxMoney(ref)} · ${z ? 'level' : gap < 0 ? 'a deficit of ' + fxMoney(-gap) : 'a surplus of ' + fxMoney(gap)} (${p >= 0 ? '+' : '−'}${Math.abs(p).toFixed(1)}%)${cov}\nClick to open the head group.`,
       onClick: () => openHg(hg, w, date)};
   };
   if (typeof wkPut === 'function' && !WKD.C4 && R && Gp && Gp.tot != null) wkPut('C4', {hg, now: h.T.real, at: R.ld * h.T.priced_ld, ref: name});   // Round J: the first head group with a reference
