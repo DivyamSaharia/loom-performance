@@ -67,12 +67,12 @@ function trRefs(w, hg, m, rpm) {
   const b = lbench(w, hg), t = tgt(w, hg) || {};
   if (m === 'eff') return {line: EFF_BAD()};
   if (m === 'looms' || m === 'hours' || REAL_M.has(m)) return none;
-  if (!b) return {bm: null, best: null, tg: m === 'rpm' ? t.rpm : m === 'erpm' ? tgtE(w, hg) : m === 'cfm' ? t.cfm : m === 'main_max' ? t.main : null};
+  if (!b) return {bm: null, best: null, tg: m === 'rpm' ? t.rpm : m === 'erpm' ? tgtE(w, hg) : m === 'cfm' ? t.cfm : null};
   if (m === 'rpm') return {bm: b.rpm, best: lbest(b, 'rpm'), tg: t.rpm, pct: 'P90'};
   if (m === 'erpm') return {bm: b.erpm, best: lbest(b, 'erpm'), tg: tgtE(w, hg), pct: 'P90'};
   if (m === 'apk') return {bm: b.apk, best: lbest(b, 'apk'), tg: null, pct: 'P10'};
   if (m === 'cfm') return {bm: cfmOf(b.apk, w, hg, rpm), best: cfmOf(lbest(b, 'apk'), w, hg, rpm), tg: t.cfm, pct: 'Bm'};
-  if (m === 'main_max') { const pk = pkey(b); return {bm: b[pk], best: lbest(b, pk), tg: t.main, pct: 'P10'}; }
+  if (m === 'main_max') { const pk = pkey(b); return {bm: b[pk], best: lbest(b, pk), tg: null, pct: 'P10'}; }   // Round A2: no pressure target
   if (m === 'warp') { const med = b.warp_med; return {med, line: ok(med) ? Math.max((S().warp_multiple || 2) * med, S().warp_min_rate || 3) : null}; }
   return none;
 }
@@ -491,7 +491,7 @@ function trendCard(tab, def) {
   const c = el('div', {class: 'card trendcard', id: 'trend-card'});
   const head = el('div', {class: 'cardhead'}, el('h3', {text: 'Trend'}), s ? el('button', {class: 'link', type: 'button', text: 'View all trends ›', onclick: () => openTrends(s, cfg.mode())}) : null);
   c.append(head);
-  if (!s) { c.append(el('div', {class: 'empty', text: 'Nothing has run on this width in the last 30 days: pick Both widths or another width at the top of the page, or an earlier day with the date chip.'})); return c; }
+  if (!s) { c.append(el('div', {class: 'empty', text: `Nothing has run ${W === 'all' ? 'on any loom' : 'on this width'} in the last 30 days: ${W === 'all' ? '' : 'pick Both widths or another width at the top of the page, or '}pick an earlier day with the date chip.`})); return c; }
   const kindSeg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Trend of'},
     el('button', {type: 'button', 'aria-pressed': s.kind === 'hg' ? 'true' : 'false', text: 'Head group', onclick: () => { if (s.kind === 'hg') return; const h = hgChoices(allW); const l = mainRec((loomRecs(s.loom).get(D.latest)) || []); const pickH = l && h.find((c2) => c2.hg === l.hg && c2.w === String(l.width)); st.subj = pickH ? {kind: 'hg', w: pickH.w, hg: pickH.hg} : h[0] ? Object.assign({kind: 'hg'}, h[0]) : s; render(); }}),
     el('button', {type: 'button', 'aria-pressed': s.kind === 'loom' ? 'true' : 'false', text: 'Loom', onclick: () => { if (s.kind === 'loom') return; const L = (D.loomdays || []).filter((x) => x.date === D.latest && x.hg === s.hg && String(x.width) === String(s.w)).sort((a, b) => a.loom - b.loom); const ls = loomChoices(allW); st.subj = {kind: 'loom', loom: L[0] ? L[0].loom : ls[0]}; render(); }}));
@@ -571,7 +571,7 @@ function trendsView(s, st) {
   }
   const b = s.kind === 'hg' ? lbench(s.w, s.hg) : null;
   const per = perSeg(s, () => drawPanel(true));
-  const nT = Object.keys(TG).filter((k) => ok(TG[k].rpm) || ok(TG[k].cfm) || ok(TG[k].main)).length;
+  const nT = Object.keys(TG).filter((k) => ok(TG[k].rpm) || ok(TG[k].cfm)).length;
   const modeB = (v, text) => el('button', {type: 'button', 'aria-pressed': st.mode === v ? 'true' : 'false', text, onclick: () => { st.mode = v; drawPanel(true); }});
   const mseg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Colour points against'}, modeB('bm', 'Benchmark'), modeB('best', 'Best'), modeB('tgt', `Target (${nT} set)`));
   const notes = [];

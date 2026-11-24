@@ -693,8 +693,6 @@ const WKLF = {
     return fwOut(`${d.hg}: (realisation ${fwR(d.real)} − conversion cost ${fwR(d.conv)}) ÷ ${fwR(d.conv)} × 100`, `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}%`, '', v); },
   C4: (d) => { if (!d || !fwOk(d.now) || !fwOk(d.at)) return null; const v = d.now - d.at;
     return fwOut(`${d.hg}: realisation now ${fwR(d.now)} − the same loom-days at the ${d.ref} effective RPM ${fwR(d.at)}`, Math.abs(v) < 0.5 ? '±₹0' : (v > 0 ? '+' : '') + fwR(v), 'in the day', v); },
-  E4: (d) => { if (!d || !d.rows.length) return null; const v = d.rows.reduce((a, r) => a + r.rs, 0);
-    return fwOut(`(benchmark RPM − RPM) × minutes run × panels ÷ 39.37 × the loom-day's realisation per pick: ${d.rows.slice(0, 3).map((r) => `loom ${r.loom} ${fwN(r.picks)} picks × ${fwP(r.pp)} paise = ${fwR(r.rs)}`).join(' + ')}${d.rows.length > 3 ? ` + ${d.rows.length - 3} more` : ''}${d.rows.length > 1 ? '; together' : '; in all'}`, fwR(v), 'a day', v, ' '); },
   F2m: (d) => { if (!d || !fwOk(d.pp) || !fwOk(d.picks)) return null; const v = d.picks * d.pp / 100;
     return fwOut(`Loom ${d.loom}, realisation lost: ${fwN(d.picks)} picks short × ${fwP(d.pp)} paise of realisation per pick`, fwR(v), 'in the day', v); },
   F3r: (d) => { if (!d || !d.rows.length) return null; const v = d.rows.reduce((a, r) => a + r.after, 0);

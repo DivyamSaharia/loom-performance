@@ -5,7 +5,7 @@
 function pageTargets() {
   const s = el('section', {class: 'page', id: 'targets'});
   s.append(el('div', {}, el('h2', {text: `Targets, ${wLabel()}`}),
-    el('p', {class: 'lead', text: `Set any or all of target CFM, RPM and main pressure for a head group on each width. Leave a box empty for no target. The effective RPM target is ${f0(ERPM_TGT * 100)}% of the target RPM, so it needs no box of its own. Every page compares against these alongside the benchmark and best; they apply as soon as you save. 280 cm head groups count double panna (picks ×2, air per 1,000 picks halved) unless you switch them to single panna here; that applies straight away too.`})));
+    el('p', {class: 'lead', text: `Set any or all of target CFM and RPM for a head group on each width. Leave a box empty for no target. Main pressure has no target box: for pressure the target is the head group's best main pressure, which every tab uses. The effective RPM target is ${f0(ERPM_TGT * 100)}% of the target RPM, so it needs no box of its own. Every page compares against these alongside the benchmark and best; they apply as soon as you save. 280 cm head groups count double panna (picks ×2, air per 1,000 picks halved) unless you switch them to single panna here; that applies straight away too.`})));
   const ks = new Map();
   for (const b of D.benchmarks || []) if (inW(b.width)) ks.set(key(b.width, b.hg), {w: b.width, hg: b.hg});
   for (const x of D.loomdays || []) if (inW(x.width) && x.hg !== 'Unassigned') ks.set(key(x.width, x.hg), {w: x.width, hg: x.hg});
@@ -57,10 +57,11 @@ function pageTargets() {
     return [el('span', {}, hgLink(hg, w, D.latest), el('div', {class: 'note', text: w + ' cm'})),
       inp('cfm', '0.1', A && A.cfm, cB, A ? cfmOf(bestVal(w, hg, 'apk'), w, hg, A.rpm) : null, f1, {m: 'apk', view: 'cfm', rpm: A && A.rpm}),
       inp('rpm', '1', A && A.rpm, b.rpm, bestVal(w, hg, 'rpm'), f0, {m: 'rpm'}, ok(t.rpm) ? el('div', {}, `effective RPM target ${f0(t.rpm * ERPM_TGT)} (${f0(ERPM_TGT * 100)}%)`) : null),
-      inp('main', '0.05', A && A.main_max, ok(b.main_max) ? b.main_max : b.main, bestVal(w, hg, pkey(b)), f2, {m: pkey(b)}),
+      // Round A2 (Divyam, 24 Nov 2026): no pressure target box: for pressure the target is the head group's best (a saved
+      // pressure target stays in the database; Save keeps it as it is, num('main') reads it back)
       ...(W === '190' ? [] : [String(w) === '280' ? pannaSwitch(w, hg) : el('span', {class: 'note', text: 'single panna'})]), el('div', {}, btn, msg)];
   });
-  const tb = table(['Head group', ['Target CFM', 'ft³/min while running'], ['Target RPM', 'picks/min'], ['Target main pressure', 'kgf/cm²'], ...(W === '190' ? [] : [['Panna', '280 cm: double unless switched']]), ''], rows);
+  const tb = table(['Head group', ['Target CFM', 'ft³/min while running'], ['Target RPM', 'picks/min'], ...(W === '190' ? [] : [['Panna', '280 cm: double unless switched']]), ''], rows);
   tb.classList.add('tg');
   // Save all: saves every head group whose boxes differ from what is saved, one after another, and reports the count.
   // The saved targets are reloaded and the page redrawn once, after the last save (17 Nov 2026: a redraw after each save

@@ -147,7 +147,7 @@ function fixPlurals(root) {
 const JGROUPS = [['Needs a head group', 'To do'], ['Why cost per pick moved', 'Today'], ['Fixed against variable cost', 'Today'], ['Cost per pick', 'Trends'], ['Any single expense line', 'Expenses'],
   ['Production by quality head group', 'Production'], ['B grade and cut pieces', 'B grade'], ['Month to date', 'Month'], ['File health', 'Files']];
 const JMOVE = {'Stock and dispatch': 'Production'};
-const jshort = (t) => t.replace(/\s·\s\d[\d,]*\s\w+$/, '').replace(/^Current vs benchmark, best and target, by loom$/, 'By loom')
+const jshort = (t) => t.replace(/\s·\s\d[\d,]*\s\w+$/, '').replace(/^Current vs benchmark(, best and target| and best), by loom$/, 'By loom')
   .replace(/^Benchmark, best and target vs running .*/, 'vs benchmark').replace(/^If every loom ran at its reference .*/, 'If every loom ran at reference')
   .replace(/^What (the|lowering the) .* (is )?worth$/, 'What it is worth');
 let JUMP_IO = null, JUMP_DOC = null, JUMP_RO = null;
@@ -299,7 +299,8 @@ const NAV_STATIC = {
   links: ['Head-group links'], masters: ['Fabrics', 'Yarns', 'Switches', 'History'], approvals: [],
   fabric: ['Fabrics', 'About this read', 'Recent reads'], access: ['Requests', 'People', 'Add someone directly']};
 const NAV_ALT = {'By loom / By head group': ['By loom', 'By head group'],
-  'Current vs benchmark, best and target, by loom': ['Current vs benchmark, best and target, by loom', 'Current vs benchmark, best and target, by head group']};   // Round F links   // a card whose heading follows its own switch
+  'Current vs benchmark, best and target, by loom': ['Current vs benchmark, best and target, by loom', 'Current vs benchmark, best and target, by head group'],
+  'Current vs benchmark and best, by loom': ['Current vs benchmark and best, by loom', 'Current vs benchmark and best, by head group']};   // Round A2: Pressure has no target   // Round F links   // a card whose heading follows its own switch
 const navGrp = (t) => (GROUPS.find((g) => g[1].includes(t)) || ['', []])[0];
 const navTabSub = (t) => 'in ' + navGrp(t);   // a tab's second line: its side-menu group
 const navTabs = () => GROUPS.flatMap((g) => g[1]).filter(tabAllowed);

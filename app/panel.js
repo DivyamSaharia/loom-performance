@@ -167,7 +167,7 @@ function benchSummary(w, hg, A, nowLabel, opts = {}) {
     ['CFM', 'ft³/min running, at this RPM', A && nowCell(A.cfm, f1, worse(A.cfm, cfmOf(b.apk, w, hg, rpm), false, tolAir(cfmOf(b.apk, w, hg, rpm) || 0))),
       ok(rpm) ? btn(cfmOf(b.apk, w, hg, rpm), 'apk', f1, {view: 'cfm', rpm}) : '—', ok(rpm) ? btn(cfmOf(bestVal(w, hg, 'apk'), w, hg, rpm), 'apk', f1, {kind: 'best', view: 'cfm', rpm}) : '—', f1(t.cfm), gw('cfm')],
     ['Air', 'ft³/1,000 picks' + (pf(w, hg) === 2 ? ', double panna' : ''), A && nowCell(A.apk, f1, worse(A.apk, b.apk, false, tolAir(b.apk || 0))), btn(b.apk, 'apk', f1), btn(bestVal(w, hg, 'apk'), 'apk', f1, {kind: 'best'}), '—', gw('apk')],
-    ['Main pressure', 'kgf/cm², day max', A && nowCell(A.main_max, f2, worse(A.main_max, b[pk], false, PRESS_TOL)), btn(b[pk], pk, f2), btn(bestVal(w, hg, pk), pk, f2, {kind: 'best'}), f2(t.main), G ? '—' : null],
+    ['Main pressure', 'kgf/cm², day max', A && nowCell(A.main_max, f2, worse(A.main_max, b[pk], false, PRESS_TOL)), btn(b[pk], pk, f2), btn(bestVal(w, hg, pk), pk, f2, {kind: 'best'}), 'the best', G ? '—' : null],   // Round A2: the pressure target is the best
     ['Efficiency', '%', A && nowCell(A.eff, f1, A.eff < EFF_BAD(), true), `line ${f0(EFF_BAD())}`, '—', '—', gw('eff')],
     ['Warp breaks', 'per 100k picks', A && f2(A.warpRate), btn(b.warp_med, 'warp_rate', f2), '—', '—', G ? '—' : null]];
   const t2 = el('table');

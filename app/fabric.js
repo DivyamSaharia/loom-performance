@@ -1386,30 +1386,6 @@ function fxMixNote(date) {
   const mixTxt = Object.entries(mix).map(([w, m]) => `${w}: ` + Object.entries(m).sort((a, b) => b[1] - a[1]).map(([hg, n]) => `${n} on ${hg}`).join(', ')).join(' · ');
   return el('p', {class: 'note'}, el('b', {text: 'Best product per loom type: '}), parts.length ? parts.join(' · ') : 'nothing priced on this day', '. ', el('b', {text: 'Mix now: '}), mixTxt || '—', '. The best product is the one with the highest profit per pick among the loom-days priced on that width (As sold, the Realisation tab); every extra pick on a loom is worth more on it.');
 }
-// CFM and Pressure tabs (R2): a second line on the "what it is worth" cards: the realisation gained if every loom ran at
-// its benchmark RPM (every loom below its head group's benchmark RPM brought up to it, no tolerance), valued at that
-// loom-day's realisation per pick.
-function fxRpmGain(date, allWidths) {
-  const out = {picks: 0, rs: 0, looms: 0, priced: 0, rows: []};
-  for (const x of (D.loomdays || []).filter((y) => y.date === date && y.run >= 60 && (allWidths || inW(y.width)))) {
-    if (x.hg === 'Unassigned') continue;
-    const b = bench(x.width, x.hg); if (!b || !ok(b.rpm) || !(x.rpm < b.rpm)) continue;
-    const picks = (b.rpm - x.rpm) * x.run * pf(x.width, x.hg) / FC_PICKS_PER_INCH;
-    out.picks += picks; out.looms++;
-    const v = fxPicksRs(date, x.loom, x.hg, picks);
-    if (v != null) { out.rs += v; out.priced++; out.rows.push({loom: x.loom, picks, pp: 100 * v / picks, rs: v}); }
-  }
-  return out;
-}
-function fxRpmGainNote(date, allWidths) {
-  if (!fxOn()) return null;
-  if (!fxAll()) return el('p', {class: 'note', text: 'Realisation at benchmark RPM: loading the fabric masters…'});
-  const g = fxRpmGain(date, allWidths);
-  if (typeof wkPut === 'function') wkPut('E4', g.priced ? {rows: g.rows} : null);   // Round J
-  if (!g.looms) return el('p', {class: 'note'}, el('b', {text: 'Realisation gained at benchmark RPM: '}), 'every loom already runs at or above its benchmark RPM.');
-  return el('p', {class: 'note'}, el('b', {text: 'Realisation gained at benchmark RPM: '}),
-    g.priced ? `${fxMoney(g.rs)} a day` : 'not priced', ` for ${fxLakh(g.picks)} lakh more picks, with the ${g.looms} loom${g.looms === 1 ? '' : 's'} below its benchmark RPM brought up to it${g.priced < g.looms ? ` (${g.priced} of them priced; the rest are gaps on the Realisation tab)` : ''}. The same looms at the same air: realisation per pick is sale value at prevailing rate less standard yarn cost, As sold. Separate from the compressor saving above, not added to it.`);
-}
 // Utilisation tab (R2): idle hours valued as realisation forgone at the loom's current quality: the powered-down minutes
 // × the RPM the loom runs on that quality × that quality's realisation per pick on the loom (the day's own priced loom-day,
 // else the loom's latest priced day on the same quality).

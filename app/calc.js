@@ -636,29 +636,34 @@ function huberFit(X, y) {
 // → {used: 'slope' | 'avg' | 'none', why (avg: 'few' | 'r2' | 'b'), k (kWh per ft³ to use), rate (kWh per 1,000 ft³), avg, a, b,
 //    c (null without the set point), useC, sps (set points in the window: [[kgf, days]]), r2, n, from, to, scale, days: [the
 //    window's days {d, kwh, air, sp, fit, dev, pct, z, out}], day (the day shown's own entry, or null)}
-function erFit(series, date, hist) {
-  const W = (series || []).filter((r) => r && r.d >= ER_START && r.d <= date && r.kwh > 0 && r.air > 0).sort((a, b) => a.d.localeCompare(b.d)).slice(-ER_WIN);
+// Round A2 (Divyam, 24 Nov 2026): opt.press fits a second model beside it, kWh a day = a + b × air (1,000 ft³) + p × the day's
+// floor pressure (series r.fl, the highest main pressure, kgf/cm²), on the valid days that also have a floor (no set point
+// term). Same window, Huber settings, R² floor and slope check; shown on the owner's kWh against the fit card only, with a
+// switch. The energy rate for the CFM saving keeps the current fit until Divyam picks the new one.
+function erFit(series, date, hist, opt) {
+  const pr = !!(opt && opt.press);
+  const W = (series || []).filter((r) => r && r.d >= ER_START && r.d <= date && r.kwh > 0 && r.air > 0 && (!pr || ok(r.fl))).sort((a, b) => a.d.localeCompare(b.d)).slice(-ER_WIN);
   const n = W.length;
-  if (!n) return {used: 'none', why: 'none', k: null, rate: null, n: 0, days: [], day: null};
+  if (!n) return {used: 'none', why: 'none', k: null, rate: null, n: 0, press: pr, days: [], day: null};
   const sk = W.reduce((a, r) => a + r.kwh, 0), sa = W.reduce((a, r) => a + r.air, 0), avg = 1000 * sk / sa;
   const sp = W.map((r) => spAt(hist, r.d)), cnt = new Map();
   for (const v of sp) if (ok(v)) cnt.set(v, (cnt.get(v) || 0) + 1);
   const sps = [...cnt.entries()].sort((a, b) => a[0] - b[0]);
-  const useC = sp.every(ok) && sps.filter((e) => e[1] >= ER_SPDAYS).length >= 2;
+  const useC = !pr && sp.every(ok) && sps.filter((e) => e[1] >= ER_SPDAYS).length >= 2;
   let fit = null, why = null;
   if (n < ER_MIN) why = 'few';
   else {
-    fit = huberFit(W.map((r, i) => useC ? [1, r.air / 1000, sp[i]] : [1, r.air / 1000]), W.map((r) => r.kwh));
+    fit = huberFit(W.map((r, i) => pr ? [1, r.air / 1000, r.fl] : useC ? [1, r.air / 1000, sp[i]] : [1, r.air / 1000]), W.map((r) => r.kwh));
     if (!fit || !ok(fit.r2) || fit.r2 < ER_R2) why = 'r2';
     else if (!(fit.beta[1] > 0) || !(fit.beta[1] < avg)) why = 'b';
   }
-  const used = why ? 'avg' : 'slope', a = fit ? fit.beta[0] : null, b = fit ? fit.beta[1] : null, c = fit && useC ? fit.beta[2] : null;
+  const used = why ? 'avg' : 'slope', a = fit ? fit.beta[0] : null, b = fit ? fit.beta[1] : null, c = fit && useC ? fit.beta[2] : null, p = fit && pr ? fit.beta[2] : null;
   const rate = used === 'slope' ? b : avg;
-  const fitted = (r, i) => used === 'slope' ? a + b * r.air / 1000 + (useC ? c * sp[i] : 0) : avg * r.air / 1000;
-  const days = W.map((r, i) => { const f = fitted(r, i); return {d: r.d, kwh: r.kwh, air: r.air, sp: sp[i], fit: f, dev: r.kwh - f, pct: f > 0 ? 100 * (r.kwh - f) / f : null}; });
+  const fitted = (r, i) => used === 'slope' ? a + b * r.air / 1000 + (useC ? c * sp[i] : 0) + (pr ? p * r.fl : 0) : avg * r.air / 1000;
+  const days = W.map((r, i) => { const f = fitted(r, i); return {d: r.d, kwh: r.kwh, air: r.air, sp: sp[i], fl: pr ? r.fl : null, fit: f, dev: r.kwh - f, pct: f > 0 ? 100 * (r.kwh - f) / f : null}; });
   const scale = used === 'slope' ? fit.scale : erScale(days.map((x) => x.dev));
   for (const x of days) { x.z = scale > 0 ? x.dev / scale : null; x.out = n >= ER_MIN && ok(x.z) && Math.abs(x.z) > ER_OUT; }
-  return {used, why, k: rate / 1000, rate, avg, a, b, c, useC, sps, r2: fit ? fit.r2 : null, n, from: W[0].d, to: W[n - 1].d, scale,
+  return {used, why, k: rate / 1000, rate, avg, a, b, c, p, press: pr, useC, sps, r2: fit ? fit.r2 : null, n, from: W[0].d, to: W[n - 1].d, scale,
     days, day: days.find((x) => x.d === date) || null};
 }
 // Round V: the deviation card's week line, the average size of the deviation (|%|) over a week's days
@@ -747,7 +752,7 @@ function packRate(days, date) {
 //   1. CFM: each loom at its target CFM (excess air only, never more air); the compressor's kWh fall by the air saved ×
 //      the energy rate for the CFM saving (Round V: comp.k, the fitted slope or the window average; else the day's own kWh
 //      per ft³, Power (Compressor) kWh ÷ the floor's air), at its ₹ per unit.
-//   2. Pressure: the compressor at the set point needed with every loom at its target main pressure (press.frac, a share of its energy), on the kWh
+//   2. Pressure: the compressor at the set point needed with every loom at its best main pressure (Round A2: the pressure target is the best) (press.frac, a share of its energy), on the kWh
 //      left after step 1.
 //   3. Extra picks: each loom that ran at its target effective RPM (93% of target RPM); one already above adds nothing.
 //      Fixed costs spread over the larger pick count.

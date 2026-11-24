@@ -40,7 +40,7 @@ function actionLists() {
       out.cfm.push({x, b, t, now: x.cfm, bm: cB, tg: cT, gap: x.cfm - ref, impact: (x.cfm - ref) * x.run});
     }
     // Pressure: highest main pressure the loom ran at in the day vs head group benchmark
-    const pB = ok(b.main_max) ? b.main_max : b.main, pT = ok(t.main) ? t.main : null;
+    const pB = ok(b.main_max) ? b.main_max : b.main, pT = pBest(x.width, x.hg);   // Round A2: for pressure the target is the best
     const offPB = ok(pB) && x.main_max > pB + PRESS_TOL, offPT = ok(pT) && x.main_max > pT + PRESS_TOL;
     if (offPB || offPT) {
       const ref = Math.min(offPB ? pB : Infinity, offPT ? pT : Infinity);
@@ -58,7 +58,7 @@ function loomCell(x) { return el('div', {}, el('div', {}, loomLink(x.loom, x.dat
 // Lost picks (RPM below its reference, efficiency below the line) are valued at the day's fixed + attendance-following
 // cost per pick: costs that run whether or not the loom weaves, so every pick lost leaves them on fewer picks. Excess air is
 // valued at the compressor's rupees per ft³ that day; a loom holding up the floor pressure at its step of the floor ladder
-// (to benchmark, or target where lower), mid-point of the energy range. Without a costing day the ranking falls back to
+// (to benchmark, or the best where lower: Round A2), mid-point of the energy range. Without a costing day the ranking falls back to
 // lost picks, then excess air.
 function costDayOn(date) {
   if (typeof cDays !== 'function' || !COST) return null;
@@ -73,7 +73,7 @@ function priorityList(n = 5) {
   for (const r of A.eff) { const o = get(r.x); o.lakh += r.impact; o.why.push({k: 'Efficiency', t: `${f1(r.now)}%, ${f1(r.gap)} points under the ${f0(EFF_BAD())}% line`}); if (r.beam) o.beam = r.x; }
   for (const r of A.rpm) { const o = get(r.x); o.lakh += r.impact; o.why.push({k: 'Speed', t: `${f0(r.now)} RPM, ${f0(r.gap)} under its ${ok(r.tg) && r.now + r.gap === r.tg ? 'target' : 'benchmark'}`}); }
   for (const r of A.cfm) { const o = get(r.x); const ft3 = r.gap * r.x.run; o.ft3 += ft3; o.rsAir += cc ? ft3 * cc.sRsFt3 : 0; o.why.push({k: 'Air', t: `${f1(r.now)} CFM, ${f1(r.gap)} over its reference`}); }
-  const looms = (D.pressure.looms || []).map((l) => { const b = bench(l.width, l.hg) || {}, t = tgt(l.width, l.hg) || {}, bm = ok(b.main_max) ? b.main_max : (ok(b.main) ? b.main : null), tg = ok(t.main) ? t.main : null;
+  const looms = (D.pressure.looms || []).map((l) => { const b = bench(l.width, l.hg) || {}, bm = ok(b.main_max) ? b.main_max : (ok(b.main) ? b.main : null), tg = pBest(l.width, l.hg);   // Round A2: the best stands in for a pressure target
     return {loom: l.loom, hg: l.hg, width: l.width, main: l.main, ref: ok(bm) && ok(tg) ? Math.min(bm, tg) : ok(tg) ? tg : bm}; });
   const F = floorLadder(looms, n);
   let prev = 0;
@@ -414,7 +414,7 @@ function loomTable(recs) {
       mcell(x.rpm, b.rpm, t.rpm, f0, true, tolRpm, tolRpm, {w: x.width, hg: x.hg, m: 'rpm'}), effCell(x.eff),
       mcell(x.erpm, b.erpm, tgtE(x.width, x.hg), f0, true, tolRpm, tolRpm, {w: x.width, hg: x.hg, m: 'erpm'}),
       mcell(x.cfm, cB, t.cfm, f1, false, tolAir, tolAir, {w: x.width, hg: x.hg, m: 'apk', view: 'cfm', rpm: x.rpm}), mcell(x.apk, b.apk, null, f1, false, tolAir, null, {w: x.width, hg: x.hg, m: 'apk'}),
-      mcell(x.main_max, ok(b.main_max) ? b.main_max : b.main, t.main, f2, false, tolP, tolP, {w: x.width, hg: x.hg, m: pkey(b)}),
+      mcell(x.main_max, ok(b.main_max) ? b.main_max : b.main, null, f2, false, tolP, tolP, {w: x.width, hg: x.hg, m: pkey(b)}),   // Round A2: no pressure target
       sortAs(el('span', {}, f0(x.warp), el('div', {class: 'note', text: f1(x.warp_rate) + ' /100k'})), x.warp), x.beam || '—', f1(x.run / 60),
       ...(money ? [fxLoomRealCell(x)] : [])];
   });
@@ -467,7 +467,7 @@ function pageQuality() {
       el('td', {class: 'mvc'}, mcell(A.erpm, b.erpm, tgtE(g.w, g.hg), f0, true, tolRpm, tolRpm, {w: g.w, hg: g.hg, m: 'erpm'})),
       el('td', {class: 'mvc'}, mcell(A.cfm, cB, tg.cfm, f1, false, tolAir, tolAir, {w: g.w, hg: g.hg, m: 'apk', view: 'cfm', rpm: A.rpm})),
       el('td', {class: 'mvc'}, mcell(A.apk, b.apk, null, f1, false, tolAir, null, {w: g.w, hg: g.hg, m: 'apk'})),
-      el('td', {class: 'mvc'}, mcell(A.main_max, ok(b.main_max) ? b.main_max : b.main, tg.main, f2, false, tolP, tolP, {w: g.w, hg: g.hg, m: pkey(b)})),
+      el('td', {class: 'mvc'}, mcell(A.main_max, ok(b.main_max) ? b.main_max : b.main, MREF === 'tgt' ? pBest(g.w, g.hg) : null, f2, false, tolP, tolP, {w: g.w, hg: g.hg, m: pkey(b)})),   // Round A2: Target = the best for pressure
       el('td', {class: 'num', 'data-sort': String(A.warp)}, f0(A.warp), el('div', {class: 'note', text: f1(A.warpRate) + ' /100k'})),
       el('td', {}, g.hg === 'Unassigned' ? el('span', {class: 'pill muted', text: 'assign a head group'}) : benchTag(bench(g.w, g.hg))),
       el('td', {}, btn)));
@@ -477,7 +477,7 @@ function pageQuality() {
   // 18 Nov 2026: the By picks / By profit per pick switch is gone; Sorting basis above the table does it (Profit, lowest first, by default)
   const sortSeg = money ? el('p', {class: 'note', text: 'Realisation and profit per pick are the day\'s, As sold, from the Realisation tab; the pill is the margin over conversion cost.'}) : null;
   MREF = null;
-  const nTq = groups.filter((g) => { const x = tgt(g.w, g.hg); return x && (ok(x.rpm) || ok(x.cfm) || ok(x.main)); }).length;
+  const nTq = groups.filter((g) => { const x = tgt(g.w, g.hg); return x && (ok(x.rpm) || ok(x.cfm)); }).length;   // Round A2: pressure targets are not counted
   const qb = (v, text) => el('button', {type: 'button', 'aria-pressed': QREF === v ? 'true' : 'false', text, onclick: () => { QREF = v; try { localStorage.setItem('w2-q-ref', v); } catch (e) {} render(); }});
   s.append(card('Current vs reference', `Against the ${HEAT_REF[QREF]} · CFM references are air per 1,000 picks at the RPM actually run`,
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference'}, qb('bm', 'Benchmark'), qb('best', 'Best'), qb('tgt', `Target (${nTq} set)`))),
@@ -503,8 +503,8 @@ function heatRef(g, m, mode) {
   if (m === 'eff') return {v: EFF_BAD(), name: `the ${f0(EFF_BAD())}% line`};
   if (m === 'warp') return mode !== 'bm' ? {none: mode === 'best' ? 'no best (median)' : 'no target'} : b && ok(b.warp_med) ? {v: b.warp_med, name: 'benchmark (median)'} : {none: 'no benchmark'};
   if (mode === 'tgt') {
-    const v = m === 'rpm' ? t.rpm : m === 'erpm' ? tgtE(w, hg) : m === 'cfm' ? t.cfm : m === 'main' ? t.main : null;
-    return m === 'apk' ? {none: 'no target'} : ok(v) ? {v, name: m === 'erpm' ? `target (${f0(ERPM_TGT * 100)}% of target RPM)` : 'target'} : {none: 'no target'};
+    const v = m === 'rpm' ? t.rpm : m === 'erpm' ? tgtE(w, hg) : m === 'cfm' ? t.cfm : m === 'main' ? pBest(w, hg) : null;   // Round A2: the pressure target is the best
+    return m === 'apk' ? {none: 'no target'} : ok(v) ? {v, name: m === 'erpm' ? `target (${f0(ERPM_TGT * 100)}% of target RPM)` : m === 'main' ? 'best (the pressure target)' : 'target'} : {none: m === 'main' ? 'no best yet' : 'no target'};
   }
   if (!b) return {none: mode === 'best' ? 'no best yet' : 'no benchmark'};
   const mk = m === 'main' ? pkey(b) : m === 'cfm' ? 'apk' : m;
@@ -533,7 +533,7 @@ function qualityHeat(groups) {
     for (const g of groups) { for (const [m, label, , hi] of HEAT_M) { const now = nowOf(g.A, m), R = heatRef(g, m, QHM); if (!R.none && ok(now) && ok(R.v)) { c1 = {hg: g.hg, what: label, now, ref: R.v, name: R.name, dp: m === 'main' || m === 'warp' ? 2 : m === 'rpm' || m === 'erpm' ? 0 : 1}; break; } } if (c1) break; }
     wkPut('C1', c1);
   }
-  const nT = groups.filter((g) => { const t = tgt(g.w, g.hg); return t && (ok(t.rpm) || ok(t.cfm) || ok(t.main)); }).length;
+  const nT = groups.filter((g) => { const t = tgt(g.w, g.hg); return t && (ok(t.rpm) || ok(t.cfm)); }).length;
   const b = (v, text) => el('button', {type: 'button', 'aria-pressed': QHM === v ? 'true' : 'false', text, onclick: () => { QHM = v; try { localStorage.setItem('w2-heat-ref', v); } catch (e) {} render(); }});
   return card('Gap to the reference, by head group', `% of the ${HEAT_REF[QHM]} · ${dfmt(D.latest)} · ${wLabel()}`,
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference for the heat grid'}, b('bm', 'Benchmark'), b('best', 'Best'), b('tgt', `Target (${nT} set)`))),
@@ -555,7 +555,7 @@ let PSP_EDIT = false;
 // Round F: why the Pressure tab's Energy saved and Worth columns show "—", with the next step (null when nothing is missing).
 // Owner: Files per day on Data health for a missing compressor reading; everyone else: tell the owner.
 // Round F: the tables' Energy saved and Worth count the looms' part only; the tile at the top adds the set point fix.
-const pLoomsNote = () => el('p', {class: 'note', text: 'Energy saved and Worth here count the looms\' part only (the floor coming down as looms reach their reference). The Compressor energy saved tile at the top of this tab also counts bringing the compressor down from its set point to what today\'s floor needs, so it can be higher.'});
+const pLoomsNote = () => el('p', {class: 'note', text: 'Energy saved and Worth here count the looms\' part only (the floor coming down as looms reach their reference). The Cost per pick saved tile at the top of this tab also counts bringing the compressor down from its set point to what today\'s floor needs, so its saving can be higher.'});
 function pGapNote() {
   const own = typeof fxIsOwner === 'function' && fxIsOwner(), tell = own ? null : 'tell the owner';
   if (!ok(COMP_SP)) return el('p', {class: 'note', text: `Energy saved and Worth show "—" until the compressor set point is typed in: ${canEdit() ? 'tap the Compressor set point tile at the top of this tab and type it' : tell}.`});
@@ -605,22 +605,26 @@ function spEditor() {
     el('button', {class: 'ghost', type: 'button', text: 'Cancel', onclick: () => { PSP_EDIT = false; render(); }}), msg,
     el('p', {class: 'note', text: `Saved for everyone at once, from the day picked: a day uses the set point in force on it. The Pressure tab and the Target cost per pick tile on Actions use it straight away, and the energy rate on the CFM tab is worked out again from that day. To correct a set point, type the right one for the same day. ${hist}`}));
 }
+// Round A2 (Divyam, 24 Nov 2026): for pressure the target is really the best. A head group's best main pressure (its best
+// loom-day's highest main pressure, the Best reference) stands wherever a pressure target was used (Target cost per pick
+// step 2, Work on these first, the Quality grid on Target); typed pressure targets stay saved but are not used or shown.
+function pBest(w, hg) { if (!hg || hg === 'Unassigned') return null; const v = bestVal(w, hg, pkey(bench(w, hg))); return ok(v) ? v : null; }
 function pressLooms() {
   // every loom that ran ≥60 min in a shift on the latest day, both widths (one compressor)
   return (D.pressure.looms || []).map((l) => {
-    const b = bench(l.width, l.hg) || {}, t = tgt(l.width, l.hg) || {};
+    const b = bench(l.width, l.hg) || {};
     const bm = ok(b.main_max) ? b.main_max : (ok(b.main) ? b.main : null);
-    const tg = ok(t.main) ? t.main : null;
-    const best = l.hg !== 'Unassigned' ? bestVal(l.width, l.hg, pkey(b)) : null;
-    return {...l, bm, best, tg, ref: refOf(PMODE, bm, best, tg)};
+    const best = pBest(l.width, l.hg);
+    // Round A2 (Divyam, 24 Nov 2026): no pressure target on this tab (the switch is Benchmark / Best); tg stays empty
+    return {...l, bm, best, tg: null, ref: refOf(PMODE === 'tgt' ? 'best' : PMODE, bm, best, null)};
   });
 }
 // Reference for the "if every loom ran at…" figures: benchmark, best loom-day or target (falling back to the benchmark where unset).
 function refOf(mode, bm, best, tg) { return mode === 'tgt' ? (ok(tg) ? tg : bm) : mode === 'best' ? (ok(best) ? best : bm) : bm; }
 const REF_NOTE = {bm: 'Head group benchmark', best: 'Best loom-day where there is one, benchmark otherwise', tgt: 'Target where you set one, benchmark otherwise'};
-function modeSeg(cur, set, nT, label, short) {
+function modeSeg(cur, set, nT, label, short, noT) {   // noT (Round A2, Pressure): Benchmark and Best only
   const b = (v, text) => el('button', {type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', text, onclick: () => { set(v); render(); }});
-  return el('div', {class: 'seg', role: 'group', 'aria-label': label}, b('bm', short ? 'Benchmark' : 'Bring looms to benchmark'), b('best', short ? 'Best' : 'To best'), b('tgt', `${short ? 'Target' : 'To target'} (${nT} set)`));
+  return el('div', {class: 'seg', role: 'group', 'aria-label': label}, b('bm', short ? 'Benchmark' : 'Bring looms to benchmark'), b('best', short ? 'Best' : 'To best'), noT ? null : b('tgt', `${short ? 'Target' : 'To target'} (${nT} set)`));
 }
 // Best marker in the bar charts: a filled circle (benchmark is a tick, target a hollow diamond).
 function bestDot(svg, cx, cy) { svg.append(svgEl('circle', {cx, cy, r: 5.5, fill: css('--good'), stroke: css('--panel'), 'stroke-width': 1.5})); }
@@ -680,8 +684,8 @@ function pagePressure() {
   const s = el('section', {class: 'page', id: 'pressure'});
   const P = D.pressure; const fl = (P.floor || []).slice(-1)[0];
   const M = pMargin();
-  s.append(el('div', {}, el('h2', {text: `Main pressure, all 72 looms, ${dfmt(D.latest)}`}),
-    el('p', {class: 'lead', text: `One compressor serves both widths, so this page always covers both. The loom with the highest main pressure sets the floor; the compressor needs to run at that plus a margin of ${ok(M) ? f2(M) : '—'} kgf/cm² (Config sheet, Settings tab). Benchmark pressure is the 10th percentile of each head group's daily highest main pressure on that width. Click any benchmark or best figure to see the loom runs behind it.`})));
+  // Round A2 (Divyam, 24 Nov 2026): no lead note; no pressure target (Benchmark / Best); the reference and what it is worth in one card
+  s.append(el('div', {}, el('h2', {text: `Main pressure, all 72 looms, ${dfmt(D.latest)}`})));
   const looms = pressLooms();
   const floorNow = looms.length ? Math.max(...looms.map((l) => l.main)) : null;
   const floorNew = looms.length ? Math.max(...looms.map(lowered)) : null;
@@ -689,26 +693,24 @@ function pagePressure() {
   const holders = looms.filter((l) => Math.abs(lowered(l) - floorNew) < 1e-9);
   const why = (l) => !ok(l.ref) ? 'has no benchmark yet' : l.main <= l.ref + 1e-9 ? 'is already at or below its reference' : 'is at its reference';
   const holdNote = holders.length ? 'Held by ' + holders.slice(0, 3).map((l) => `loom ${l.loom} (${l.hg}), which ${why(l)}`).join('; ') + (holders.length > 3 ? ` and ${holders.length - 3} more` : '') : '';
-  const nT = Object.keys(TG).filter((k) => ok(TG[k].main)).length;
-  const mode = modeSeg(PMODE, (v) => { PMODE = v; }, nT, 'Reference pressure');
+  if (PMODE === 'tgt') PMODE = 'best';
+  const mode = modeSeg(PMODE, (v) => { PMODE = v; }, 0, 'Reference pressure', false, true);
   const owner = typeof fxIsOwner === 'function' && fxIsOwner();
   const noM = owner ? 'no margin row: add setpoint_margin_kgf to the Config sheet Settings tab' : 'no margin set: tell the owner';
-  const cc = compDay(D.latest), pk = cc ? floorPicks(cc.date) : 0, rsDay = ok(pp.total) && cc ? pp.total * cc.kwh * cc.rate : null;
   if (typeof wkPut === 'function') {   // Round J: the four tiles, for their Working
     wkPut('G1:now', looms.length ? {floor: floorNow, loom: fl ? fl.loom : (looms.find((l) => l.main === floorNow) || {}).loom} : null);
     wkPut('G1:after', looms.length ? {floor: floorNew, held: holders.length ? holders[0].loom : null} : null);
     wkPut('G2', looms.length ? {now: floorNow, after: floorNew, m: M} : null);
     wkPut('G3', looms.length ? {sp: COMP_SP, now: floorNow, after: floorNew, m: M, rule: POWER_PCT} : null);
   }
+  const worth = pressWorth(pp);
   const kp = (label, big, unit, note) => el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'big'}, ...big, el('small', {text: unit})), note ? el('div', {class: 'note', text: note}) : null));
   const sumBox = el('div', {class: 'kpis'},
     kp('Floor now', [f2(floorNow)], 'kgf/cm²', fl ? `loom ${fl.loom}, ${fl.hg}` : ''),
     kp('Floor after the work', [f2(floorNew)], 'kgf/cm²', holdNote),
     spTile(pp, M, noM),
-    kp('Compressor energy saved', [ok(pp.total) ? f1(pp.total * 100) : '—'], '%', ok(pp.total) ? `${ok(rsDay) ? `${rs(rsDay)} a day${ppTxt(rsDay, pk) ? ', ' + ppTxt(rsDay, pk) : ''} · ` : `no compressor reading yet (${typeof fxIsOwner === 'function' && fxIsOwner() ? 'see Files per day on Data health' : 'tell the owner'}) · `}${f1(pp.fix * 100)}% from the set point, ${f1(pp.looms * 100)}% from the looms · ${f1(POWER_PCT)}% per kgf/cm²` : !ok(COMP_SP) ? (canEdit() ? 'needs the compressor set point: tap the Compressor set point tile and type it' : 'needs the compressor set point: tell the owner') : noM));
-  s.append(card('If every loom ran at its reference pressure', PMODE === 'bm' ? 'Head group benchmark (10th percentile)' : REF_NOTE[PMODE], el('div', {class: 'toolbar'}, mode), sumBox, spEditor(),
-    el('p', {class: 'note', text: 'Each loom above its reference is brought down to it; looms already below stay where they are. Looms with no head group or no benchmark stay as they are. The saving has two parts that add up: the compressor brought down from its set point to what today\'s floor needs, then the looms brought to their reference. Where the compressor already runs at or below what is needed, that part is 0, never negative.'})));
-  s.append(pressureMoneyCard(pp));
+    ...worth.tiles);
+  s.append(card('If every loom ran at its reference pressure', (PMODE === 'bm' ? 'Head group benchmark (10th percentile)' : REF_NOTE.best) + ' · what lowering the pressure is worth', el('div', {class: 'toolbar'}, mode), sumBox, spEditor(), worth.gap));
   s.append(floorLadderCard(looms, floorNew));
   const erc = erDevCard(); if (erc) s.append(erc);   // Round V: the owner's kWh against the energy rate's fit
 
@@ -721,12 +723,12 @@ function pagePressure() {
     return [...by.values()].map((L) => { const l0 = L.reduce((a, b) => b.main > a.main ? b : a); return {...l0, label: `${l0.hg} · ${l0.width}`, open: () => openHg(l0.hg, l0.width, D.latest), tip: `${l0.hg}, ${l0.width} cm: highest ${f2(l0.main)} kgf/cm² on loom ${l0.loom} · ${L.length} loom${L.length === 1 ? '' : 's'}`}; })
       .sort((a, b) => b.main - a.main || a.label.localeCompare(b.label)); };
   const pRows = phg ? pHg() : sorted, pLim = phg || PALL ? 0 : 25;   // 18 Nov 2026: the basis ranks every loom, the first 25 are drawn
-  s.append(card(`Current vs benchmark, best and target, ${phg ? 'by head group' : 'by loom'}`, (phg ? `${pRows.length} head groups` : PALL ? `All ${sorted.length} looms` : `First 25 of ${sorted.length} looms`) + ' in the Sorting basis order' + pwNote,
+  s.append(card(`Current vs benchmark and best, ${phg ? 'by head group' : 'by loom'}`, (phg ? `${pRows.length} head groups` : PALL ? `All ${sorted.length} looms` : `First 25 of ${sorted.length} looms`) + ' in the Sorting basis order' + pwNote,
     el('div', {class: 'toolbar'}, bvSeg('pressure'), pressWidthSeg()),
     sortableChart('pressure', pRows, [{v: 'name', label: phg ? 'Head group' : 'Loom', get: (r) => r.label || r.loom}, {v: 'now', label: 'Now', get: (r) => r.main}, {v: 'ref', label: 'Reference', get: (r) => ok(r.ref) ? r.ref : null}, {v: 'gap', label: 'Excess', sub: 'over reference', get: (r) => ok(r.ref) ? r.main - r.ref : null}],
       (R) => el('div', {class: 'tablebox'}, pressureChart(pLim ? R.slice(0, pLim) : R, floorNow, floorNew)), {b: 'gap', d: 'd'}),
     el('div', {class: 'legend'}, el('span', {class: 'lg'}, legendShape('bar'), 'Current'), el('span', {class: 'lg'}, legendShape('tick'), 'Benchmark'),
-      el('span', {class: 'lg'}, legendShape('circle'), 'Best'), el('span', {class: 'lg'}, legendShape('diamond'), 'Target'), el('span', {class: 'lg'}, legendShape('dot'), 'Floor now'), el('span', {class: 'lg'}, legendShape('dash'), 'Floor after the work')),
+      el('span', {class: 'lg'}, legendShape('circle'), 'Best'), el('span', {class: 'lg'}, legendShape('dot'), 'Floor now'), el('span', {class: 'lg'}, legendShape('dash'), 'Floor after the work')),
     phg ? null : el('button', {class: 'link', type: 'button', text: PALL ? 'Show the first 25' : `Show all ${sorted.length} looms`, onclick: () => { PALL = !PALL; render(); }})));
 
   // loom-wise / quality-wise comparison
@@ -757,7 +759,7 @@ function pagePressure() {
         r.only < floorNow - 1e-9 ? el('b', {text: f2(r.only)}) : f2(r.only), !ok(r.r1) ? '—' : r.r1 > 0 ? f1(r.r1 * 100) : '0', !ok(r.r1) ? '—' : r.r1 > 0 ? moneyOne(r.r1) : '0']), [1, 2, 3, 4, 5, 6, 7]);
   }
   s.append(card('Reference vs running pressure', (PVIEW === 'quality' ? 'The floor only drops when every quality at the top comes down, so most single-quality rows show no saving on their own.' : 'Highest pressure each loom ran at in the day') + pwNote,
-    el('div', {class: 'toolbar'}, view, pressWidthSeg(), modeSeg(PMODE, (v) => { PMODE = v; }, nT, 'Reference pressure', true)), body, PVIEW === 'quality' ? pLoomsNote() : null, PVIEW === 'quality' ? pGapNote() : null));
+    el('div', {class: 'toolbar'}, view, pressWidthSeg(), modeSeg(PMODE, (v) => { PMODE = v; }, 0, 'Reference pressure', true, true)), body, PVIEW === 'quality' ? pLoomsNote() : null, PVIEW === 'quality' ? pGapNote() : null));
 
   const ps = looms.slice().sort((a, b) => b.main - a.main || a.loom - b.loom)[0];
   s.append(trendCard('pressure', ps ? (PVIEW === 'loom' ? {kind: 'loom', loom: ps.loom} : {kind: 'hg', w: String(ps.width), hg: ps.hg}) : null));
@@ -784,7 +786,7 @@ function floorLadderCard(looms, floorNew) {
   const why = F.held ? `Loom ${F.held.loom} (${F.held.hg}) holds the floor at ${f2(F.held.main)}: it has ${F.held.why === 'no reference' ? 'no reference yet' : 'come down to its reference already, or runs below it'}.` : '';
   const rows = F.steps.map((st, i) => { const a = saving(F.now, st.floor);
     return [el('span', {}, `${i + 1}. `, loomLink(st.loom, D.latest, 'Loom ' + st.loom)), el('span', {}, hgLink(st.hg, st.width, D.latest), el('div', {class: 'note', text: st.width + ' cm'})), `${f2(st.from)} → ${f2(st.to)}`, f2(st.floor), st.drop > 1e-9 ? '−' + f2(st.drop) : '0', !ok(a) ? '—' : a > 0 ? f1(a * 100) : '0', !ok(a) ? '—' : a > 0 ? moneyOne(a) : '0']; });
-  return card('Floor ladder', `The ${F.steps.length || 'no'} loom${F.steps.length === 1 ? '' : 's'} to fix first, in order · ${PMODE === 'bm' ? 'to benchmark' : PMODE === 'best' ? 'to best' : 'to target'} · kgf/cm²`,
+  return card('Floor ladder', `The ${F.steps.length || 'no'} loom${F.steps.length === 1 ? '' : 's'} to fix first, in order · ${PMODE === 'bm' ? 'to benchmark' : 'to best'} · kgf/cm²`,
     F.steps.length ? waterfall(items, 'Floor pressure after each loom is brought down to its reference', null, {unit: 'kgf/cm²', dec: 2}) : el('p', {class: 'empty', text: why || 'The floor cannot come down.'}),
     F.steps.length ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2);opacity:.75'}), 'floor'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--good)'}), 'drop from fixing that loom')) : null,
     F.steps.length ? el('div', {class: 'nosort'}, table(['Step and loom', 'Head group', ['Loom pressure', 'now → reference'], ['Floor after', 'kgf/cm²'], ['Drop', 'kgf/cm²'], ['Energy saved so far', '% of compressor, from the looms'], ['Worth so far', '₹ a day · paise per pick, from the looms']], rows, [2, 3, 4, 5, 6])) : null,   // steps build on each other: not sortable
