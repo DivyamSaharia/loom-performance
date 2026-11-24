@@ -874,12 +874,11 @@ const chartLegend = (what, exText) => el('div', {class: 'legend'}, el('span', {c
   el('span', {class: 'lg'}, legendShape('circle'), `Best ${what}`), el('span', {class: 'lg'}, legendShape('diamond'), `Target ${what}`), el('span', {text: exText}));
 function pageCfm() {
   const s = el('section', {class: 'page', id: 'cfm'});
-  s.append(el('div', {}, el('h2', {text: `CFM, ${wLabel()} looms, ${dfmt(D.latest)}`}),
-    el('p', {class: 'lead', text: 'The compressor supplies the sum of every loom\'s air, so each loom brought down to its reference cuts total demand directly. Benchmark CFM is the head group\'s benchmark air per 1,000 picks (10th percentile) at the RPM the loom actually ran, so a loom is not rewarded for running slow; best CFM is the best loom-day\'s air per 1,000 picks at that RPM. Click any benchmark or best figure to see the loom runs behind it.'})));
-  s.append(airCard());   // Round T (Divyam, 20 Nov 2026): the air and compressor card, first on the tab
+  // Round A2 (Divyam, 24 Nov 2026): no lead note; "If every loom ran at its reference CFM" and "What the CFM saving is worth"
+  // are one card, first on the tab; its Air saved, Compressor energy saved, Energy saved and Money saved tiles are notes now
+  s.append(el('div', {}, el('h2', {text: `CFM, ${wLabel()} looms, ${dfmt(D.latest)}`})));
   const recs = latestRecs().map((x) => ({x, ...cfmRefs(x)}));
   const day = cfmDay(D.latest);
-  const cc = compDay(D.latest);
   const nT = Object.keys(TG).filter((k) => ok(TG[k].cfm)).length;
   const mode = modeSeg(CMODE, (v) => { CMODE = v; }, nT, 'Reference CFM');
   const above = recs.filter((r) => ok(r.ref) && r.x.cfm > r.ref + tolAir(r.ref));
@@ -888,16 +887,17 @@ function pageCfm() {
   if (typeof wkPut === 'function') { const w = day ? {air: day.air, after: day.after * 1440, date: dfmt(D.latest)} : null;   // Round J
     for (const k of ['E1:now', 'E1:after', 'E1:saved', 'E1:pct', 'E5']) wkPut(k, w); }
   const kp = (label, big, unit, note) => el('div', {}, el('div', {class: 'kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'big'}, ...big, el('small', {text: unit})), note ? el('div', {class: 'note', text: note}) : null));
-  s.append(card('If every loom ran at its reference CFM', (CMODE === 'bm' ? 'Head group benchmark' : REF_NOTE[CMODE]) + ' at each loom\'s own RPM',
+  const worth = cfmWorth(day, D.latest);
+  s.append(card('If every loom ran at its reference CFM', (CMODE === 'bm' ? 'Head group benchmark' : REF_NOTE[CMODE]) + ' at each loom\'s own RPM · what the air saved is worth',
     el('div', {class: 'toolbar'}, mode),
     el('div', {class: 'kpis'},
       kp('Total CFM now', [f0(day && day.now)], 'CFM', `24-h average draw of ${day ? day.n : 0} looms · ${f0(day && day.air)} ft³ in the day`),
-      kp('Total CFM after the work', [f0(day && day.after)], 'CFM', 'same picks, each loom at or below its reference'),
-      kp('Air saved', [f0(saved)], 'CFM', ok(saved) ? `${f0(saved * 1440)} ft³ a day` : null),
-      kp('Compressor energy saved', [f1(pct)], '%', 'of compressor air; energy follows air on a variable-speed compressor')),
+      kp('Total CFM after the work', [f0(day && day.after)], 'CFM', ok(saved) ? `air saved ${f0(saved)} CFM · ${f0(saved * 1440)} ft³ a day · ${f1(pct)}% of the floor's air` : null),
+      ...worth.tiles),
+    worth.gap,
     el('p', {class: 'note', text: `Each loom above its reference is brought down to it; looms already below stay where they are. ${above.length} loom${above.length === 1 ? ' is' : 's are'} above reference by more than ${S().tol_air_pct}%.${noRef ? ` ${noRef} loom${noRef === 1 ? ' has' : 's have'} no head group or benchmark and stay as they are.` : ''} Pressure savings are on the Pressure tab and are not added here.`})));
-  s.append(cfmMoneyCard(day, D.latest));
-  s.append(cfmStackCard());
+  s.append(airCard());   // Round T (Divyam, 20 Nov 2026): the air and compressor card (second since Round A2)
+  const cc = compDay(D.latest);
 
   // 12 Nov 2026: one card, Loom-wise / Head-group-wise (the head-group bars were their own card before)
   const sorted = recs.slice().sort((a, b) => b.ex - a.ex || b.x.cfm - a.x.cfm || a.x.loom - b.x.loom);
@@ -972,29 +972,6 @@ function cfmHgRows(recs) {
   rows.sort((a, b) => b.ex - a.ex || a.label.localeCompare(b.label));
   return {rows, none};
 }
-// Excess CFM day by day (24-h average draw): the CFM above each loom's reference, split by the head groups with the most of
-// it over the period. Today's references for every day, as the table. Round T (Divyam, 20 Nov 2026): the excess only; the
-// floor's total CFM by day is the Floor CFM line of the Air and compressor card.
-const EXC_COLS = ['var(--bad)', 'var(--warn)', '#8e6bbf', 'var(--info)', '#c77d1a', '#d16ba5', 'var(--series)'];
-const EXC_CARD = 'Excess CFM by day, by head group';
-function cfmStackCard() {
-  const dates = (D.complete_days || []).filter((d) => d <= D.latest).slice(-14);
-  const tot = dates.map(() => 0), exc = new Map();
-  dates.forEach((d, i) => {
-    for (const x of (D.loomdays || []).filter((y) => y.date === d && inW(y.width) && y.run > 0)) {
-      const r = cfmRefs(x); tot[i] += x.cfm * x.run / 1440;
-      if (r.ex > 0) { const k = `${x.hg} · ${x.width}`; if (!exc.has(k)) exc.set(k, dates.map(() => 0)); exc.get(k)[i] += r.ex * x.run / 1440; }
-    }
-  });
-  const top = topLayers([...exc.entries()].map(([name, vals]) => ({name, vals})), 6, 'Other head groups');
-  const exL = top.map((l, i) => ({...l, name: l.other ? `${l.name} (${l.other})` : l.name, color: l.other ? EXC_COLS[6] : EXC_COLS[i]}));
-  const exTot = dates.map((_, i) => exL.reduce((a, l) => a + (l.vals[i] || 0), 0)), sh = dates.length && tot.at(-1) ? 100 * exTot.at(-1) / tot.at(-1) : null;
-  return card(EXC_CARD, `${dates.length} days to ${dfmt(D.latest)} · 24-h average draw above the reference`,
-    ok(sh) ? el('div', {class: 'toolbar'}, el('span', {class: 'note', text: `Excess on ${dfmt(D.latest)}: ${f0(exTot.at(-1))} CFM, ${f1(sh)}% of the floor's air`})) : null,
-    dates.length ? hlStack({dates, layers: exL, fmt: f0, aria: 'Excess CFM by day, by head group'}, 'cfm-ex') : el('div', {class: 'empty', text: 'No complete day yet: the bars appear after the first full day of loom data. Check again after the daily run.'}),
-    el('p', {class: 'note', text: `Each bar is the CFM the looms drew above their reference that day (looms at or below it add nothing), split by the head groups with the most excess over these days. Uses today's ${CMODE === 'bm' ? 'benchmarks' : CMODE === 'best' ? 'best loom-days' : 'targets'} for every day, as the "Excess CFM by day" table below. The floor's total CFM by day is the Floor CFM line in the Air and compressor card (CFM view). Hover a bar for its figures.`}));
-}
-
 // ---------------------------------------------------------------- Effective RPM
 // Same layout as the CFM tab. Every loom brought up to its reference effective RPM adds picks directly.
 // Reference = head group benchmark (90th percentile), best loom-day, or target (93% of target RPM); benchmark where unset.

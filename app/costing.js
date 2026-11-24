@@ -805,6 +805,21 @@ function compNote(c, date) {
   if (!c) return `Compressor power (kWh and rupees) starts on 5 Nov 2026: the weaving compressor's meter readings for 5–19 Nov, then the costing sheet's Power (Compressor) line. The money figures appear once a day with a compressor reading has loom data. Next: ${tcNext()}.`;
   return `Uses the compressor's ${f0(c.kwh)} kWh (${compSrc(c.date)}) at ₹${f2(c.rate)} a unit on ${dfmt(c.date)}${c.exact ? '' : ` (the latest day with a compressor reading; ${dfmt(date)} is not in the costing sheet yet)`}, spread over the ${f0(c.ft3 / 1000)} thousand ft³ the floor drew. Money figures are for one day and ×30 for a month at that day's level.`;
 }
+// Round A2 (Divyam, 24 Nov 2026): the money tiles of "If every loom ran at its reference CFM" (and, from the Pressure push,
+// its pressure twin). The Energy saved and Money saved tiles are gone: Cost per pick saved's note carries the rupees and kWh
+// a day. Compressor, that day keeps its rupees; its note gives the kWh and the compressor's cost per pick on the whole floor's
+// picks that day (both widths, one compressor) in place of the ₹ a unit, and names the day when it is not the day shown.
+// kwh: the energy saved a day; picks: the picks the saving is spread over (paise per pick); rate: the Energy rate tile too.
+function worthTiles(c, kwh, picks, scope, date, rate) {
+  const r = kwh * c.rate, p = ppS(r, picks), cp = ppS(c.rupees, floorPicks(c.date));
+  const saved = `${rs(r)} a day saved (${f0(kwh)} kWh)`;
+  return [
+    kpiC('Cost per pick saved', ok(p) ? pz(p) : NA, ok(p) ? 'paise per pick' : '', ok(p) ? `${saved} · over ${pn(picks / 1e5, 2)} lakh picks, ${scope}` : `${saved} · no picks for that day: pick another day with the date chip at the top of the page`),
+    kpiC('In a month', rs(r * 30), '× 30 days', null),
+    kpiC('Compressor, that day', rs(c.rupees), '', `${f0(c.kwh)} kWh · ${ok(cp) ? `${pz(cp)} paise per pick, both widths` : 'no picks that day'}${c.exact ? '' : ` · from ${dfmt(c.date)}, the latest day with a reading (${dfmt(date)} has none yet)`}`),
+    rate ? kpiC('Energy rate', f2(c.sFt3 * 1000), 'kWh per 1,000 ft³', erNote(c.fit)) : null].filter(Boolean);   // Round V: the rate the CFM saving uses
+}
+// The Pressure tab's money tiles (until its own Round A2 push)
 function moneyKpis(c, kwhLo, kwhHi, picks, scope, rate) {
   const rng = (lo, hi, fmt) => Math.abs(hi - lo) < 0.5 * (hi >= 100 ? 1 : 0.05) ? fmt(lo) : `${fmt(lo)}–${fmt(hi)}`;
   const rsLo = kwhLo * c.rate, rsHi = kwhHi * c.rate, pLo = ppS(rsLo, picks), pHi = ppS(rsHi, picks);
@@ -814,22 +829,18 @@ function moneyKpis(c, kwhLo, kwhHi, picks, scope, rate) {
     kpiC('Cost per pick saved', ok(pLo) ? pzR(pLo, pHi) : NA, ok(pLo) ? 'paise per pick' : '', ok(pLo) ? `over ${pn(picks / 1e5, 2)} lakh picks, ${scope}` : 'no picks for that day'),
     kpiC('In a month', rng(rsLo * 30, rsHi * 30, rs), '× 30 days', null),
     kpiC('Compressor, that day', rs(c.rupees), '', `${f0(c.kwh)} kWh · ₹${f2(c.rate)} a unit`),
-    rate ? kpiC('Energy rate', f2(c.sFt3 * 1000), 'kWh per 1,000 ft³', erNote(c.fit)) : null);   // Round V: the rate the CFM saving uses
+    rate ? kpiC('Energy rate', f2(c.sFt3 * 1000), 'kWh per 1,000 ft³', erNote(c.fit)) : null);
 }
-function cfmMoneyCard(day, date) {
+// The CFM saving in rupees for the combined card on the CFM tab (Round A2): its tiles, or the note saying why there are none.
+function cfmWorth(day, date) {
   const c = compDay(date);
-  const body = [];
-  if (c && day) {
-    const saved = (day.now - day.after) * 1440;
-    if (typeof wkPut === 'function') { const kwh = saved * c.sFt3, r = kwh * c.rate;   // Round J: the tiles below, for their Working
-      wkPut('E2:kwh', {ft3: saved, kwhFt3: c.sFt3, how: erHow(c.fit)}); wkPut('E2:rs', {kwh, rate: c.rate}); wkPut('E2', {kwh, rate: c.rate}); wkPut('A8:cfm', {rs: r, picks: day.cpk}); wkPut('E2:month', {rs: r});
-      wkPut('E3:day', {date: dfmt(c.date), kwh: c.kwh, rate: c.rate, rupees: c.rupees, src: compSrc(c.date)}); wkPut('E9', erWk(c.fit, c.date, c.kwhFt3)); }
-    body.push(moneyKpis(c, saved * c.sFt3, saved * c.sFt3, day.cpk, `${wLabel()} looms on ${dfmt(date)}`, true));
-    body.push(el('p', {class: 'note', text: `Saved air ${f0(saved)} ft³ a day × ${f2(c.sFt3 * 1000)} kWh per 1,000 ft³ × ₹${f2(c.rate)} a unit. The kWh per 1,000 ft³ is the energy rate for the CFM saving: ${erHow(c.fit)}.${c.fit && c.fit.used === 'slope' && c.fit.a > 0 ? ` About ${f0(c.fit.a)} kWh a day of the compressor's energy does not move with the air, so this rate sits below the day's average of ${f2(c.kwhFt3 * 1000)}.` : ''} Cost per pick saved = rupees saved ÷ the same looms' picks that day, in paise. Picks are fabric picks ÷ 39.37, the costing sheet's basis, so it compares with the Costing tab's cost per pick. In the tables it is per loom or per head group, over that loom's or head group's own picks.`}));
-  }
-  body.push(el('p', {class: 'note', text: compNote(c, date) + ' Pressure savings are on the Pressure tab and are not added to this.'}));
-  if (typeof fxRpmGainNote === 'function') body.push(fxRpmGainNote(date, false));   // R2: realisation gained at benchmark RPM (owner, analysis on)
-  return card('What the CFM saving is worth', 'Excess air brought down to the reference, in kWh and rupees', ...body);
+  if (!c) return {tiles: [], gap: el('p', {class: 'note', text: compNote(c, date)})};
+  if (!day) return {tiles: [], gap: el('p', {class: 'note', text: `No loom data for ${dfmt(date)}, so there is nothing to value: pick another day with the date chip at the top of the page.`})};
+  const saved = (day.now - day.after) * 1440;
+  if (typeof wkPut === 'function') { const kwh = saved * c.sFt3, r = kwh * c.rate;   // Round J: the tiles' Working
+    wkPut('E2:kwh', {ft3: saved, kwhFt3: c.sFt3, how: erHow(c.fit)}); wkPut('E2:rs', {kwh, rate: c.rate}); wkPut('E2', {kwh, rate: c.rate}); wkPut('A8:cfm', {rs: r, picks: day.cpk}); wkPut('E2:month', {rs: r});
+    wkPut('E3:day', {date: dfmt(c.date), kwh: c.kwh, rate: c.rate, rupees: c.rupees, src: compSrc(c.date)}); wkPut('E9', erWk(c.fit, c.date, c.kwhFt3)); }
+  return {tiles: worthTiles(c, saved * c.sFt3, day.cpk, `${wLabel()} looms on ${dfmt(date)}`, date, true), gap: null};
 }
 // Period for the air and compressor card's line: 7, 14 or 30 days, all days (default) or the shared "Dates" range.
 let CPWPER = 'all';
@@ -930,7 +941,7 @@ function airCard() {
     : gapOf ? `${pick.label} is ${gapOf.label} less its At ${refW} line; tap ${gapOf.label} to see both lines.`
     : `${pick.label} has no reference line: the compressor's energy is taken to fall in step with the floor's air, so this figure would not change with the looms brought down to their ${refW} CFM.`;
   return card(AP_CARD, sub, views, refs, el('div', {class: 'kpis sc sc4'}, ...figs.map(tile)),   // 2 × 2 on a phone
-    el('p', {class: 'note', text: `Tap a tile to chart it day by day; now charting ${pick.label}.${APVIEW === 'pow' && flat ? ' Over these days the compressor\'s kWh changes by under 2%, so Energy per air and Cost per air move mostly with the floor\'s air (Cost per air also with the ₹ a unit).' : ''}`}),
+    el('p', {class: 'note'}, el('b', {text: `Tap a tile to chart it day by day; now charting ${pick.label}.`}), `${APVIEW === 'pow' && flat ? ' Over these days the compressor\'s kWh changes by under 2%, so Energy per air and Cost per air move mostly with the floor\'s air (Cost per air also with the ₹ a unit).' : ''}`),
     bar, chart, rows.length > 1 ? el('p', {class: 'note', text: refNote}) : null);
 }
 function pressureMoneyCard(pp) {
