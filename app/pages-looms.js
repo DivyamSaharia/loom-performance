@@ -210,7 +210,8 @@ const actOwn = () => typeof fxIsOwner === 'function' && fxIsOwner() && !isPlant(
 const ACTV = {picks: ['Picks by quality', 'picks by quality'], eff: ['Efficiency by quality', 'efficiency by quality'], cfm: ['Average CFM per loom by quality', 'average CFM per loom by quality'],
   off: ['Powered down, loom by loom', 'which looms were powered down, their quality and for how long'], floor: ['Looms at the floor pressure', 'which looms ran at this pressure'],
   real: ['Realisation per pick by quality', 'realisation per pick by quality'], fold: ['Folding shortage by day', 'how the folding shortage moved over the month'],
-  be: ['Break-even realisation by day', 'break-even realisation day by day, month to date']};
+  be: ['Break-even realisation by day', 'break-even realisation day by day, month to date'],
+  fq: ['Folded cost per pick by quality', 'the folded cost per pick of each quality, on the loom cost method']};   // Round A3 (item 8)
 function tapTip(k, tip, hint) { if (!k) return k; k.dataset.tip = tip; if (hint !== false) k.append(el('div', {class: 'note taphint', text: tip})); return k; }
 function actTap(k, id) {
   if (!k || !actOwn() || !ACTV[id]) return k;
@@ -231,7 +232,7 @@ function actTap(k, id) {
 function actView() {
   if (!ACTOPEN || !actOwn()) return null;
   const f = {picks: actPicksCard, eff: actEffCard, cfm: actCfmCard, off: actOffCard, floor: actFloorCard,
-    real: typeof fxRealQCard === 'function' ? fxRealQCard : null, fold: typeof tcFoldCard === 'function' ? tcFoldCard : null, be: typeof fxBeTrendCard === 'function' ? fxBeTrendCard : null}[ACTOPEN];
+    real: typeof fxRealQCard === 'function' ? fxRealQCard : null, fold: typeof tcFoldCard === 'function' ? tcFoldCard : null, be: typeof fxBeTrendCard === 'function' ? fxBeTrendCard : null, fq: typeof fxFoldQCard === 'function' ? fxFoldQCard : null}[ACTOPEN];
   const c = f ? f() : null;
   if (!c) return null;
   c.id = 'actview'; c.classList.add('actview');
