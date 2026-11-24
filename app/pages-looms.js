@@ -54,31 +54,6 @@ function actionLists() {
   return out;
 }
 function loomCell(x) { return el('div', {}, el('div', {}, loomLink(x.loom, x.date, 'Loom ' + x.loom)), el('div', {class: 'note'}, hgLink(x.hg, x.width, x.date), ` · ${x.width} cm ${x.type}`)); }
-// vis: {bar(item) -> a ranked-bar row, axis}: each listed loom's excess as a bar, with a tick at its own tolerance.
-// vis.hg: {axis, val(items) -> the head group's figure, text(v)}: the same card's bars head-group-wise (12 Nov 2026).
-function actionCard(id, title, note, items, cols, row, extra, vis) {
-  // 18 Nov 2026: the chart ranks every listed loom on its Sorting basis and draws the first 8; the table lists every loom
-  // (8 shown, then "Show all N rows"), so a sort never works on a pre-cut list.
-  const lim = 8;
-  const hgMode = vis && vis.hg && bv(id) === 'hg';
-  let bars = null;
-  if (vis && items.length && !hgMode) bars = hbars(items.map(vis.bar), {aria: `${title}: each loom's excess against its tolerance`, axis: vis.axis, labelW: 90, limit: lim, nameLabel: 'Loom', sortLabel: vis.sortLabel || vis.axis});
-  if (hgMode && items.length) {
-    const by = new Map();
-    for (const r of items) { const k = key(r.x.width, r.x.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
-    const G = [...by.values()].map((R) => ({R, x0: R[0].x, v: vis.hg.val(R)})).sort((a, b) => b.v - a.v);
-    bars = hbars(G.map((g) => ({label: `${g.x0.hg} · ${g.x0.width}`, v: g.v, color: 'var(--bad)', text: vis.hg.text(g.v), onClick: () => openHg(g.x0.hg, g.x0.width, D.latest),
-      title: `${g.x0.hg}, ${g.x0.width} cm: ${vis.hg.text(g.v)} over ${g.R.length} loom${g.R.length === 1 ? '' : 's'} (${g.R.map((r) => r.x.loom).join(', ')})`})), {aria: `${title} by head group`, axis: vis.hg.axis, labelW: 130, nameLabel: 'Head group', sortLabel: vis.hg.sortLabel || vis.hg.axis.replace(/, by head group$/, '')});
-  }
-  const legend = bars && !hgMode ? el('div', {class: 'legend'}, vis.tick === false ? null : el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad);opacity:.35'}), 'within tolerance'),
-      el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), vis.past || 'past tolerance'), vis.tick === false ? null : el('span', {class: 'lg'}, legendShape('tick'), 'tolerance')) : null;
-  const cut = bars && !hgMode && items.length > lim ? el('p', {class: 'note', text: `The chart shows the first ${lim} of these ${items.length} looms in the Sorting basis order; the table below lists all ${items.length}.`}) : null;
-  const body = items.length ? [vis && vis.hg ? el('div', {class: 'toolbar'}, bvSeg(id)) : null, bars, legend, cut,
-    table(cols, items.map(row), cols.map((_, i) => i).filter((i) => i > 0))]
-    : [el('div', {class: 'empty', text: 'No loom off its benchmark or target on this day.'})];
-  return card(`${title} · ${items.length} loom${items.length === 1 ? '' : 's'}`, note, ...body, extra || null);
-}
-
 // Priority note (10 Nov 2026): the looms to work on first on the day shown, ranked by what fixing them is worth a day.
 // Lost picks (RPM below its reference, efficiency below the line) are valued at the day's fixed + attendance-following
 // cost per pick: costs that run whether or not the loom weaves, so every pick lost leaves them on fewer picks. Excess air is
@@ -139,8 +114,9 @@ function priorityCard() {
     wkPut('B6', o ? {loom: o.x.loom, by: o.pickBy, picks: o.lakh * 1e5, pp: o.lakh > 0 ? 100 * o.rsPicks / (o.lakh * 1e5) : null, rsPicks: o.pickBy ? o.rsPicks : null, ft3: o.ft3, rsFt3: P.cc ? P.cc.sRsFt3 : null, rsAir: P.cc ? o.rsAir : null, press: o.press, rsPress: P.cc ? o.rsPress : null} : null);
     wkPut('K12', real ? {loom: o.x.loom, picks: o.lakh * 1e5, pp: 100 * o.rsPicks / (o.lakh * 1e5)} : null);
   }
-  const sk = P.skipped.length ? el('p', {class: 'note co-skip', text: `${P.skipped.length} loom${P.skipped.length === 1 ? '' : 's'} left out: head group changed in the last 2 shifts (${P.skipped.map((c) => `loom ${c.loom}, shift ${c.shift}`).join('; ')}). ${P.skipped.length === 1 ? 'It comes' : 'They come'} back once 2 shifts pass on the new head group.`}) : null;
-  if (!P.rows.length) return card('Work on these first', dfmt(D.latest), el('p', {class: 'empty', text: P.skipped.length ? 'No other loom is off its reference today.' : 'No loom is off its reference today. Nothing to chase.'}), sk, typeof fxBreakEvenChart === 'function' ? fxBreakEvenChart(D.latest) : null);
+  // Round A1 (Divyam, 24 Nov 2026): the day of the quality change, for a loom left out and for each loom listed
+  const sk = P.skipped.length ? el('p', {class: 'note co-skip', text: `${P.skipped.length} loom${P.skipped.length === 1 ? '' : 's'} left out: head group changed in the last 2 shifts (${P.skipped.map((c) => `loom ${c.loom}, changed on ${dfmt(c.date)} in shift ${c.shift}${c.to && c.to.length ? ` to ${c.to.join(', ')}` : ''}`).join('; ')}). ${P.skipped.length === 1 ? 'It comes' : 'They come'} back once 2 shifts pass on the new head group.`}) : null;
+  if (!P.rows.length) return card('Work on these first', dfmt(D.latest), el('p', {class: 'empty', text: P.skipped.length ? 'No other loom is off its reference today.' : 'No loom is off its reference today. Nothing to chase.'}), sk);
   // 12 Nov 2026 (Divyam): why as short points, impact as a total in rupees with its breakdown.
   const li = P.rows.map((o) => {
     const why = o.why.slice();
@@ -156,6 +132,7 @@ function priorityCard() {
     return el('li', {},
       el('div', {class: 'prio-head'}, loomLink(o.x.loom, D.latest, 'Loom ' + o.x.loom), el('span', {class: 'note', text: ` · ${o.x.hg || '—'}${o.x.width ? `, ${o.x.width} cm` : ''}`}),
         P.money ? el('b', {class: 'prio-rs', text: `${rs(o.rs)} a day`}) : null),
+      prioChange(o.x.loom),
       el('div', {class: 'prio-sec'}, el('b', {text: 'Why'}), el('ul', {class: 'why'}, why.map((w) => el('li', {}, el('b', {text: w.k + ': '}), w.t, w.sub ? el('span', {class: 'note', text: ` (${w.sub})`}) : null)))),
       el('div', {class: 'prio-sec'}, el('b', {text: 'Impact'}), el('div', {class: 'tablebox'}, tb),
         o.rsReal != null && o.rsCost > 0 ? el('p', {class: 'note', text: `Also ${rs(o.rsCost)} of fixed and staff cost left on fewer picks; not added to the total, which values the lost picks at realisation.`}) : null));
@@ -164,8 +141,14 @@ function priorityCard() {
     : 'Ranked by lost picks, then extra air: the costing for this day is not in yet, so there are no rupee figures.')
     + (P.rows.some((o) => o.rsReal != null) ? ' With the realisation analysis on, lost picks on a priced loom-day are valued at that loom-day\'s realisation per pick instead (sale value at prevailing rate less standard yarn cost, As sold, its own quality), so a loom on a dearer cloth ranks higher; a loom-day the Realisation tab cannot price keeps the cost valuation and says so.' : '');
   return card('Work on these first', `${dfmt(D.latest)} · top ${P.rows.length} of ${P.total} loom${P.total === 1 ? '' : 's'} off their reference`,
-    el('ol', {class: 'prio'}, li), sk, el('p', {class: 'note', text: basis + ' The cards below list every loom per metric.'}),
-    typeof fxBreakEvenChart === 'function' ? fxBreakEvenChart(D.latest) : null);   // 12 Nov 2026: loom realisation against break-even (owner, analysis on)
+    el('ol', {class: 'prio'}, li), sk, el('p', {class: 'note', text: basis}));
+}
+// Round A1: the loom's last quality change in the loom data (the last 60 complete days), under its name in the list
+function prioChange(loom) {
+  const c = lastChange(D.loomdays, loom, D.latest);
+  if (!c.first) return null;
+  return el('div', {class: 'note prio-co', text: c.change ? `Quality changed on ${dfmt(c.change.date)}${c.change.from.length ? ` from ${c.change.from.join(', ')}` : ''} to ${c.change.to.join(', ')}`
+    : `No quality change since ${dfmt(c.first)}, the first day in the loom data`});
 }
 
 function pageActions() {
@@ -173,7 +156,9 @@ function pageActions() {
   const day = kpiSet([D.latest]), pr = priorDates().length ? kpiSet(priorDates()) : null;
   s.append(el('div', {}, el('h2', {text: `${wLabel()} on ${dfmt(D.latest)}`}),
     el('p', {class: 'lead', text: 'Day totals across shifts A and B for the day shown, compared with the average of the days before it. Everything on this page uses the latest day only.'})));
-  const kp = el('div', {class: 'kpis'});
+  // Round A1 (Divyam, 24 Nov 2026): Needs a head group at the top of the tab, folded unless a style is waiting for one
+  s.append(assignCard(D.unassigned || [], {pending: true}));
+  const kp = el('div', {class: 'kpis act'});
   // each tile ends with a 7-day trend line (the last 7 complete days up to the day shown; the last point is that day)
   const kpi = (label, val, unit, d, sub, sp) => el('div', {class: 'card kpi'}, el('div', {class: 'label', text: label}), el('div', {class: 'val'}, val, unit ? el('small', {text: unit}) : null), sub ? el('div', {class: 'note', text: sub}) : null, d, sp || null);
   const last7 = (D.complete_days || []).filter((d) => d <= D.latest).slice(-7), K7 = last7.map((d) => ({d, k: kpiSet([d])}));
@@ -183,79 +168,169 @@ function pageActions() {
   if (day && typeof wkPut === 'function') {   // Round J: the figures the tiles are drawn with, for their Working
     const L0 = (D.loomdays || []).filter((x) => x.date === D.latest && inW(x.width) && x.run > 0), A0 = agg(L0);
     if (A0) { wkPut('A1', {fpicks: A0.fpicks, days: 1}); wkPut('A2:eff', {run: A0.run, tot: A0.run + A0.stop}); wkPut('A2:rpm', {picks: A0.picks, run: A0.run});
-      wkPut('A3', {air: A0.air, fpicks: A0.fpicks}); wkPut('B1:cfm', {air: A0.air, run: A0.run}); wkPut('B1:total', {air: A0.air}); }
+      wkPut('B1:cfm', {air: A0.air, run: A0.run}); wkPut('B1:total', {air: A0.air}); }
     wkPut('B1:off', {min: (D.util || []).filter((u) => u.date === D.latest && inW(u.width)).reduce((a, u) => a + u.off, 0)});
     wkPut('A6', pr ? {now: day.picks_l, prev: pr.picks_l, n: priorDates().length, dp: 2, unit: 'lakh'} : null);
   }
   if (day) {
     kp.append(
-      kpi('Picks', f2(day.picks_l), 'lakh', delta(day.picks_l, pr && pr.picks_l, true, (x) => x.toFixed(2), ' lakh'), null, sp('picks_l', f2, 'Picks, lakh')),
-      kpi('Efficiency', f1(day.eff), '%', delta(day.eff, pr && pr.eff, true, (x) => x.toFixed(1), ' pts'), null, sp('eff', f1, 'Efficiency, %')),
+      actTap(kpi('Picks', f2(day.picks_l), 'lakh', delta(day.picks_l, pr && pr.picks_l, true, (x) => x.toFixed(2), ' lakh'), null, sp('picks_l', f2, 'Picks, lakh')), 'picks'),
+      actTap(kpi('Efficiency', f1(day.eff), '%', delta(day.eff, pr && pr.eff, true, (x) => x.toFixed(1), ' pts'), null, sp('eff', f1, 'Efficiency, %')), 'eff'),
       kpi('Speed while running', f0(day.rpm), 'RPM', delta(day.rpm, pr && pr.rpm, true, (x) => x.toFixed(0), ' RPM'), null, sp('rpm', f0, 'RPM')),
-      kpi('Air per 1,000 picks', f1(day.apk), 'ft³', delta(day.apk, pr && pr.apk, false, (x) => x.toFixed(1), ' ft³'), null, sp('apk', f1, 'Air per 1,000 picks, ft³')),
       kpi('Average CFM per loom', f1(day.cfm), 'CFM', delta(day.cfm, pr && pr.cfm, false, (x) => x.toFixed(1), ' CFM'), 'ft³/min while running, run-weighted', sp('cfm', f1, 'Average CFM per loom')),
-      kpi('Total CFM consumption', f0(day.floor_cfm), 'CFM', delta(day.floor_cfm, pr && pr.floor_cfm, false, (x) => x.toFixed(0), ' CFM'), `24-h average draw of all looms · ${f0(day.air)} ft³ in the day`, sp('floor_cfm', f0, 'Total CFM')),
-      kpi('Powered down', f1(day.off_h), 'loom-h', delta(day.off_h, pr && pr.off_h, false, (x) => x.toFixed(1), ' h'), null, sp('off_h', f1, 'Powered down, loom-h')));
+      actTap(kpi('Total CFM consumption', f0(day.floor_cfm), 'CFM', delta(day.floor_cfm, pr && pr.floor_cfm, false, (x) => x.toFixed(0), ' CFM'), `24-h average draw of all looms · average ${f1(day.cfm)} CFM per loom while running`, sp('floor_cfm', f0, 'Total CFM')), 'cfm'),
+      actTap(kpi('Powered down', f1(day.off_h), 'loom-h', delta(day.off_h, pr && pr.off_h, false, (x) => x.toFixed(1), ' h'), null, sp('off_h', f1, 'Powered down, loom-h')), 'off'));
     const fl = (D.pressure.floor || []).slice(-1)[0];
     const fm = new Map((D.pressure.floor || []).map((f) => [f.date, f.floor]));
     if (fl && typeof wkPut === 'function') wkPut('B1:floor', {floor: fl.floor, loom: fl.loom, hg: fl.hg});
-    if (fl) kp.append(kpi('Floor pressure', f2(fl.floor), 'kgf/cm²', el('span', {class: 'delta flat', text: `both widths · loom ${fl.loom}, ${fl.hg}`}), null, spk(last7.map((d) => fm.has(d) ? fm.get(d) : null), f2, 'Floor pressure, kgf/cm²')));
+    if (fl) kp.append(actTap(kpi('Floor pressure', f2(fl.floor), 'kgf/cm²', el('span', {class: 'delta flat', text: `both widths · loom ${fl.loom}, ${fl.hg}`}), null, spk(last7.map((d) => fm.has(d) ? fm.get(d) : null), f2, 'Floor pressure, kgf/cm²')), 'floor'));
     if (typeof fxActionTiles === 'function') kp.append(...fxActionTiles(kpi, last7, spk));   // 12 Nov 2026: realisation per pick (owner) and cost per pick
-    if (typeof tcActionTiles === 'function') kp.append(...tcActionTiles(kpi));   // Round F: target cost per pick, folding shortage (+ owner: target realisation and profit)
+    if (typeof tcActionTiles === 'function') kp.append(...tcActionTiles(kpi));   // Round F: target cost per pick, folding shortage (+ owner: target profit; Round A1: no target realisation tile)
+    if (typeof fxBeActTile === 'function') { const t = fxBeActTile(kpi, last7, spk); if (t) kp.append(t); }   // Round A1: Break-even realisation (owner)
   }
   s.append(kp);
+  if (day) { const v = actView(); if (v) s.append(v); }   // Round A1: the open tile's view, under the tiles
   if (day) s.append(priorityCard());
   if (day && typeof tcCard === 'function') { const c = tcCard(); if (c) s.append(c); }   // Round F: Where the saving is (opens from the Target cost per pick tile)
-
-  const un = D.unassigned || [];
-  if (un.length) s.append(assignCard(un));
-
-  const A = actionLists();
-  if (typeof wkPut === 'function') {   // Round J: the first loom of each card, for its Working
-    const r = A.rpm[0], e = A.eff[0], c = A.cfm[0], q = A.press[0];
-    wkPut('B8:rpm', r ? {loom: r.x.loom, ref: r.now + r.gap, now: r.now, run: r.x.run, pf: pf(r.x.width, r.x.hg)} : null);
-    wkPut('B8:eff', e ? {loom: e.x.loom, line: EFF_BAD(), tot: e.x.run + e.x.stop, run: e.x.run, rpm: e.x.rpm, pf: pf(e.x.width, e.x.hg)} : null);
-    wkPut('B8:cfm', c ? {loom: c.x.loom, now: c.now, ref: c.now - c.gap, tol: S().tol_air_pct} : null);
-    wkPut('B8:press', q ? {loom: q.x.loom, now: q.now, ref: q.now - q.gap} : null);
-  }
-  const lostRpm = A.rpm.reduce((a, r) => a + r.impact, 0), lostEff = A.eff.reduce((a, r) => a + r.impact, 0);
-  const exCfm = A.cfm.reduce((a, r) => a + r.gap, 0);
-  s.append(el('div', {class: 'split'},
-    actionCard('a-rpm', 'RPM', `Below benchmark by more than ${S().tol_rpm_pct}% or below your target · ${f2(lostRpm)} lakh picks lost`, A.rpm,
-      ['Loom', ['RPM', 'picks/min'], ['Gap', 'RPM'], ['Lost', 'lakh picks']],
-      (r) => [loomCell(r.x), mcell(r.now, r.bm, r.tg, f0, true, tolRpm, tolRpm, {w: r.x.width, hg: r.x.hg, m: 'rpm'}), f0(r.gap), f3(r.impact)], null,
-      {axis: 'RPM below the reference', sortLabel: 'Gap', bar: (r) => { const ref = r.now + r.gap, tol = tolRpm(ref); return {label: 'Loom ' + r.x.loom, v: r.gap, tol, color: 'var(--bad)', text: `−${f0(r.gap)}`, onClick: () => openLoom(r.x.loom, r.x.date),
-        title: `Loom ${r.x.loom} (${r.x.hg}): ${f0(r.now)} RPM against ${f0(ref)}, ${f0(r.gap)} below; tolerance ${f0(tol)} (${S().tol_rpm_pct}%)`}; },
-        hg: {axis: 'Lost picks, lakh, by head group', sortLabel: 'Lost', val: (R) => R.reduce((a, r) => a + r.impact, 0), text: (v) => f3(v)}}),
-    actionCard('a-eff', 'Efficiency', `Below ${f0(EFF_BAD())}%, any quality · ${f2(lostEff)} lakh picks short of ${f0(EFF_BAD())}%`, A.eff,
-      ['Loom', ['Efficiency', '%'], ['Below line', 'points'], ['Picks short', 'lakh']],
-      (r) => [el('div', {}, loomCell(r.x), r.beam ? el('span', {class: 'pill info', text: `likely beam · ${f1(r.x.warp_rate)} warp/100k picks`}) : null),
-        effCell(r.now), f1(r.gap), f3(r.impact)], null,
-      {axis: `Points below the ${f0(EFF_BAD())}% line (no tolerance)`, tick: false, past: 'below the line', sortLabel: 'Below line', bar: (r) => ({label: 'Loom ' + r.x.loom, v: r.gap, color: 'var(--bad)', text: `−${f1(r.gap)}`, onClick: () => openLoom(r.x.loom, r.x.date),
-        title: `Loom ${r.x.loom} (${r.x.hg}): ${f1(r.now)}% efficiency, ${f1(r.gap)} points below the ${f0(EFF_BAD())}% line`}),
-        hg: {axis: `Picks short of ${f0(EFF_BAD())}%, lakh, by head group`, sortLabel: 'Picks short', val: (R) => R.reduce((a, r) => a + r.impact, 0), text: (v) => f3(v)}}),
-    actionCard('a-cfm', 'CFM', `Above benchmark CFM by more than ${S().tol_air_pct}% or above your target · ${f1(exCfm)} CFM excess while running`, A.cfm,
-      ['Loom', ['CFM', 'ft³/min running'], ['Air', 'ft³/1,000 picks'], ['Excess', 'CFM']],
-      (r) => [loomCell(r.x), mcell(r.now, r.bm, r.tg, f1, false, tolAir, tolAir, {w: r.x.width, hg: r.x.hg, m: 'apk', view: 'cfm', rpm: r.x.rpm}), f1(r.x.apk), f1(r.gap)],
-      el('p', {class: 'note', text: 'Benchmark CFM = the head group\'s benchmark air per 1,000 picks × this loom\'s RPM ÷ 1,000, so a loom is not rewarded for running slow.'}),
-      {axis: 'CFM over the reference', sortLabel: 'Excess', bar: (r) => { const ref = r.now - r.gap, tol = tolAir(ref); return {label: 'Loom ' + r.x.loom, v: r.gap, tol, color: 'var(--bad)', text: `+${f1(r.gap)}`, onClick: () => openLoom(r.x.loom, r.x.date),
-        title: `Loom ${r.x.loom} (${r.x.hg}): ${f1(r.now)} CFM against ${f1(ref)}, ${f1(r.gap)} over; tolerance ${f1(tol)} (${S().tol_air_pct}%)`}; },
-        hg: {axis: 'Excess CFM while running, by head group', sortLabel: 'Excess', val: (R) => R.reduce((a, r) => a + r.gap, 0), text: (v) => '+' + f1(v)}}),
-    actionCard('a-press', 'Pressure', `Main pressure more than ${PRESS_TOL} kgf/cm² above benchmark or target`, A.press,
-      ['Loom', ['Main pressure', 'kgf/cm², day max'], ['Excess', 'kgf/cm²'], 'Floor'],
-      (r) => [loomCell(r.x), mcell(r.now, r.bm, r.tg, f2, false, tolP, tolP, {w: r.x.width, hg: r.x.hg, m: pkey(r.b)}), f2(r.gap), r.atFloor ? el('span', {class: 'pill bad', text: 'sets floor'}) : ''], null,
-      {axis: 'kgf/cm² over the reference', sortLabel: 'Excess', bar: (r) => ({label: 'Loom ' + r.x.loom, v: r.gap, tol: PRESS_TOL, color: 'var(--bad)', text: `+${f2(r.gap)}`, onClick: () => openLoom(r.x.loom, r.x.date),
-        title: `Loom ${r.x.loom} (${r.x.hg}): ${f2(r.now)} kgf/cm² against ${f2(r.now - r.gap)}, ${f2(r.gap)} over; tolerance ${PRESS_TOL}`}),
-        hg: {axis: 'Highest kgf/cm² over the reference, by head group', sortLabel: 'Excess', val: (R) => Math.max(...R.map((r) => r.gap)), text: (v) => '+' + f2(v)}}),
-  ));
-  s.append(keyline('Benchmarks still marked provisional are based on few days; treat their gaps as indicative.'));
 
   const al = (D.alerts || []).filter((a) => a.level === 'Critical');
   if (al.length) s.append(card('Data and floor flags', null, el('ul', {class: 'alerts'}, al.slice(0, 8).map((a) => el('li', {}, el('span', {class: 'pill bad', text: a.scope}), el('span', {}, linkify(a.msg)))))));
   return s;
 }
 
-function assignCard(un) {
+// ---------------------------------------------------------------- Round A1 (Divyam, 24 Nov 2026): tiles that open a view
+// Seven Actions tiles open a view under the tiles (one at a time; tapping the tile again, or Close, shuts it; not kept across
+// loads): Picks, Efficiency and Total CFM consumption by quality, Powered down loom by loom, the looms at the floor pressure,
+// (fabric.js) Realisation per pick by quality and Break-even realisation by day, (costing.js) Folding shortage by day. Owner
+// only for now (Divyam: who sees what is a later round). Every tile that opens something carries a note on pointing at it
+// (data-tip, drawn by style.css) and, where nothing can point (a phone), the same words under the tile (.taphint).
+let ACTOPEN = null;
+const actOwn = () => typeof fxIsOwner === 'function' && fxIsOwner() && !isPlant();
+const ACTV = {picks: ['Picks by quality', 'picks by quality'], eff: ['Efficiency by quality', 'efficiency by quality'], cfm: ['Average CFM per loom by quality', 'average CFM per loom by quality'],
+  off: ['Powered down, loom by loom', 'which looms were powered down, their quality and for how long'], floor: ['Looms at the floor pressure', 'which looms ran at this pressure'],
+  real: ['Realisation per pick by quality', 'realisation per pick by quality'], fold: ['Folding shortage by day', 'how the folding shortage moved over the month'],
+  be: ['Break-even realisation by day', 'break-even realisation day by day, month to date']};
+function tapTip(k, tip, hint) { if (!k) return k; k.dataset.tip = tip; if (hint !== false) k.append(el('div', {class: 'note taphint', text: tip})); return k; }
+function actTap(k, id) {
+  if (!k || !actOwn() || !ACTV[id]) return k;
+  const [title, what] = ACTV[id], on = ACTOPEN === id, lb = k.querySelector('.label'), label = lb ? lb.textContent : title;
+  k.classList.add('tap'); if (on) k.classList.add('sel');
+  k.dataset.act = id; k.setAttribute('role', 'button'); k.setAttribute('tabindex', '0'); k.setAttribute('aria-pressed', on ? 'true' : 'false');
+  k.setAttribute('aria-label', `${label}: ${on ? 'close' : 'open'} ${title}`);
+  tapTip(k, on ? `Tap again to close ${title}` : `Tap to see ${what}`);
+  const go = () => {
+    ACTOPEN = on ? null : id; render();
+    requestAnimationFrame(() => { const t = document.querySelector(`#main .kpi[data-act="${id}"]`); if (t) t.focus({preventScroll: true});
+      const c = document.getElementById('actview'); if (c && ACTOPEN) c.scrollIntoView({block: 'nearest', behavior: 'smooth'}); });
+  };
+  k.addEventListener('click', (e) => { if (e.target.closest('.wkb, a, button, input, select')) return; go(); });
+  k.addEventListener('keydown', (e) => { if (e.target !== k) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+  return k;
+}
+function actView() {
+  if (!ACTOPEN || !actOwn()) return null;
+  const f = {picks: actPicksCard, eff: actEffCard, cfm: actCfmCard, off: actOffCard, floor: actFloorCard,
+    real: typeof fxRealQCard === 'function' ? fxRealQCard : null, fold: typeof tcFoldCard === 'function' ? tcFoldCard : null, be: typeof fxBeTrendCard === 'function' ? fxBeTrendCard : null}[ACTOPEN];
+  const c = f ? f() : null;
+  if (!c) return null;
+  c.id = 'actview'; c.classList.add('actview');
+  const h = c.querySelector('.cardhead');
+  if (h) h.append(el('button', {class: 'link actclose', type: 'button', text: 'Close', 'aria-label': `Close ${ACTV[ACTOPEN][0]}`, onclick: (e) => { e.stopPropagation(); ACTOPEN = null; render(); }}));
+  return c;
+}
+const actDayL = () => (D.loomdays || []).filter((x) => x.date === D.latest && inW(x.width) && x.run > 0);
+const actPct = (x) => ok(x) ? (100 * x).toFixed(1) + '%' : '—';
+const actHgCell = (o) => hgLink(o.hg, o.width, D.latest, `${o.hg} · ${o.width}`);
+const actCut = (n, lim, what) => n > lim ? el('p', {class: 'note', text: `The chart shows the first ${lim} of these ${n} ${what} in the Sorting basis order; the table below lists all ${n}.`}) : null;
+const actSub = () => `${dfmt(D.latest)} · ${wLabel()}`;
+// A view's table; on a phone (560 px and narrower) one block per row, each figure named, sortable on the same columns, the
+// Total under them (a wide table would scroll sideways inside the card). rows: [[cells], [sort values]]; tot: the Total's cells.
+const actPhone = () => window.matchMedia('(max-width: 560px)').matches;
+function actTable(id, heads, rows, num, tot) {
+  if (!actPhone()) return table(heads, [...rows.map((r) => r[0]), ...(tot ? [tot] : [])], num);
+  const nm = (h) => Array.isArray(h) ? `${h[0]}, ${h[1]}` : h;
+  const blk = (cells, t) => el('div', {class: 'actblk' + (t ? ' tot' : '')}, el('div', {class: 'actblk-h'}, cells[0]),
+    el('div', {class: 'actblk-b'}, ...cells.slice(1).map((c, i) => el('span', {}, el('span', {class: 'note', text: nm(heads[i + 1]) + ': '}), c))));
+  const bases = heads.map((h, i) => ({v: 'c' + i, label: Array.isArray(h) ? h[0] : h, get: (r) => r[1][i], d: i ? 'd' : 'a'}));
+  return el('div', {class: 'actblks'}, sortableChart('act-' + id, rows, bases, (R) => el('div', {}, R.map((r) => blk(r[0]))), null), tot ? blk(tot, true) : null);
+}
+function actQBars(R, o) {
+  return hbars(R.map((q) => ({label: `${q.hg} · ${q.width}`, v: o.v(q), text: o.text(q), color: o.color ? o.color(q) : null, onClick: () => openHg(q.hg, q.width, D.latest),
+    title: `${q.hg}, ${q.width} cm: ${o.title(q)} · ${q.n} loom${q.n === 1 ? '' : 's'}`})), {aria: o.aria, axis: o.axis, labelW: 150, limit: 15, nameLabel: 'Head group', sortLabel: o.sortLabel, ref: o.ref || null});
+}
+function actPicksCard() {
+  const Q = actByQuality(actDayL()), R = Q.rows, T = Q.total, lk = (q) => q.fpicks / PICK_LAKH;
+  if (!R.length) return card(ACTV.picks[0], actSub(), el('p', {class: 'empty', text: 'No loom ran on this day. Pick another day with the date chip at the top of the page.'}));
+  return card(ACTV.picks[0], `${actSub()} · each quality's picks and its share of the day's`,
+    actQBars(R, {v: lk, text: (q) => `${f2(lk(q))} · ${actPct(q.share)}`, title: (q) => `${f2(lk(q))} lakh picks, ${actPct(q.share)} of the day's picks`, aria: 'Picks by quality', axis: 'Picks, lakh', sortLabel: 'Picks'}),
+    actCut(R.length, 15, 'qualities'),
+    actTable('picks', ['Head group', ['Looms', 'ran'], ['Picks', 'lakh'], ['Share', 'of the day\'s picks']],
+      R.map((q) => [[actHgCell(q), q.n, f2(lk(q)), actPct(q.share)], [q.hg, q.n, q.fpicks, q.share]]), [1, 2, 3], [el('b', {text: 'Total'}), T.n, el('b', {text: f2(lk(T))}), '100.0%']),
+    el('p', {class: 'note', text: 'Picks = fabric picks ÷ 39.37, in lakh, as on the tile; a loom that changed quality that day counts once in each quality it ran, so the Looms column can add up to more than the Total. Shown as bars rather than a pie: with this many qualities the slices of a pie would be too thin to compare.'}));
+}
+function actEffCard() {
+  const Q = actByQuality(actDayL()), R = Q.rows, T = Q.total, line = EFF_BAD();
+  if (!R.length) return card(ACTV.eff[0], actSub(), el('p', {class: 'empty', text: 'No loom ran on this day. Pick another day with the date chip at the top of the page.'}));
+  return card(ACTV.eff[0], `${actSub()} · minutes run ÷ minutes run and stopped, quality by quality`,
+    actQBars(R, {v: (q) => q.eff, text: (q) => f1(q.eff) + '%', color: (q) => ok(q.eff) && q.eff < line ? 'var(--bad)' : 'var(--bar)', title: (q) => `${f1(q.eff)}% efficiency (${f1(q.run / 60)} h run, ${f1(q.stop / 60)} h stopped)`,
+      aria: 'Efficiency by quality', axis: 'Efficiency, %', sortLabel: 'Efficiency', ref: {v: line, label: `${f0(line)}% line`}}),
+    el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), `below the ${f0(line)}% line`), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar)'}), 'at or above it'), el('span', {class: 'lg'}, legendShape('dash'), `the ${f0(line)}% line`)),
+    actCut(R.length, 15, 'qualities'),
+    actTable('eff', ['Head group', ['Looms', 'ran'], ['Efficiency', '%'], ['Run', 'h'], ['Stopped', 'h']],
+      R.map((q) => [[actHgCell(q), q.n, effCell(q.eff), f1(q.run / 60), f1(q.stop / 60)], [q.hg, q.n, q.eff, q.run, q.stop]]), [1, 2, 3, 4], [el('b', {text: 'Total'}), T.n, el('b', {text: f1(T.eff)}), f1(T.run / 60), f1(T.stop / 60)]),
+    el('p', {class: 'note', text: `Efficiency = minutes run ÷ (minutes run + minutes stopped), as on the tile; the line is the ${f0(line)}% below which a loom counts as bad, whatever the quality. Run and stopped are added over the looms, in h.`}));
+}
+function actCfmCard() {
+  const Q = actByQuality(actDayL()), R = Q.rows, T = Q.total;
+  if (!R.length) return card(ACTV.cfm[0], actSub(), el('p', {class: 'empty', text: 'No loom ran on this day. Pick another day with the date chip at the top of the page.'}));
+  return card(ACTV.cfm[0], `${actSub()} · air ÷ minutes run, quality by quality`,
+    actQBars(R, {v: (q) => q.cfm, text: (q) => f1(q.cfm), title: (q) => `${f1(q.cfm)} CFM per loom while running, ${f0(q.floor_cfm)} CFM over 24 h, ${actPct(q.airShare)} of the floor's air`,
+      aria: 'Average CFM per loom by quality', axis: 'Average CFM per loom while running', sortLabel: 'Average CFM per loom', ref: {v: T.cfm, label: `Floor ${f1(T.cfm)}`}}),
+    el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar)'}), 'the quality'), el('span', {class: 'lg'}, legendShape('dash'), 'the floor\'s average CFM per loom')),
+    actCut(R.length, 15, 'qualities'),
+    actTable('cfm', ['Head group', ['Looms', 'ran'], ['Average CFM per loom', 'CFM while running'], ['Total CFM', 'CFM, 24-h average'], ['Share of air', '%']],
+      R.map((q) => [[actHgCell(q), q.n, f1(q.cfm), f0(q.floor_cfm), actPct(q.airShare)], [q.hg, q.n, q.cfm, q.floor_cfm, q.airShare]]), [1, 2, 3, 4], [el('b', {text: 'Total'}), T.n, el('b', {text: f1(T.cfm)}), el('b', {text: f0(T.floor_cfm)}), '100.0%']),
+    el('p', {class: 'note', text: 'Average CFM per loom = the quality\'s air (ft³) ÷ the minutes its looms ran: the average weighted by run time, as the Average CFM per loom tile. Total CFM = its air ÷ 1,440 minutes; the rows add up to the Total CFM consumption tile.'}));
+}
+function actOffCard() {
+  const U = (D.util || []).filter((u) => u.date === D.latest && inW(u.width));
+  const O = offLooms(U, (D.loomdays || []).filter((x) => x.date === D.latest), D.loom_hg || {}), R = O.rows, hg = bv('a-off') === 'hg';
+  if (!R.length) return card(ACTV.off[0], actSub(), el('p', {class: 'empty', text: 'No loom was powered down on this day: every loom ran or stood with power on all day. Nothing to do.'}));
+  const qText = (r) => r.hgs.length ? `${r.hgs.join(', ')} · ${r.width} cm${r.last ? ' (did not run that day: its last quality)' : ''}` : `${r.width} cm · no quality in the loom data`;
+  let body;
+  if (!hg) {
+    body = [hbars(R.map((r) => ({label: 'Loom ' + r.loom, v: r.off / 60, text: f1(r.off / 60), color: 'var(--bad)', onClick: () => openLoom(r.loom, D.latest),
+      title: `Loom ${r.loom} (${qText(r)}): powered down ${f1(r.off / 60)} h, ran ${f1(r.run / 60)} h, stopped ${f1(r.stop / 60)} h`})), {aria: 'Powered down by loom', axis: 'Powered down, h', labelW: 90, limit: 15, nameLabel: 'Loom', sortLabel: 'Powered down'}),
+      actCut(R.length, 15, 'looms'),
+      actTable('off', ['Loom', 'Quality', ['Powered down', 'h'], ['Ran', 'h'], ['Stopped', 'h']],
+        R.map((r) => [[loomLink(r.loom, D.latest, 'Loom ' + r.loom), el('span', {class: 'note', text: qText(r)}), f1(r.off / 60), f1(r.run / 60), f1(r.stop / 60)], [r.loom, r.hgs.join(', '), r.off, r.run, r.stop]]), [2, 3, 4],
+        [el('b', {text: 'Total'}), `${R.length} loom${R.length === 1 ? '' : 's'}`, el('b', {text: f1(O.total / 60)}), f1(R.reduce((a, r) => a + r.run, 0) / 60), f1(R.reduce((a, r) => a + r.stop, 0) / 60)])];
+  } else {
+    const by = new Map();
+    for (const r of R) { const k = (r.hgs.join(', ') || 'no quality in the loom data') + '|' + r.width; if (!by.has(k)) by.set(k, {k, hg: r.hgs.join(', ') || 'no quality in the loom data', width: r.width, off: 0, looms: []}); const g = by.get(k); g.off += r.off; g.looms.push(r.loom); }
+    const G = [...by.values()].sort((a, b) => b.off - a.off);
+    body = [hbars(G.map((g) => ({label: `${g.hg} · ${g.width}`, v: g.off / 60, text: f1(g.off / 60), color: 'var(--bad)', title: `${g.hg}, ${g.width} cm: ${f1(g.off / 60)} h powered down over loom${g.looms.length === 1 ? '' : 's'} ${g.looms.join(', ')}`})),
+      {aria: 'Powered down by head group', axis: 'Powered down, h', labelW: 150, limit: 15, nameLabel: 'Head group', sortLabel: 'Powered down'}), actCut(G.length, 15, 'head groups'),
+      actTable('off-hg', ['Head group', ['Looms', 'which'], ['Powered down', 'h']], G.map((g) => [[`${g.hg} · ${g.width}`, g.looms.join(', '), f1(g.off / 60)], [g.hg, g.looms.length, g.off]]), [2], [el('b', {text: 'Total'}), `${R.length} loom${R.length === 1 ? '' : 's'}`, el('b', {text: f1(O.total / 60)})])];
+  }
+  return card(ACTV.off[0], `${actSub()} · ${R.length} loom${R.length === 1 ? '' : 's'} powered down for part or all of the day`, el('div', {class: 'toolbar'}, bvSeg('a-off')), ...body,
+    el('p', {class: 'note', text: 'Powered down = 1,440 minutes − minutes run − minutes stopped, loom by loom (under 10 minutes counts as 0); a loom missing from a shift file counts as powered down for that shift. A loom that did not run that day shows the last quality it ran. The rows add up to the Powered down tile.'}));
+}
+function actFloorCard() {
+  const fl = (D.pressure.floor || []).slice(-1)[0];
+  if (!fl) return card(ACTV.floor[0], dfmt(D.latest), el('p', {class: 'empty', text: 'No main pressure reading on this day. Pick another day with the date chip at the top of the page.'}));
+  const F = floorLooms(D.pressure.looms, fl.floor);
+  const toLadder = el('button', {class: 'link', type: 'button', text: 'Floor ladder on Pressure ›', onclick: () => navGoCard('pressure', 'Floor ladder')});
+  const row = (l) => [loomLink(l.loom, D.latest, 'Loom ' + l.loom), l.hg ? hgLink(l.hg, l.width, D.latest, `${l.hg} · ${l.width}`) : '—', l.width ? `${l.width} cm${l.type ? ' ' + l.type : ''}` : '—', f2(l.main)];
+  return card(ACTV.floor[0], `${dfmt(fl.date || D.latest)} · both widths: one compressor serves the whole floor`,
+    el('p', {class: 'note', text: `${F.at.length} of ${F.of} loom${F.of === 1 ? '' : 's'} with a main pressure reading ran at ${f2(fl.floor)} kgf/cm², the floor pressure (the highest main pressure of the day). The compressor has to supply at least that.`}),
+    F.at.length ? actTable('floor', ['Loom', 'Quality', 'Width', ['Main pressure', 'kgf/cm², day max']], F.at.map((l) => [row(l), [l.loom, l.hg, l.width, l.main]]), [3]) : el('p', {class: 'empty', text: 'No loom reading matches the floor on this day: see the Floor ladder on Pressure.'}),
+    el('p', {class: 'note', text: ok(F.next) ? `Next level down: ${f2(F.next)} kgf/cm², on loom${F.nextLooms.length === 1 ? '' : 's'} ${F.nextLooms.map((l) => l.loom).join(', ')}. Bring every loom at the floor down to it and the floor drops ${f2(fl.floor - F.next)} kgf/cm²; the Floor ladder shows each step and what it saves.` : 'Every loom ran at the floor pressure: there is no lower level to step down to.'}),
+    el('div', {}, toLadder));
+}
+function assignCard(un, o) {
+  if (!un.length) return el('details', {class: 'card collapsible'}, el('summary', {}, el('h3', {text: 'Needs a head group'}), el('span', {class: 'note', text: 'Nothing to assign: every style on the looms has a head group'})),
+    el('p', {class: 'note', style: 'margin:0', text: 'A style found on the looms or the costing sheet without a head group shows here, and the card opens by itself until you assign it.'}));
   const box = el('div', {class: 'assign'});
   const groups = D.head_groups || [];
   const savers = [];
@@ -317,7 +392,7 @@ function assignCard(un) {
   }});
   const saved = un.filter((u) => assigned[u.style]).length, left = un.length - saved;
   const ak = un.some((u) => !u.costing) ? 'loom' : 'cost';
-  const open = ASSIGN_OPEN[ak] == null ? left > 0 && ak === 'loom' : ASSIGN_OPEN[ak];
+  const open = ASSIGN_OPEN[ak] == null ? left > 0 && (ak === 'loom' || !!(o && o.pending)) : ASSIGN_OPEN[ak];   // Round A1: on Actions, open while anything is pending
   const c = el('details', {class: 'card collapsible' + (left ? ' attn' : ''), open: open ? true : null},
     el('summary', {}, el('h3', {text: 'Needs a head group'}),
       el('span', {class: 'note', text: left ? `${left} of ${un.length} to assign${saved ? ` · ${saved} saved` : ''}${open ? '' : ' · open to assign'}` : `All ${un.length} saved · applied on the next daily run`})),
@@ -490,6 +565,7 @@ function spTile(pp, M, noM) {
   const note = noHist + since + (has ? '' : (ed ? unset + 'tap to type it · ' : unset + 'tell the owner · ')) + need + (has && ed ? ' · tap to change' : '');
   const k = el('div', {class: 'kpi' + (ed ? ' tap' : ''), role: ed ? 'button' : null, tabindex: ed ? '0' : null, 'aria-label': ed ? 'Compressor set point: tap to change' : null},
     el('div', {class: 'label', text: 'Compressor set point'}), el('div', {class: 'big'}, has ? f2(COMP_SP) : '—', el('small', {text: 'kgf/cm²'})), el('div', {class: 'note', text: note}));
+  if (ed) tapTip(k, PSP_EDIT ? 'Tap again to close the set point box' : 'Tap to type the compressor set point and the day it took effect', false);   // Round A1: the hover note
   if (ed) { const go = () => { PSP_EDIT = !PSP_EDIT; render(); }; k.addEventListener('click', go); k.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }); }
   return el('div', {}, k);
 }

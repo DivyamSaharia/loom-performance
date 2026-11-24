@@ -656,6 +656,15 @@ function fcTargetProfit(realPp, foldPp) {
   const n = (v) => typeof v === 'number' && isFinite(v);
   return n(realPp) && n(foldPp) ? realPp - foldPp : null;
 }
+// Round A1 (Divyam, 24 Nov 2026): the Target profit per pick in rupees for the day, on the target A-grade folded picks: every
+// target pick taken as A grade, less the folding shortage (month to date) = (P + E) × (1 − s), the same picks the target
+// folded cost is shared over. pp in paise; P = the costing's production picks, E = the extra picks at target effective RPM.
+function fcTargetProfitRs(pp, P, E, s) {
+  const n = (v) => typeof v === 'number' && isFinite(v);
+  if (!n(pp) || !n(P) || !n(s)) return null;
+  const a = (P + (n(E) ? E : 0)) * (1 - s);
+  return a > 0 ? {rs: pp / 100 * a, afold: a} : null;
+}
 
 // ================================================================ Round J (18 Nov 2026): the Working, owner-only money lines
 // Same shape as WKL in calc.js ({line, res, unit} from the figures a screen drew with, the line ending on its result and
@@ -674,6 +683,8 @@ const WKLF = {
     return fwOut(`now ${fwP(d.now)} paise. Each loom-day's target picks × its own realisation per pick, added up = ${fwR(d.num)}; ÷ ${fwN(d.tp)} target picks × 100`, fwP(v), 'paise', v); },
   B5p: (d) => { if (!d || !fwOk(d.tr) || !fwOk(d.s)) return null; const num = d.opex - d.Sc - d.Sp + d.Add, den = (d.P + d.E) * (1 - d.s); if (!(den > 0)) return null; const tf = 100 * num / den, v = d.tr - tf;
     return fwOut(`target folded cost = (OPEX ${fwR(d.opex)} − CFM saving ${fwR(d.Sc)} − pressure saving ${fwR(d.Sp)} + added costs ${fwR(d.Add)}) ÷ (${fwN(d.P + d.E)} target picks × (1 − ${(d.s * 100).toFixed(1)}% folding shortage)) × 100 = ${fwP(tf)} paise; target realisation ${fwP(d.tr)} − ${fwP(tf)}`, fwP(v), 'paise', v); },
+  B5s: (d) => { if (!d || !fwOk(d.pp) || !fwOk(d.s)) return null; const T = fcTargetProfitRs(d.pp, d.P, d.E, d.s); if (!T) return null;
+    return fwOut(`${fwP(d.pp)} paise × (${fwN(d.P + (d.E || 0))} target picks × (1 − ${(d.s * 100).toFixed(1)}% folding shortage) = ${fwN(T.afold)} A-grade folded picks) ÷ 100`, fwR(T.rs), 'in the day', T.rs); },
   B7: (d) => { if (!d || !fwOk(d.cost) || !(d.looms > 0)) return null; const v = d.cost / d.looms;
     return fwOut(`(operating expenses and cut piece loss ${fwR(d.pool)} + net B grade ${fwR(d.bnet)} = ${fwR(d.cost)}, corrected costing) ÷ ${d.looms} loom${d.looms === 1 ? '' : 's'} running`, fwR(v), 'a loom', v); },
   C2: (d) => { if (!d || !fwOk(d.ld)) return null; const n = d.full ? d.looms : d.priced, v = n * d.ld;

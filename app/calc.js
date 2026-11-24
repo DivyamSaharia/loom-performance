@@ -694,15 +694,37 @@ function foldShort(days, reg, regDays, date) {
   for (const e of reg || []) { if (!byDay.has(e.date)) byDay.set(e.date, []); byDay.get(e.date).push(e); }
   let A = 0, B = 0, C = 0, P = 0, avgM = 0, n = 0; const out = [], used = [];
   for (const d of mtd) {
-    const cut = d.bgrade ? d.bgrade.cut_pcs : null;
-    const why = !(d.picks > 0) ? 'no production picks' : !ok(d.afold) ? 'no A-grade folded picks' : !(d.metres > 0) ? 'no metres' : !ok(cut) ? 'no cut piece metres' : !has.has(d.date) ? 'no B grade register' : null;
-    if (why) { out.push({date: d.date, why}); continue; }
-    const p = d.picks * 1e5, w = p / d.metres;
-    let b = 0;
-    for (const e of byDay.get(d.date) || []) { if (!ok(e.m)) continue; if (ok(e.ppi) && e.ppi > 0) b += e.m * e.ppi; else { b += e.m * w; avgM += e.m; } }
-    A += d.afold * 1e5; B += b; C += cut * w; P += p; n += 1; used.push(d.date);
+    const x = foldDay(d, byDay, has);
+    if (x.why) { out.push({date: d.date, why: x.why}); continue; }
+    A += x.A; B += x.B; C += x.C; P += x.P; avgM += x.avgM; n += 1; used.push(d.date);
   }
   return {s: P > 0 ? 1 - (A + B + C) / P : null, days: n, of: mtd.length, from: used[0] || null, to: used[used.length - 1] || null, A, B, C, P, avgM, out};
+}
+// One costing day's parts of the folding shortage, counted as foldShort counts them (Round A1 shares it): A-grade folded,
+// B grade and cut piece picks against production picks; why = the figure the day is missing (the day is then left out).
+function foldDay(d, byDay, has) {
+  const cut = d.bgrade ? d.bgrade.cut_pcs : null;
+  const why = !(d.picks > 0) ? 'no production picks' : !ok(d.afold) ? 'no A-grade folded picks' : !(d.metres > 0) ? 'no metres' : !ok(cut) ? 'no cut piece metres' : !has.has(d.date) ? 'no B grade register' : null;
+  if (why) return {date: d.date, why};
+  const p = d.picks * 1e5, w = p / d.metres;
+  let b = 0, avgM = 0;
+  for (const e of byDay.get(d.date) || []) { if (!ok(e.m)) continue; if (ok(e.ppi) && e.ppi > 0) b += e.m * e.ppi; else { b += e.m * w; avgM += e.m; } }
+  return {date: d.date, why: null, A: d.afold * 1e5, B: b, C: cut * w, P: p, avgM};
+}
+// ---- Round A1 (Divyam, 24 Nov 2026): the folding shortage day by day for the Folding shortage tile's chart. Every costing
+// day up to `date` (oldest first): its own shortage (s) and the month to date up to it (mtd, as the tile works it: the same
+// month, days missing a figure left out); a day missing a figure has s null and says why.
+function foldDays(days, reg, regDays, date) {
+  const has = new Set(regDays || []), byDay = new Map();
+  for (const e of reg || []) { if (!byDay.has(e.date)) byDay.set(e.date, []); byDay.get(e.date).push(e); }
+  const L = (days || []).filter((d) => !date || d.date <= date).sort((a, b) => a.date.localeCompare(b.date));
+  const run = {}, out = [];
+  for (const d of L) {
+    const x = foldDay(d, byDay, has), ym = d.date.slice(0, 7), m = run[ym] || (run[ym] = {A: 0, B: 0, C: 0, P: 0, n: 0});
+    if (!x.why) { m.A += x.A; m.B += x.B; m.C += x.C; m.P += x.P; m.n += 1; }
+    out.push({...x, s: x.why ? null : 1 - (x.A + x.B + x.C) / x.P, mtd: m.P > 0 ? 1 - (m.A + m.B + m.C) / m.P : null, mtdDays: m.n});
+  }
+  return out;
 }
 
 // ---- PACKING grows at the month-to-date rupees per metre: Σ PACKING ÷ Σ metres over the month's costing days up to the
@@ -909,13 +931,6 @@ const WKL = {
     if (ok(d.rsPress) && d.press > 0) parts.push(`its step of the floor ladder (the compressor saving when its pressure comes down to its reference) ${wkR(d.rsPress)}`);
     if (!parts.length) return null; const v = (ok(d.rsPicks) ? d.rsPicks : 0) + (ok(d.rsAir) ? d.rsAir : 0) + (ok(d.rsPress) ? d.rsPress : 0);
     return wkOut(`Loom ${d.loom}: ${parts.join(' + ')}${parts.length > 1 ? '; together' : '; in all'}`, wkR(v), 'a day', v, ' '); },
-  B8r: (d) => { if (!d) return null; const v = (d.ref - d.now) * d.run * d.pf / 39.37 / 1e5;
-    return wkOut(`Loom ${d.loom}: reference ${wkN(d.ref)} (the higher reference it misses) − ${wkN(d.now)} RPM = ${wkN(d.ref - d.now)}; × ${wkN(d.run)} minutes run × ${d.pf} panel${d.pf === 1 ? '' : 's'} ÷ 39.37 = ${wkN(v * 1e5)} picks`, wkF(v, 3), 'lakh picks lost', v); },
-  B8e: (d) => { if (!d) return null; const m = Math.max(0, d.line / 100 * d.tot - d.run), v = m * d.rpm * d.pf / 39.37 / 1e5;
-    return wkOut(`Loom ${d.loom}: ${d.line}% × ${wkN(d.tot)} minutes run and stopped − ${wkN(d.run)} minutes run = ${wkN(m, 1)} minutes short; × ${wkN(d.rpm)} RPM × ${d.pf} panel${d.pf === 1 ? '' : 's'} ÷ 39.37 = ${wkN(v * 1e5)} picks`, wkF(v, 3), 'lakh picks short', v); },
-  B8c: (d) => { if (!d) return null; const v = d.now - d.ref; return wkOut(`Loom ${d.loom}: ${wkF(d.now, 1)} CFM − ${wkF(d.ref, 1)} CFM (the lower reference it is over by more than ${d.tol}%)`, wkF(v, 1), 'CFM over', v); },
-  B8p: (d) => { if (!d) return null; const v = d.now - d.ref; return wkOut(`Loom ${d.loom}: ${wkF(d.now, 2)} kgf/cm², the day's highest, − ${wkF(d.ref, 2)} (the lower reference it is over by more than 0.1)`, wkF(v, 2), 'kgf/cm² over', v); },
-  // ---- C, D. Quality and Benchmarks
   C1: (d) => { if (!d || !ok(d.now) || !ok(d.ref) || d.ref === 0) return null; const p = (d.now - d.ref) / Math.abs(d.ref) * 100;
     return wkOut(`${d.hg}, ${d.what}: (${wkN(d.now, d.dp)} − ${d.name} ${wkN(d.ref, d.dp)}) ÷ ${wkN(d.ref, d.dp)} × 100`, `${Math.abs(p) < 0.05 ? '±' : p > 0 ? '+' : '−'}${Math.abs(p).toFixed(1)}%`, '', p); },
   D1: (d) => { if (!d || !(d.n > 0)) return null; const k = (d.n - 1) * d.p, f = Math.floor(k), w = k - f, v = d.lo + (d.hi - d.lo) * w;
@@ -1038,3 +1053,58 @@ Object.assign(WKL, {
     if (Math.abs(v) < 0.5) return wkOut(`${d.line}: the plant added ${wkR(d.added)} (today's running total before the day less ${d.prevDate}'s month total), and ${wkR(d.expected)} was expected (the single amount)`, 'as it should be', '', v, ': ');
     return wkOut(`${d.line}: the plant added ${wkR(d.added)} (today's running total before the day less ${d.prevDate}'s month total); ${wkR(d.expected)} was expected (the single amount); gap ${wkR(d.added)} − ${wkR(d.expected)}`, wkR(v), '', v); },
 });
+
+// ================================================================ Round A1 (Divyam, 24 Nov 2026): the Actions tiles' views
+// One day's loom-days that ran (already filtered to the day and the width shown), grouped by quality (head group × width):
+// picks, fabric picks, minutes run and stopped, air and looms, with efficiency (run ÷ run + stopped), average CFM per loom
+// (air ÷ minutes run), the share of the floor's picks and of its air. The groups add up to the floor (the Actions tiles).
+// Largest picks first.
+function actByQuality(L) {
+  const by = new Map(), add = (o, x) => { o.picks += x.picks || 0; o.fpicks += ok(x.fpicks) ? x.fpicks : (x.picks || 0); o.run += x.run || 0; o.stop += x.stop || 0; o.air += x.air || 0; o.looms.add(x.loom); };
+  const nu = () => ({picks: 0, fpicks: 0, run: 0, stop: 0, air: 0, looms: new Set()}), tot = nu();
+  for (const x of L || []) {
+    if (!(x.run > 0)) continue;
+    const k = x.hg + '|' + x.width;
+    if (!by.has(k)) by.set(k, Object.assign(nu(), {key: k, hg: x.hg, width: String(x.width)}));
+    add(by.get(k), x); add(tot, x);
+  }
+  const fin = (o) => Object.assign(o, {n: o.looms.size, eff: o.run + o.stop > 0 ? 100 * o.run / (o.run + o.stop) : null, cfm: o.run > 0 ? o.air / o.run : null,
+    floor_cfm: o.air / 1440, share: tot.fpicks > 0 ? o.fpicks / tot.fpicks : null, airShare: tot.air > 0 ? o.air / tot.air : null});
+  return {rows: [...by.values()].map(fin).sort((a, b) => b.fpicks - a.fpicks || a.key.localeCompare(b.key)), total: fin(tot)};
+}
+// A loom's last change of quality in the loom data up to `upto`: the latest day it ran a head group it did not run on the
+// day it last ran before, or ran two head groups in one day (a change within the day). L: loom-days [{date, loom, hg, run}].
+// change: {date, from: [...], to: [...]} or null; first: the first day the data holds for the loom (null: it never ran).
+function lastChange(L, loom, upto) {
+  const by = new Map();
+  for (const x of L || []) { if (String(x.loom) !== String(loom) || !(x.run > 0) || (upto && x.date > upto)) continue; if (!by.has(x.date)) by.set(x.date, new Set()); by.get(x.date).add(x.hg); }
+  const ds = [...by.keys()].sort();
+  let change = null;
+  ds.forEach((d, i) => {
+    const cur = by.get(d), prev = i ? by.get(ds[i - 1]) : null;
+    if (cur.size > 1) change = {date: d, from: prev ? [...prev].sort() : [], to: [...cur].sort()};
+    else if (prev && ![...cur].some((h) => prev.has(h))) change = {date: d, from: [...prev].sort(), to: [...cur].sort()};
+  });
+  return {change, first: ds[0] || null};
+}
+// The looms at the floor pressure (the day's highest main pressure, both widths), and the next level down with its looms.
+// looms: [{loom, hg, width, main}] (D.pressure.looms). A loom is at the floor when its main pressure equals it (1e-6).
+function floorLooms(looms, floor) {
+  const L = (looms || []).filter((l) => ok(l.main));
+  if (!ok(floor) || !L.length) return {at: [], next: null, nextLooms: [], of: L.length};
+  const at = L.filter((l) => Math.abs(l.main - floor) < 1e-6), rest = L.filter((l) => l.main < floor - 1e-6);
+  const next = rest.length ? Math.max(...rest.map((l) => l.main)) : null;
+  return {at, next, nextLooms: next == null ? [] : rest.filter((l) => Math.abs(l.main - next) < 1e-6), of: L.length};
+}
+// The looms powered down on one day: util rows [{loom, width, run, stop, off}] (off in minutes, already for the day and the
+// width shown) with the head groups each ran that day (L: the day's loom-days), else its latest head group (hgNow, the
+// loom's last quality: 'last'). Most minutes first; total = the minutes added up (the Powered down tile).
+function offLooms(util, L, hgNow) {
+  const ran = new Map();
+  for (const x of L || []) { if (!(x.run > 0)) continue; const k = String(x.loom); if (!ran.has(k)) ran.set(k, new Set()); ran.get(k).add(x.hg); }
+  const rows = (util || []).filter((u) => u.off > 0).map((u) => {
+    const h = ran.get(String(u.loom)), last = !h && hgNow ? hgNow[u.loom] || hgNow[String(u.loom)] || null : null;
+    return {loom: u.loom, width: String(u.width), off: u.off, run: u.run || 0, stop: u.stop || 0, hgs: h ? [...h].sort() : last ? [last] : [], last: !h && !!last};
+  }).sort((a, b) => b.off - a.off || a.loom - b.loom);
+  return {rows, total: rows.reduce((a, r) => a + r.off, 0)};
+}

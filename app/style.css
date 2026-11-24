@@ -612,3 +612,13 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
 .fxkpi .fxunrec{display:block;text-align:left;padding:2px 0;font-size:12px;white-space:normal}.fxkpi .fxpp{margin-top:2px}
 @media (max-width:560px){.kpi .label[data-sm]{font-size:0;letter-spacing:0}.kpi .label[data-sm]::before{content:attr(data-sm);font-size:12px;letter-spacing:.06em}}
 @media (min-width:1280px){.kpis.fx5{grid-template-columns:repeat(5,minmax(0,1fr))}.kpis.fx5 .fxbe{order:0;grid-column:auto}}
+/* Round A1 (24 Nov 2026): a tile that opens something says what, on pointing at it (laptop) or under it (phone, no pointer) */
+.kpi.tap[data-tip]:hover::after,.kpi.tap[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;left:8px;right:8px;top:calc(100% + 6px);z-index:30;
+  background:var(--ink);color:var(--panel);font-size:12px;font-weight:500;line-height:1.35;letter-spacing:0;text-transform:none;padding:6px 9px;border-radius:7px;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.kpi .taphint{display:none;margin-top:4px;color:var(--accent, #4a7)}
+@media (hover:none){.kpi.tap[data-tip]:hover::after{display:none}.kpi .taphint{display:block}}
+.kpis.act .actbe{grid-column:1/-1}
+.actview{scroll-margin-top:70px}.actview .cardhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}.actview .actclose{margin-left:auto}
+.prio-co{margin:2px 0 4px}
+.actblk{padding:8px 0;border-top:1px solid var(--line)}.actblk.tot{font-weight:600}.actblk-h{margin-bottom:2px}
+.actblk-b{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:13px;font-variant-numeric:tabular-nums}

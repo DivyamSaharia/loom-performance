@@ -896,6 +896,7 @@ function airCard() {
     const t = kpiC(f.label, ok(v) ? f.fmt(v) : '—', ok(v) ? f.unit : '', note), k = t.querySelector('.kpi'), on = f.k === pick.k;
     k.classList.add('tap', 'ap'); if (on) k.classList.add('sel');
     k.setAttribute('role', 'button'); k.setAttribute('tabindex', '0'); k.setAttribute('aria-pressed', on ? 'true' : 'false'); k.setAttribute('aria-label', `${f.label}: chart it day by day`);
+    tapTip(k, on ? `Charted below: ${f.label}, day by day` : `Tap to chart ${f.label} day by day`, false);   // Round A1: the hover note
     const go = () => { APPICK[APVIEW] = f.k; render(); };
     k.addEventListener('click', go); k.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
     return t;
@@ -1074,13 +1075,14 @@ function tcActionTiles(kpi) {
       el('div', {class: 'note', text: 'Folding, beams and dispatch lag the looms: this assumes they catch up within the month.'}))
     : kpi('Target cost per pick', '—', '', null, `${tcUnavail(date)}. Next: ${tcNext()}.`);
   t.classList.add('tap'); t.setAttribute('role', 'button'); t.setAttribute('tabindex', '0'); t.setAttribute('aria-label', 'Target cost per pick: open Where the saving is');
+  tapTip(t, 'Tap to see Where the saving is: the five steps and every loom\'s part');   // Round A1: the hover note
   const go = () => navGoCard('actions', TC_CARD);
   t.addEventListener('click', go); t.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
   out.push(t);
   const fs = tcShort(date);
   if (typeof wkPut === 'function') wkPut('B4', ok(fs.s) ? {A: fs.A, B: fs.B, C: fs.C, P: fs.P, days: fs.days, of: fs.of} : null);   // Round J
   out.push(ok(fs.s)
-    ? kpi('Folding shortage', f1(fs.s * 100), '%', null, `month to date, ${fs.days} of ${fs.of} days (${dfmt(fs.from)}–${dfmt(fs.to)}) · picks woven but not folded as A grade, B grade or cut pieces`)
+    ? actTap(kpi('Folding shortage', f1(fs.s * 100), '%', null, `month to date, ${fs.days} of ${fs.of} days (${dfmt(fs.from)}–${dfmt(fs.to)}) · picks woven but not folded as A grade, B grade or cut pieces`), 'fold')   // Round A1: opens Folding shortage by day
     : kpi('Folding shortage', '—', '', null, fs.of ? `no day this month has all its figures yet (${fs.out.map((o) => `${dfmt(o.date)}: ${o.why}`).slice(0, 2).join('; ')}). Next: ${tcNext()}.` : `no costing day this month up to ${dfmt(date)} yet. Next: ${tcNext()}.`));
   if (typeof fxTargetTiles === 'function') out.push(...fxTargetTiles(kpi, tc, fs));
   return out;
@@ -1145,6 +1147,39 @@ function tcCard() {
     el('div', {class: 'toolbar'}, bvSeg('tc')), body,
     el('p', {class: 'note', text: `Effect on cost per pick = (− the CFM saving + the added costs − today's cost per pick × the extra picks) ÷ the target day's ${lk(tc.P + tc.E)} lakh picks. The pressure step (${tcPp(tc.floorPp.press)} paise on that footing) and step 5 (${tcPp(tc.floorPp.quality)} paise) are whole-floor and not split by ${hg ? 'head group' : 'loom'}; with them the rows add up to the change on the tile.`}),
     el('p', {class: 'note', text: 'Folding, beams and dispatch lag the looms. Valuing warping, transport and packing on metres woven assumes they catch up within the month. Extra metres are worked out loom by loom: extra picks ÷ the picks per metre of its quality on the day\'s costing.'}));
+}
+// Round A1 (Divyam, 24 Nov 2026): Folding shortage by day, opened from the Folding shortage tile (owner for now). Each
+// costing day's own shortage and the month to date up to it (foldDays, the tile's own count), its own period (month to
+// date to begin with) and a week line on the shortage of each week's days together. A day missing a figure is left out
+// and named, never drawn as 0.
+let TCFPER = 'mtd';
+try { const v = localStorage.getItem('w2-act-fold-period'); if (['7', '14', '30', 'mtd', 'range'].includes(v)) TCFPER = v; } catch (e) {}
+function tcFoldCard() {
+  if (!COST) return null;
+  const title = ACTV.fold[0], bq = COST.bq || {}, sub = 'whole plant, both widths · 1 − (A-grade folded + B grade + cut piece picks) ÷ production picks';
+  const all = foldDays(tcDays(), bq.reg || [], (bq.days || []).filter((d) => d.reg).map((d) => d.date), D.latest);
+  if (!all.length) return card(title, sub, el('p', {class: 'empty', text: `No costing day up to ${dfmt(D.latest)} yet. Next: ${tcNext()}.`}));
+  const ds = all.map((r) => r.date), inR = TCFPER === 'range' ? new Set(rngDays(ds)) : null, ym = D.latest.slice(0, 7);
+  const per = TCFPER === 'mtd' ? all.filter((r) => r.date.slice(0, 7) === ym) : inR ? all.filter((r) => inR.has(r.date)) : all.slice(-(+TCFPER));
+  const good = all.filter((r) => !r.why), sh = (L) => { const P = L.reduce((a, r) => a + r.P, 0); return P > 0 ? 1 - L.reduce((a, r) => a + r.A + r.B + r.C, 0) / P : null; };
+  const b = (v, t, sh2) => el('button', {type: 'button', 'aria-pressed': TCFPER === v ? 'true' : 'false', 'aria-label': t, onclick: () => { TCFPER = v; try { localStorage.setItem('w2-act-fold-period', v); } catch (e) {} render(); }}, el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh2 || t}));
+  const bar = el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days', '7d'), b('14', '14 days', '14d'), b('30', '30 days', '30d'), b('mtd', 'Month to date', 'MTD'), b('range', 'Dates')),
+    TCFPER === 'range' ? rngCtl(ds, render) : null, per.length ? el('span', {class: 'note', text: `${TCFPER === 'mtd' ? 'Month to date: ' : ''}${dfmt(per[0].date)} – ${dfmt(per.at(-1).date)} · ${per.filter((r) => !r.why).length} of ${per.length} costing day${per.length === 1 ? '' : 's'} with every figure`}) : null,
+    wkPill(wkBy(good, D.latest, (r) => r.date, sh, 'down'), {what: 'Folding shortage', fmt: (v) => (100 * v).toFixed(1), unit: '%', dunit: ' points'}));
+  const pc = (v) => ok(v) ? (100 * v).toFixed(1) + '%' : '—', lk = (p) => pn(p / 1e5, 2);
+  const chart = per.some((r) => ok(r.s)) ? lineChart({id: 'act-fold', dates: per.map((r) => r.date), aria: 'Folding shortage by day, %', fmt: (v) => pn(v, 1) + '%',
+    series: [{key: 'mtd', name: 'Month to date, %', vals: per.map((r) => ok(r.mtd) && r.mtdDays ? 100 * r.mtd : null)}, {key: 'day', name: 'The day\'s own, %', vals: per.map((r) => ok(r.s) ? 100 * r.s : null), dash: true}]})
+    : el('p', {class: 'empty', text: 'No day in this period has every figure: pick a longer period.'});
+  const last = per.at(-1);
+  const tb = actTable('fold', ['Date', ['Production picks', 'lakh'], ['A-grade folded', 'lakh picks'], ['B grade', 'lakh picks'], ['Cut pieces', 'lakh picks'], ['The day\'s own', '%'], ['Month to date', '%']],
+    per.slice().reverse().map((r) => r.why ? [[dfmt(r.date), el('span', {class: 'pill muted', text: `left out: ${r.why}`}), '—', '—', '—', '—', pc(r.mtdDays ? r.mtd : null)], [r.date, null, null, null, null, null, r.mtdDays ? r.mtd : null]]
+      : [[dfmt(r.date), lk(r.P), lk(r.A), lk(r.B), lk(r.C), pc(r.s), pc(r.mtd)], [r.date, r.P, r.A, r.B, r.C, r.s, r.mtd]]), [1, 2, 3, 4, 5, 6]);
+  const miss = per.filter((r) => r.why);
+  return card(title, sub,
+    last ? el('p', {class: 'note', text: `${dfmt(last.date)}: month to date ${pc(last.mtdDays ? last.mtd : null)} over ${last.mtdDays} day${last.mtdDays === 1 ? '' : 's'}${ok(last.s) ? `, the day's own ${pc(last.s)}` : ` (the day itself is left out: ${last.why})`}. The month to date line is the tile; it starts again on the 1st.`}) : null,
+    bar, chart, tb,
+    miss.length ? el('p', {class: 'note', text: `${miss.length} day${miss.length === 1 ? '' : 's'} left out (a figure missing; never counted as 0). Next: ${tcNext()}.`}) : null,
+    el('p', {class: 'note', text: 'B grade picks = each register entry\'s metres × its quality\'s picks per metre; cut piece picks = cut metres × the floor\'s average picks per metre that day. The day\'s own figure jumps more than the month to date, because folding lags the looms: a taka woven one day can be folded the next.'}));
 }
 // ================================================================ END COSTING TAB
 // COSTING-TAB>>
