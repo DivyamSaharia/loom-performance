@@ -180,7 +180,12 @@ function fcCostDay(day) {
   const bnet = (ok(b.loss) ? b.loss : 0) - (ok(b.rev) ? b.rev : 0);
   const fold = day.fcpp / 100;                       // rupees per A-grade folded pick, incl. the B grade part
   const bpart = bnet / (day.afold * 1e5);            // that B grade part, rupees per folded pick
-  return {date: day.date, fold, bpart, base: fold - bpart, bnet, bm: ok(b.m) ? b.m : null, has_rev: ok(b.rev), afold: day.afold};
+  // Round A3: the parts the loom cost method splits the day's cost into. pw = the POWER line (corrected costing, so with the
+  // 0.02 ₹/pick correction taken off); add = that correction's rupees (day.pfix.rs), so pool + add = the day's cost with POWER
+  // as entered (Divyam, 24 Nov 2026); cut = the cut piece loss.
+  const pw = day.power && ok(day.power.amount) ? day.power.amount : null, add = day.pfix && ok(day.pfix.rs) ? day.pfix.rs : 0;
+  return {date: day.date, fold, bpart, base: fold - bpart, bnet, bm: ok(b.m) ? b.m : null, has_rev: ok(b.rev), afold: day.afold,
+          pw, add, cut: ok(day.cut) ? day.cut : 0};
 }
 
 // ---- one analysis run. inp: {M, loomdays: [{date, loom, width, hg, fpicks, styles}], costing: [costing day], reg: [{date,
@@ -275,50 +280,99 @@ function fcAnalyse(inp) {
   rows.lday = inp.running ? fcLoomCost(rows, cost, inp.running, picksOf, inp) : null;
   return rows;
 }
-// ---- Round Y (Divyam, 23 Nov 2026; claude/2026-11-23_profit-two-bases-design.md): profit on the loom cost basis. Each costed day's
-// conversion pool C = OPEX + cut piece loss (= the folded cost per pick without its B grade part × A-grade folded picks, the
-// same pool the per pick basis spreads) ÷ the looms that ran that day (run minutes > 0 in the loom data, as Break-even) = the
-// loom cost L of each loom-day, whatever it wove. A loom-day split across head groups (a changeover) shares L by its picks;
-// a loom that ran with no picks, or whose record is not priced, or that has no fabric record at all, leaves its L
-// unrecovered (lcost_gap: never put into a priced row and never ₹0). B grade is charged exactly as on the per pick basis.
-// running: {date: [{loom, width, hg}] | [loom]}; a date absent from it has no loom data (a gap), [] = no loom ran.
-// Returns {date: {pool, n, per, unrec, unrec_ld, why}}; sets lcost / profit_lc (priced rows), lcost_gap (the rest), lrun.
+// ---- The loom cost basis. Round Y (23 Nov 2026) built it; Round A3 (Divyam, 24 Nov 2026) is its method now, the only profit:
+// each costed day's cost, with POWER as entered (the corrected costing's pool, OPEX + cut piece loss, + the 0.02 ₹/pick POWER
+// correction's rupees), is split in four and charged to the loom-days that made it:
+//   1. the compressor (the exact day's Power (Compressor) rupees, never borrowed from another day) by air: each loom's air in
+//      the day (CFM × run minutes, ft³) × the day's compressor ₹ per ft³ (its rupees ÷ the air of every loom with a CFM reading);
+//   2. the rest of POWER (POWER less the compressor) + the correction's rupees, per pick: the same paise on every pick of the day;
+//   3. the cut piece loss, per pick, in the same paise;
+//   4. every other head (OPEX less POWER and cut piece loss) ÷ the looms running (run minutes > 0, as Break-even) = per loom.
+// A day whose compressor rupees cannot be split by air (no reading that day, more than the POWER line, or no loom with a CFM
+// reading) charges the whole of POWER per pick (L.nocomp); with no POWER line at all, POWER cannot be told apart from the
+// other heads and stays with them (per loom). A loom-day split across
+// head groups (a changeover) shares its loom's parts 1 and 4 by its picks. A loom that ran with no reading of its air, on a day
+// with a compressor, gets no loom cost profit ('no CFM reading for the loom', counted in Coverage, never ₹0). A loom that ran
+// and is not priced (no link, no rate, no picks, or no fabric record) leaves its loom cost unrecovered (lcost_gap, U), never
+// put into a priced row. B grade is the loom's own, as before.
+// running: {date: [{loom, width, hg, hg0, air, picks}] | [loom]}; air: ft³ (null with no CFM reading); picks: the loom data's
+// picks (fabric picks ÷ 39.37), for a loom with no fabric record. inp.comp: {date: compressor rupees}.
+// Returns {date: {pool, add, total, pw, comp, cut, other, n, per, pp, rate, air, nocomp, unrec, unrec_ld, nopick_ld, why}};
+// sets lcost and its parts lc {loom, comp, pick} / profit_lc (priced rows), lcost_gap (the rest), lrun.
 function fcLoomCost(rows, cost, running, picksOf, inp) {
-  const lday = {}, byLd = new Map();
+  const lday = {}, byLd = new Map(), comp = inp.comp || {};
   for (const r of rows) { const k = r.date + '|' + r.loom; if (!byLd.has(k)) byLd.set(k, []); byLd.get(k).push(r); }
   const inRange = (d) => (!inp.from || d >= inp.from) && (!inp.to || d <= inp.to);
   for (const [d, c] of cost) {
     if (!c || !inRange(d)) continue;
     const pool = c.base * c.afold * 1e5, raw = running[d];
-    const L = {pool, bnet: c.bnet, n: null, per: null, unrec: 0, unrec_ld: 0, why: null};
+    const L = {pool, add: c.add, total: pool + c.add, bnet: c.bnet, pw: c.pw, comp: null, cut: c.cut, other: null, n: null, per: null, pp: null, rate: null, air: null, nocomp: false,
+               unrec: 0, unrec_ld: 0, nopick_ld: 0, noair_ld: 0, why: null};
     lday[d] = L;
     if (!Array.isArray(raw)) { L.why = 'no loom data for the day'; continue; }
     if (!rows.some((r) => r.date === d)) { L.why = 'no fabric data for the day'; continue; }   // the fabric records lag the loom data: a gap, not the whole day as unrecovered
-    const looms = [...new Map(raw.map((x) => typeof x === 'object' && x ? x : {loom: x}).map((x) => [String(x.loom), x])).values()];
+    const lm = new Map();   // one entry per loom (a changeover loom-day has one entry per head group in the loom data)
+    for (const y of raw) {
+      const x = typeof y === 'object' && y ? y : {loom: y}, key = String(x.loom);
+      if (!lm.has(key)) lm.set(key, {loom: x.loom, width: x.width, hg: x.hg, hg0: x.hg0, air: null, picks: 0});
+      const o = lm.get(key);
+      if (typeof x.air === 'number' && isFinite(x.air) && x.air > 0) o.air = (o.air || 0) + x.air;
+      if (typeof x.picks === 'number' && isFinite(x.picks)) o.picks += x.picks;
+    }
+    const looms = [...lm.values()];
     L.n = looms.length;
     if (!L.n) { L.why = 'no loom ran'; continue; }
-    L.per = pool / L.n;
+    // the parts of the day's cost
+    const cr = typeof comp[d] === 'number' && isFinite(comp[d]) ? comp[d] : null;
+    L.air = looms.reduce((a, x) => a + (x.air || 0), 0);
+    if (cr != null && cr > 0 && L.pw != null && cr <= L.pw && L.air > 0) { L.comp = cr; L.rate = cr / L.air; } else { L.comp = 0; L.nocomp = true; }
+    const pw = L.pw != null ? L.pw : 0;
+    L.other = pool - L.cut - pw;
+    const pickPool = pw - L.comp + L.add + L.cut;
+    let Ptot = 0;
+    for (const r of rows) if (r.date === d) Ptot += r.picks || 0;
+    for (const x of looms) if (!byLd.has(d + '|' + x.loom)) Ptot += x.picks || 0;
+    // no fabric record with picks: no row carries the day's B grade (fcAnalyse charges it over the picks), so it goes per loom too
+    L.bper = rows.bday && rows.bday.has(d) ? 0 : L.bnet;
+    if (Ptot > 0) { L.pp = pickPool / Ptot; L.per = (L.other + L.bper) / L.n; } else { L.pp = 0; L.per = (L.other + L.bper + pickPool) / L.n; }   // no picks woven at all: the whole day per loom
+    L.pick = pickPool;
     const ran = new Set(looms.map((x) => String(x.loom)));
     for (const x of looms) {
       const k = d + '|' + x.loom, rs = byLd.get(k) || [], P = picksOf.get(k) || 0;
+      const noAir = !L.nocomp && !(x.air > 0), cpart = L.nocomp || noAir ? 0 : x.air * L.rate;
       let u = 0;
       if (!rs.length) {   // ran in the loom data, no fabric record (D2): its whole loom cost is unrecovered
-        rows.push({date: d, loom: x.loom, width: String(x.width ?? ''), hg: x.hg || 'Unassigned', hg0: x.hg0 || x.hg || 'Unassigned', styles: [], picks: 0, metres: null, fabric: null, basis: null,
-                   sale: null, real: null, cost: null, bcharge: null, profit: null, gap: 'no fabric record', lcost_gap: L.per, lrun: true, synth: true});
-        u = L.per;
+        const lp = x.picks || 0, lc = L.per + cpart + lp * L.pp;
+        rows.push({date: d, loom: x.loom, width: String(x.width ?? ''), hg: x.hg || 'Unassigned', hg0: x.hg0 || x.hg || 'Unassigned', styles: [], picks: 0, lpicks: lp, metres: null, fabric: null, basis: null,
+                   sale: null, real: null, cost: null, bcharge: null, profit: null, gap: lp > 0 ? 'no fabric record' : 'no picks woven', lcost_gap: lc, lc: {loom: L.per, comp: cpart, pick: lp * L.pp}, lrun: true, synth: true});
+        u = lc;
+        if (!(lp > 0)) L.nopick_ld++;
       } else {
         rs.forEach((r, i) => {
-          const share = P > 0 ? L.per * r.picks / P : (i === 0 ? L.per : 0);   // no picks at all: the whole L on its first record
-          r.lrun = true;
-          if (!r.gap && r.profit != null) { r.lcost = share; r.profit_lc = r.real - share - r.bcharge; }
-          else { r.lcost_gap = share; u += share; }
+          const share = P > 0 ? r.picks / P : (i === 0 ? 1 : 0);   // no picks at all: the whole loom part on its first record
+          const parts = {loom: L.per * share, comp: cpart * share, pick: (r.picks || 0) * L.pp}, lc = parts.loom + parts.comp + parts.pick;
+          r.lrun = true; r.lc = parts;
+          if (!r.gap && r.profit != null && noAir) { r.lc_gap = 'no CFM reading for the loom'; r.lc_noair = lc; }
+          else if (!r.gap && r.profit != null) { r.lcost = lc; r.profit_lc = r.real - lc - r.bcharge; }
+          else { r.lcost_gap = lc; u += lc; }
         });
+        if (!(P > 0) && u > 0) L.nopick_ld++;
+        if (noAir && rs.some((r) => r.lc_noair != null)) L.noair_ld++;
       }
       if (u > 0) { L.unrec += u; L.unrec_ld++; }
     }
-    for (const r of rows) if (r.date === d && !ran.has(String(r.loom)) && !r.synth && !r.gap && r.profit != null) { r.lcost = 0; r.profit_lc = r.real - r.bcharge; r.lc_norun = true; }   // picks with no run minutes: not counted in the looms running (D2)
+    // picks with no run minutes (D2): not counted in the looms running, so no per loom part or air; their picks carry the per pick parts
+    const nu = new Set();
+    for (const r of rows) {
+      if (r.date !== d || ran.has(String(r.loom)) || r.synth) continue;
+      const lc = (r.picks || 0) * L.pp;
+      r.lc = {loom: 0, comp: 0, pick: lc};
+      if (!r.gap && r.profit != null) { r.lcost = lc; r.profit_lc = r.real - lc - r.bcharge; r.lc_norun = true; }
+      else if (lc > 0) { r.lcost_gap = lc; L.unrec += lc; nu.add(String(r.loom)); }
+    }
+    L.unrec_ld += nu.size;
   }
-  for (const r of rows) if (!r.gap && r.profit != null && r.profit_lc == null) r.lc_gap = (lday[r.date] && lday[r.date].why) || 'no loom data for the day';
+  for (const r of rows) if (!r.gap && r.profit != null && r.profit_lc == null && !r.lc_gap) r.lc_gap = (lday[r.date] && lday[r.date].why) || 'no loom data for the day';
   return lday;
 }
 // What the analysis charged against what the plant's costing says the same days cost (review 7): the folded cost is per
@@ -333,11 +387,11 @@ function fcReconcile(rows, costing) {
     if (!days.has(c.date)) continue;
     const k = fcCostDay(c); if (!k) continue;
     plant += k.fold * c.afold * 1e5; bnet += k.bnet; nodays++;
-    if (lday) { const L = lday[c.date]; if (L && L.per != null) { lc_days++; plant_lc += k.fold * c.afold * 1e5; } else lc_nodays++; }
+    if (lday) { const L = lday[c.date]; if (L && L.per != null) { lc_days++; plant_lc += k.fold * c.afold * 1e5 + k.add; } else lc_nodays++; }   // Round A3: + the 2 paise a pick POWER correction
   }
   for (const r of rows) {
     charged += (r.cost ?? r.cost_gap ?? 0) + (r.bcharge ?? r.bcharge_gap ?? 0);
-    if (lday && lday[r.date] && lday[r.date].per != null) charged_lc += (r.lcost ?? r.lcost_gap ?? 0) + (r.bcharge ?? r.bcharge_gap ?? 0);
+    if (lday && lday[r.date] && lday[r.date].per != null) charged_lc += (r.lcost ?? r.lcost_gap ?? r.lc_noair ?? 0) + (r.bcharge ?? r.bcharge_gap ?? 0);   // Round A3: a loom with no CFM reading is charged too (its profit is the gap)
   }
   for (const [, b] of rows.bday || []) if (!b.reg) noreg++;
   return {charged, plant, diff: charged - plant, days: nodays, bnet, noreg, uncosted: [...days].filter((d) => !(costing || []).some((c) => c.date === d && fcCostDay(c))).length,
@@ -349,12 +403,12 @@ function fcReconcile(rows, costing) {
 // loom-day with a loom cost (D3). withU false (By loom, By head group): priced rows only, never U.
 function fcSum(rows, withU = true) {
   const t = {picks: 0, priced: 0, costed: 0, metres: 0, sale: 0, real: 0, profit: 0, cost: 0, bcharge: 0, loomdays: 0, priced_ld: 0, costed_ld: 0, gaps: {},
-             lc_priced: 0, lcost: 0, lc_costed: 0, lc_bcharge: 0, unrec: 0, unrec_ld: 0, lc_ld: 0, lc_gaps: {}, norun_ld: 0};
-  const ld = new Set(), pld = new Set(), cld = new Set(), lld = new Set(), uld = new Set(), rld = new Set(), nld = new Set();
+             lc_priced: 0, lcost: 0, lc_costed: 0, lc_bcharge: 0, unrec: 0, unrec_ld: 0, lc_ld: 0, lc_gaps: {}, norun_ld: 0, nopick_ld: 0, lc_metres: 0};
+  const ld = new Set(), pld = new Set(), cld = new Set(), lld = new Set(), uld = new Set(), rld = new Set(), nld = new Set(), npld = new Set();
   for (const r of rows) {
     const k = r.date + '|' + r.loom;
     t.picks += r.picks; ld.add(k);
-    if (r.lcost_gap != null) { t.unrec += r.lcost_gap; if (r.lcost_gap > 0) uld.add(k); rld.add(k); }
+    if (r.lcost_gap != null) { t.unrec += r.lcost_gap; if (r.lcost_gap > 0) { uld.add(k); if (r.gap === 'no picks' || r.gap === 'no picks woven') npld.add(k); } if (r.lrun) rld.add(k); }   // Round A3: picks with no run minutes are not a loom-day running
     if (r.gap) { t.gaps[r.gap] = (t.gaps[r.gap] || 0) + r.picks; continue; }
     t.priced += r.picks; t.metres += r.metres; t.sale += r.sale; t.real += r.real; pld.add(k);
     if (r.profit != null) { t.costed += r.picks; t.profit += r.profit; t.cost += r.cost; t.bcharge += r.bcharge; cld.add(k); }
@@ -370,12 +424,16 @@ function fcSum(rows, withU = true) {
   t.sale_ld = t.priced_ld ? t.sale / t.priced_ld : null; t.real_ld = t.priced_ld ? t.real / t.priced_ld : null; t.profit_ld = t.costed_ld ? t.profit / t.costed_ld : null;
   // the loom cost basis (Round Y): nothing priced with a loom cost = a gap (null), never ₹0
   t.lc_ld = lld.size; t.unrec_ld = uld.size; t.norun_ld = nld.size;
-  if (!withU) { t.unrec = 0; t.unrec_ld = 0; }
+  t.nopick_ld = npld.size;   // Round A3 (risk D): the unpriced loom-days that ran but wove no picks, named apart from those not priced
+  if (!withU) { t.unrec = 0; t.unrec_ld = 0; t.nopick_ld = 0; }
   t.lc_run_ld = withU ? new Set([...rld, ...[...lld].filter((k) => !nld.has(k))]).size : lld.size;
   t.profit_lc = t.lc_ld ? t.lc_priced - t.unrec : null;
   t.profit_lc_pp = t.lc_ld ? pp(t.profit_lc, t.lc_costed) : null;
   t.profit_lc_ld = t.lc_ld && t.lc_run_ld ? t.profit_lc / t.lc_run_ld : null;
   t.lc_coverage = t.picks ? t.lc_costed / t.picks : null;
+  // Round A3 (risk C): nothing priced with a loom cost, but looms ran: profit stays a gap, the loom cost not recovered is shown
+  // with it (unrec_only), and anything that adds days up (a week, the month) counts it, as fcSum over those days does
+  t.unrec_only = !t.lc_ld && t.unrec > 0;
   return t;
 }
 // One analysis row re-worked at f times its picks (the Benchmark / Best / Target views): metres, sale value, realisation,
@@ -548,8 +606,8 @@ function fcBreakEven(cost, looms) { return typeof cost === 'number' && isFinite(
 // grade), corrected costing = the folded cost per pick × A-grade folded picks. null when the day has no such costing.
 function fcBeCost(day) {
   const k = fcCostDay(day); if (!k) return null;
-  const total = k.fold * day.afold * 1e5;
-  return {total, pool: total - k.bnet, bnet: k.bnet};
+  const total = k.fold * day.afold * 1e5 + k.add;   // Round A3 (Divyam, 24 Nov 2026; Q3): the loom cost method's own total, corrected POWER + 2 paise a pick
+  return {total, pool: total - k.bnet, bnet: k.bnet, add: k.add};
 }
 // What fixing a loom is worth a day (Actions, "Work on these first"), with the quality's realisation factored in: lost picks
 // (costing basis) at that loom-day's realisation per pick where it is priced, else at the cost per pick that runs whether
@@ -686,7 +744,7 @@ const WKLF = {
   B5s: (d) => { if (!d || !fwOk(d.pp) || !fwOk(d.s)) return null; const T = fcTargetProfitRs(d.pp, d.P, d.E, d.s); if (!T) return null;
     return fwOut(`${fwP(d.pp)} paise × (${fwN(d.P + (d.E || 0))} target picks × (1 − ${(d.s * 100).toFixed(1)}% folding shortage) = ${fwN(T.afold)} A-grade folded picks) ÷ 100`, fwR(T.rs), 'in the day', T.rs); },
   B7: (d) => { if (!d || !fwOk(d.cost) || !(d.looms > 0)) return null; const v = d.cost / d.looms;
-    return fwOut(`(operating expenses and cut piece loss ${fwR(d.pool)} + net B grade ${fwR(d.bnet)} = ${fwR(d.cost)}, corrected costing) ÷ ${d.looms} loom${d.looms === 1 ? '' : 's'} running`, fwR(v), 'a loom', v); },
+    return fwOut(`(operating expenses and cut piece loss ${fwR(d.pool)}, corrected costing, + 2 paise a pick ${fwR(d.add || 0)} + net B grade ${fwR(d.bnet)} = ${fwR(d.cost)}) ÷ ${d.looms} loom${d.looms === 1 ? '' : 's'} running`, fwR(v), 'a loom', v); },
   C2: (d) => { if (!d || !fwOk(d.ld)) return null; const n = d.full ? d.looms : d.priced, v = n * d.ld;
     return fwOut(`${d.hg}: ${n} loom${n === 1 ? '' : 's'}${d.full ? ' that ran' : ' priced (of ' + d.looms + ' that ran)'} × ${fwR(d.ld)} realisation per loom-day`, fwR(v), 'in the day', v); },
   C3: (d) => { if (!d || !(d.conv > 0) || !fwOk(d.real)) return null; const v = (d.real - d.conv) / d.conv;
@@ -717,25 +775,24 @@ const WKLF = {
     return fwOut(`${d.hg}: ${d.yarns.map((y) => `${y.side} ${fwN(y.gpm, 2)} g ÷ 1,000 × ₹${fwN(y.rate)} a kg`).join(' + ')}`, '₹' + v.toFixed(2), 'a metre', v); },
   K5: (d) => { if (!d || !fwOk(d.sale) || !fwOk(d.yarn)) return null; const v = d.sale - d.yarn * d.metres;
     return fwOut(`Loom ${d.loom}: ${fwP(100 * v / d.picks)} paise a pick (the rupees below ÷ ${fwN(d.picks)} picks × 100). Sale value ${fwR(d.sale)} − standard yarn ₹${d.yarn.toFixed(2)} a metre × ${fwN(d.metres, 1)} m`, fwR(v), '', v); },
-  K6: (d) => { if (!d || !fwOk(d.real) || !fwOk(d.costPp)) return null; const c = d.picks * d.costPp / 100, v = d.real - c - (d.bcharge || 0);
-    return fwOut(`Loom ${d.loom}: realisation ${fwR(d.real)} − ${fwR(c)} (${fwN(d.picks)} picks × ${fwP(d.costPp)} paise, the folded cost per pick without its B grade part) − its own B grade ${fwR(d.bcharge || 0)}`, fwR(v), '', v); },
-  K6L: (d) => { if (!d || !fwOk(d.real) || !fwOk(d.lcost)) return null; const v = d.real - d.lcost - (d.bcharge || 0);
-    return fwOut(`Loom ${d.loom}: realisation ${fwR(d.real)} − its loom cost ${fwR(d.lcost)} (the day's ${fwR(d.pool)} ÷ ${d.n} loom${d.n === 1 ? '' : 's'} running = ${fwR(d.per)}${d.share < 1 - 1e-9 ? `, × ${fwN(d.picks)} of the loom's ${fwN(d.lpicks)} picks that day` : ''}) − its own B grade ${fwR(d.bcharge || 0)}`, fwR(v), '', v); },
+  K6L: (d) => { if (!d || !fwOk(d.real) || !fwOk(d.lcost)) return null; const v = d.real - d.lcost - (d.bcharge || 0), sh = d.share < 1 - 1e-9;
+    const comp = d.nocomp ? 'the compressor could not be split by air that day (no reading, more than the POWER line, or no loom with a CFM reading), so all of POWER is in the per pick part' : `compressor ${fwR(d.comp)} ÷ ${fwN(d.air)} ft³ × the loom's ${fwN(d.lair)} ft³${sh ? ` × ${fwN(d.picks)} of its ${fwN(d.lpicks)} picks that day` : ''} = ${fwR(d.cpart)}`;
+    return fwOut(`Loom ${d.loom}: realisation ${fwR(d.real)} − its loom cost ${fwR(d.lcost)} (other heads ${fwR(d.other)} ÷ ${d.n} loom${d.n === 1 ? '' : 's'} running = ${fwR(d.per)}${sh ? ` × ${fwN(d.picks)} of the loom's ${fwN(d.lpicks)} picks that day` : ''}; ${comp}; per pick ${fwR(d.pick)} ÷ ${fwN(d.P)} picks = ${fwP(100 * d.pp)} paise × ${fwN(d.picks)} picks = ${fwR(d.ppart)}) − its own B grade ${fwR(d.bcharge || 0)}`, fwR(v), '', v); },
   K7L: (d) => { if (!d || !fwOk(d.v) || !(d.ld > 0)) return null;
     return fwOut(`Profit (loom cost basis): ${d.unrec > 0 ? `the priced loom-days' ${fwR(d.v + d.unrec)} − ${fwR(d.unrec)} loom cost of ${d.uld} unpriced loom-day${d.uld === 1 ? '' : 's'} = ${fwR(d.v)}` : fwR(d.v)}${d.picks > 0 ? `; ÷ ${fwN(d.picks)} picks × 100 = ${fwP(100 * d.v / d.picks)} paise a pick` : ''}; ÷ ${fwN(d.ld)} loom-days running = ${fwR(d.v / d.ld)} a loom a day; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000`, fwL(d.v), 'lakh', d.v); },
   K7U: (d) => { if (!d || !fwOk(d.unrec) || !(d.uld > 0)) return null;
-    return fwOut(`${d.date}, loom cost (the day's ${fwR(d.pool)} ÷ ${d.n} looms running = ${fwR(d.per)} a loom) of the running loom-days not priced: ${d.items.slice(0, 3).map((x) => `loom ${x.loom} (${x.why}) ${fwR(x.rs)}`).join(' + ')}${d.items.length > 3 ? ` + ${d.items.length - 3} more` : ''}`, fwR(d.unrec), 'not recovered', d.unrec); },
+    return fwOut(`${d.date}, loom cost of the running loom-days not priced (each: other heads ${fwR(d.per)} a loom + its air and its picks): ${d.items.slice(0, 3).map((x) => `loom ${x.loom} (${x.why}) ${fwR(x.rs)}`).join(' + ')}${d.items.length > 3 ? ` + ${d.items.length - 3} more` : ''}`, fwR(d.unrec), 'not recovered', d.unrec); },
   K7: (d) => { if (!d || !fwOk(d.v) || !(d.ld > 0)) return null;
     return fwOut(`${d.what}: ${fwR(d.v)} over ${fwN(d.ld)} ${d.costed ? 'costed' : 'priced'} loom-days${d.picks > 0 ? `; ÷ ${fwN(d.picks)} picks × 100 = ${fwP(100 * d.v / d.picks)} paise a pick` : ''}; ÷ ${fwN(d.ld)} loom-days = ${fwR(d.v / d.ld)} a loom a day; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000`, fwL(d.v), 'lakh', d.v); },
+  K7S: (d) => { if (!d || !fwOk(d.v) || !(d.m > 0)) return null;
+    return fwOut(`Sale value ${fwR(d.v)} over ${fwN(d.ld)} priced loom-days; ÷ ${fwN(d.m)} m priced = ₹${(d.v / d.m).toFixed(2)} a metre on average; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000`, fwL(d.v), 'lakh', d.v); },
   K8: (d) => { if (!d || !(d.picks > 0)) return null; const v = d.priced / d.picks;
     return fwOut(`${fwN(d.priced / 1e5, 2)} lakh priced picks ÷ ${fwN(d.picks / 1e5, 2)} lakh picks × 100`, (v * 100).toFixed(0) + '%', '', v); },
-  K9: (d) => { if (!d || !fwOk(d.sale) || !(d.picks > 0)) return null; const lc = d.basis === 'lc', u = lc ? d.unrec || 0 : 0, v = d.sale - d.yarn - d.conv - d.bgrade - u, pp = (x) => fwP(100 * x / d.picks), r = 100 * v / d.picks, cv = lc ? 'loom cost' : 'conversion';
-    return fwOut(`${lc ? 'Loom cost basis' : 'Per pick basis'}, in rupees: sale ${fwR(d.sale)} − standard yarn ${fwR(d.yarn)} − ${cv} ${fwR(d.conv)} − the looms' own B grade ${fwR(d.bgrade)}${lc ? ` − unpriced looms ${fwR(u)}` : ''} = ${fwR(v)} of profit. Per pick, each ÷ ${fwN(d.picks)} costed picks × 100: sale ${pp(d.sale)} − standard yarn ${pp(d.yarn)} − ${cv} ${pp(d.conv)} − B grade ${pp(d.bgrade)}${lc ? ` − unpriced looms ${pp(u)}` : ''}`,
+  K9: (d) => { if (!d || !fwOk(d.sale) || !(d.picks > 0)) return null; const u = d.unrec || 0, v = d.sale - d.yarn - d.conv - d.bgrade - u, pp = (x) => fwP(100 * x / d.picks), r = 100 * v / d.picks;
+    return fwOut(`Loom cost basis, in rupees: sale ${fwR(d.sale)} − standard yarn ${fwR(d.yarn)} − loom cost ${fwR(d.conv)} − the looms' own B grade ${fwR(d.bgrade)} − unpriced looms ${fwR(u)} = ${fwR(v)} of profit. Per pick, each ÷ ${fwN(d.picks)} costed picks × 100: sale ${pp(d.sale)} − standard yarn ${pp(d.yarn)} − loom cost ${pp(d.conv)} − B grade ${pp(d.bgrade)} − unpriced looms ${pp(u)}`,
       (r < 0 && /[1-9]/.test(Math.abs(r).toFixed(2)) ? '−' : '') + Math.abs(r).toFixed(2), 'paise of profit per pick', r); },
-  K10: (d) => { if (!d || !fwOk(d.charged) || !fwOk(d.plant)) return null; const v = d.charged - d.plant;
-    return fwOut(`charged to the looms ${fwR(d.charged)} − the plant's folded cost ${fwR(d.plant)}`, fwR(v), '', v); },
   K10L: (d) => { if (!d || !fwOk(d.charged) || !fwOk(d.plant) || !(d.days > 0)) return null; const v = d.charged - d.plant;
-    return fwOut(`loom cost basis, over the ${d.days} costed day${d.days === 1 ? '' : 's'} with loom data: charged to the looms ${fwR(d.charged)} (each day's cost ÷ looms running, per loom that ran, plus B grade) − the plant's folded cost ${fwR(d.plant)}`, fwR(v), '', v); },
+    return fwOut(`both widths, over the ${d.days} costed day${d.days === 1 ? '' : 's'} with loom data: charged to the looms ${fwR(d.charged)} (each loom's loom cost, plus B grade) − the plant's folded cost with the 2 paise a pick ${fwR(d.plant)}`, fwR(Math.abs(v) < 0.5 ? 0 : v), '', v); },
   K11: (d) => { if (!d || !fwOk(d.v) || !(d.n > 0)) return null; const v = d.v / d.n;
     return d.pp ? fwOut(`${d.name}: ${d.what}, realisation × 100 = ${fwN(d.v, 0)} paise ÷ ${fwN(d.n)} picks`, fwP(v), 'paise', v)
       : fwOut(`${d.name}: ${d.what} ${fwR(d.v)} ÷ ${fwN(d.n)} loom-days`, fwR(v), 'a loom per day', v); },

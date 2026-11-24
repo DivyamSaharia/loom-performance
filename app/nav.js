@@ -294,7 +294,7 @@ $('#q-clear').addEventListener('click', () => { clearSearch(); qIn.focus(); });
 const NAV_HEADS = ['.card>.cardhead>h3', '.card>summary>h3', 'h3.sechead'];
 const NAV_MONEY = /realis|profit|sale value/i;
 const NAV_STATIC = {
-  realisation: ['Corrections', 'Coverage', 'Trend', 'By loom / By head group', 'Per pick: sale value to profit', 'By width', "Cost charged against the plant's costing"],
+  realisation: ['Corrections', 'Coverage', 'Trend', 'By loom / By head group', 'Per pick: sale value to profit', 'By width'],
   data: ['Last 30 days', 'Files per day', 'Backup age', () => canEdit() ? 'Reload data' : null, 'Days', 'Files', 'Other alerts', 'Settings in use'],
   links: ['Head-group links'], masters: ['Fabrics', 'Yarns', 'Switches', 'History'], approvals: [],
   fabric: ['Fabrics', 'About this read', 'Recent reads'], access: ['Requests', 'People', 'Add someone directly']};
