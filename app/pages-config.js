@@ -179,14 +179,15 @@ const PICK_NEXT = [
   [/inside; used for the folder/, 'Next: move the file to its own day\'s folder; the run reads it for the folder\'s date until then.'],
   [/could not be read/, 'Next: ask the plant to upload that costing file again.'],
   [/not read again/, 'Next: nothing to do; the run reads a day again only within the last 31 days.'],
-  [/re-read from|costing read from/, 'Nothing to do: the usual name is costing.xlsx, but any name is read.'],
+  [/re-read from/, 'Next: nothing to do; the day was read again, from a newer or different file than last time, and its figures now come from it. If that is the wrong file, ask the plant to remove it from the day\'s folder.'],
+  [/costing read from/, 'Next: nothing to do; the usual name is costing.xlsx, but any name is read.'],
 ];
 function costPickNotes(dates) {
   const C = typeof COST !== 'undefined' ? COST : null, P = C && C.picks;
   if (!C) return el('p', {class: 'note', text: 'Costing file: the costing data has not loaded. Press Refresh (the round-arrow icon) and look again.'});
   if (!P) return el('p', {class: 'note', text: 'Costing file: which file each day used shows after the next daily run (it runs every hour, 10:40 to 16:40 IST). Next: ' + (canEdit() ? 'press Reload data on this tab to run it now.' : 'wait for the next run.')});
   const days = (dates || []).filter((d) => P[d]).reverse();
-  if (!days.length) return el('p', {class: 'note', text: 'Costing file: every day in these 30 days was read from one file named costing.xlsx (the run finds the file by what is in it, so another name is read too).'});
+  if (!days.length) return el('p', {class: 'note', text: 'Costing file: every day in the last 30 days that has one was read from a single file named costing.xlsx (the run finds the file by what is in it, so another name is read too).'});
   return el('div', {class: 'pickn'}, el('p', {class: 'note', text: 'Costing file: days that were not one file named costing.xlsx (the run finds the file by what is in it).'}),
     el('ul', {class: 'note'}, days.map((d) => {
       const r = P[d], fl = r.flags || [];

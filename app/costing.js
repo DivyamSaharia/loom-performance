@@ -765,7 +765,7 @@ const erShort = (f) => !f || f.used === 'none' ? 'the day\'s own average: too fe
   : f.used === 'slope' ? `slope of a line through ${f.n} days: the extra kWh per extra 1,000 ft³ · R² ${f2(f.r2)} (1.00 = every day on the line)`
   : `${f.n}-day average · ${f.why === 'few' ? `a line needs ${ER_MIN} days` : f.why === 'r2' ? `the days sit loosely on a line: R² ${f2(f.r2)}, under ${f2(ER_R2)}` : 'the line\'s slope is out of range'}`;
 // Round X: the same note in a few words for a phone (below 560 px, .nm in style.css); the Working (E9) keeps the full story.
-const erPhone = (f) => !f || f.used === 'none' ? 'the day\'s own average' : f.used === 'slope' ? `slope over ${f.n} days · R² ${f2(f.r2)}`
+const erPhone = (f) => !f || f.used === 'none' ? 'the day\'s own average' : f.used === 'slope' ? `line through ${f.n} days · fit ${f2(f.r2)} (1.00 = every day on it)`
   : `${f.n}-day average · ${f.why === 'few' ? 'too few days for a line' : f.why === 'r2' ? 'days too loose for a line' : 'slope out of range'}`;
 const erNote = (f) => el('div', {class: 'note nm'}, el('span', {class: 'lgl', text: erShort(f)}), el('span', {class: 'sml', text: erPhone(f) + ' · details in the Working (the = mark)'}));
 // The figures the Working (E9) shows for the rate on a day
@@ -950,7 +950,8 @@ function pressWorth(pp) {
   const t = !c ? compNote(c, D.latest)
     : ok(pp.total) ? `The compressor already runs at or below the set point needed, and no loom sits above its reference pressure, so there is nothing to save (${f1(pp.total * 100)}% of the compressor's energy).`
     : !ok(COMP_SP) ? (canEdit() ? 'Type the compressor set point on the tile above to see the saving.' : 'The compressor set point is not typed in yet: tell the owner.')
-    : own ? 'The margin is missing: add setpoint_margin_kgf (kgf/cm²) to the Config sheet Settings tab.' : 'The margin is not set yet: tell the owner.';
+    : !ok(pMargin()) ? (own ? 'The margin is missing: add setpoint_margin_kgf (kgf/cm²) to the Config sheet Settings tab.' : 'The margin is not set yet: tell the owner.')
+    : `The saving cannot be worked out for this day: no loom has a main pressure reading. Next: ${tcNext()}.`;
   return {tiles: [], gap: el('p', {class: 'note', text: t})};
 }
 // Round V (Divyam, 20 Nov 2026): the Pressure tab's owner-only card, each day's compressor kWh against the energy rate's
@@ -977,8 +978,8 @@ function erDevCard() {
   if (!(typeof fxIsOwner === 'function' && fxIsOwner())) return null;
   const P = ERFIT === 'ap', all = erDevRows(P), sub = P ? 'Owner only · each day\'s kWh − the kWh the air + floor pressure fit gives for its air and floor' : 'Owner only · each day\'s kWh − the kWh the energy rate\'s fit gives for its air';
   const allC = P ? erDevRows(false) : all, allP = P ? all : erDevRows(true);   // both, for their R² side by side
-  const fb = (v, t) => el('button', {type: 'button', 'aria-pressed': ERFIT === v ? 'true' : 'false', 'aria-label': `Fit: ${t}`, text: t, onclick: () => { ERFIT = v; render(); }});
-  const fsw = el('div', {class: 'toolbar'}, el('span', {class: 'note', text: 'Fit'}), el('div', {class: 'seg', role: 'group', 'aria-label': 'Fit'}, fb('cur', 'Current fit'), fb('ap', 'Air + floor pressure')));
+  const fb = (v, t, sh) => el('button', {type: 'button', 'aria-pressed': ERFIT === v ? 'true' : 'false', 'aria-label': `Fit: ${t}`, onclick: () => { ERFIT = v; render(); }}, el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh || t}));
+  const fsw = el('div', {class: 'toolbar'}, el('span', {class: 'note', text: 'Fit'}), el('div', {class: 'seg', role: 'group', 'aria-label': 'Fit'}, fb('cur', 'Current fit'), fb('ap', 'Air + floor pressure', 'Air + pressure')));
   const last = all.at(-1);
   if (typeof wkPut === 'function') wkPut('G6', last ? {date: dfmt(last.d), kwh: last.x.kwh, fit: last.x.fit, z: last.x.z, out: last.x.out, how: erFitName(last.f)} : null);
   if (!all.length) return card(ER_CARD, sub, fsw, el('p', {class: 'note', text: P ? 'No day from 5 Nov 2026 has a compressor reading, loom data and a floor pressure yet: pick Current fit, or check again after the daily run (it updates the app every hour, 10:40 to 16:40 IST).' : 'No day from 5 Nov 2026 has both a compressor reading and loom data yet. It fills in with the daily run (it updates the app every hour, 10:40 to 16:40 IST); if it stays empty, see Files per day on Data health.'}));

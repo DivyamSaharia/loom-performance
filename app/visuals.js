@@ -22,7 +22,7 @@ const clip = (s, n) => { s = String(s); return s.length > n ? s.slice(0, Math.ma
 // cols: [{label, unit}]; rows: [{label (node), hg, cells: [{text, level 0–1, tone 'bad'|'good', none (why grey), title, onClick}]}]
 function heatTable(cols, rows, o = {}) {
   const t = el('table', {class: 'heat'});
-  t.append(el('thead', {}, el('tr', {}, el('th', {scope: 'col', text: o.first || ''}), cols.map((c) => el('th', {scope: 'col', class: 'num'}, c.label, c.unit ? el('span', {class: 'unit', text: c.unit}) : null)))));
+  t.append(el('thead', {}, el('tr', {}, el('th', {scope: 'col', text: o.first || ''}), cols.map((c) => el('th', {scope: 'col', class: 'num', 'data-sm': c.sm || null}, c.label, c.unit ? el('span', {class: 'unit', text: c.unit}) : null)))));
   const tb = el('tbody');
   for (const r of rows) {
     tb.append(el('tr', {'data-hg': r.hg || null}, el('td', {}, r.label), r.cells.map((c) => {

@@ -94,7 +94,7 @@ const priorDates = () => (D.complete_days || []).filter((d) => d < D.latest).sli
 function card(title, note, ...body) {
   return el('div', {class: 'card'}, el('div', {class: 'cardhead'}, el('h3', {text: title}), note ? el('span', {class: 'note', text: note}) : null), ...body);
 }
-function th(label, unit, num) { return el('th', {class: num ? 'num' : null, scope: 'col'}, label, unit ? el('span', {class: 'unit', text: unit}) : null); }
+function th(label, unit, num, sm) { return el('th', {class: num ? 'num' : null, scope: 'col', 'data-sm': sm || null}, label, unit ? el('span', {class: 'unit', text: unit}) : null); }
 function table(headers, rows, numCols = []) {
   const t = el('table');
   t.append(el('thead', {}, el('tr', {}, headers.map((h, i) => Array.isArray(h) ? th(h[0], h[1], numCols.includes(i)) : th(h, null, numCols.includes(i))))));
