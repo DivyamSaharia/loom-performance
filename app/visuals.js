@@ -126,12 +126,13 @@ function hbars0(rows, o = {}) {
 // o: {aria, fmt, axis, ref: {v, label}, labelW}. Round A5 (25 Nov 2026): a row with split {cost, cover, over, short} (from
 // fcRealLessFold, its cost known) is drawn in three parts: the cost covered (grey, 0 → the lower of v and cost), then green
 // from the cost up to v, or red from v up to the cost. split {cost: null} = cost not known: the bar alone, faded.
+// Round A7 (25 Nov 2026): a row's dia (a number) draws a hollow diamond there, the app's target mark (the target folded cost).
 function signedBars0(rows, o = {}) {
   const fmt = o.fmt || pn;
   return fitted((W) => {
     const rowH = 24, L = Math.round(Math.max(64, Math.min(o.labelW || 170, W * (W < 480 ? 0.38 : 0.32)))), R = (W < 420 ? 52 : 70) + (o.wideText ? 40 : 0), T = o.ref ? 20 : 6, B = 32;   // Round A5: o.wideText leaves room for a two-figure value
     const H = T + B + rows.length * rowH;
-    const vs = rows.flatMap((r) => [r.v, r.split ? r.split.cost : null]).filter(ok).concat(o.ref && ok(o.ref.v) ? [o.ref.v] : []);
+    const vs = rows.flatMap((r) => [r.v, r.split ? r.split.cost : null, r.dia]).filter(ok).concat(o.ref && ok(o.ref.v) ? [o.ref.v] : []);
     const lo = Math.min(0, ...vs), hi = Math.max(0, ...vs, 1e-9);
     const [a, b, ticks] = niceRange(lo, hi);
     const x = (v) => L + (W - L - R) * (v - a) / ((b - a) || 1);
@@ -151,9 +152,10 @@ function signedBars0(rows, o = {}) {
         if (sp.over > 0) seg(y, sp.cost, v, 'var(--good)');
         if (sp.short > 0) seg(y, v, sp.cost, 'var(--bad)');
       } else if (ok(r.v)) seg(y, 0, v, col, sp ? 0.45 : 0);
+      if (ok(r.dia)) { const cx = x(r.dia), cy = y + 12; svg.append(svgEl('path', {d: `M${cx} ${cy - 7}L${cx + 6} ${cy}L${cx} ${cy + 7}L${cx - 6} ${cy}Z`, style: 'fill:var(--panel);stroke:var(--barline);stroke-width:2'})); }
       const hit = svgEl('rect', {x: L, y, width: W - L - R, height: rowH, style: `fill:transparent;${r.onClick ? 'cursor:pointer' : ''}`});
       tip(hit, r.title || `${r.label}: ${fmt(r.v)}`); if (r.onClick) hit.addEventListener('click', r.onClick); svg.append(hit);
-      const vx = ok(r.v) ? Math.max(x(0), x(top)) + 6 : x(0) + 6;
+      const vx = (ok(r.v) ? Math.max(x(0), x(top), ok(r.dia) ? x(r.dia) + 4 : -1e9) : x(0)) + 6;
       svg.append(tx({x: Math.min(W - 2, vx), y: y + 16, 'text-anchor': vx > W - R + 30 ? 'end' : 'start'}, r.text != null ? r.text : fmt(r.v), 'fill:var(--ink);font-size:11px;font-weight:600'));
     });
     if (o.ref && ok(o.ref.v)) {

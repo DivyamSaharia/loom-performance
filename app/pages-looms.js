@@ -420,7 +420,7 @@ function loomTable(recs) {
       ...(money ? [fxLoomRealCell(x)] : [])];
   });
   return table(['Loom', ['RPM', 'picks/min'], ['Eff', '%'], ['Eff. RPM', 'RPM × eff'], ['CFM', 'ft³/min'], ['Air', 'ft³/1,000 picks'], ['Main', 'kgf/cm², max'], ['Warp', 'breaks'], 'Beam', ['Run', 'h'],
-    ...(money ? [['Realisation', '₹ in the day · paise/pick']] : [])], rows, money ? [1, 2, 3, 4, 5, 6, 7, 9, 10] : [1, 2, 3, 4, 5, 6, 7, 9]);
+    ...(money ? [['Realisation', '₹ in the day · paise per folded pick']] : [])], rows, money ? [1, 2, 3, 4, 5, 6, 7, 9, 10] : [1, 2, 3, 4, 5, 6, 7, 9]);
 }
 // The Trend card's first head group (Round A2: on Actions, as it was on Quality): the day's biggest by picks, width by width.
 function trendSubj0() {
@@ -449,7 +449,7 @@ function pageQuality() {
   MREF = QREF;   // 12 Nov 2026: one reference at a time in this card (reset below)
   const t = el('table');
   // 13 Nov 2026 (Divyam): the money columns sit right after Looms ran, with Total loom realisation (looms ran × ₹ per loom).
-  const hdr = ['Head group', ['Looms', 'ran'], ...(money ? [['Realisation', 'paise/pick · ₹/loom/day'], ['Total loom realisation', '₹ in the day · looms × ₹/loom'], ['Profit (loom cost)', 'paise/pick · ₹/loom/day', 'Profit']] : []),
+  const hdr = ['Head group', ['Looms', 'ran'], ...(money ? [['Realisation', 'paise per folded pick · ₹/loom/day'], ['Total loom realisation', '₹ in the day · looms × ₹/loom'], ['Profit (loom cost)', 'paise per folded pick · ₹/loom/day', 'Profit']] : []),
     ['RPM', 'picks/min'], ['Efficiency', '%'], ['Eff. RPM', 'RPM × eff'], ['CFM', 'ft³/min running'], ['Air', 'ft³/1,000 picks'], ['Main pressure', 'kgf/cm², highest'], ['Warp breaks', 'total · /100k picks'], 'Benchmark basis', ''];
   t.append(el('thead', {}, el('tr', {}, hdr.map((h, i) => Array.isArray(h) ? th(h[0], h[1], i > 0 && i < hdr.length - 2, h[2]) : th(h, null, false)))));
   const tb = el('tbody');

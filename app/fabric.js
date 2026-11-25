@@ -97,7 +97,7 @@ function fxCorrectionsCard(cors) {
           chg(x.o, x.n, 'real'), chg(x.o, x.n, 'profit_lc'), arrowCell(x.o, x.n, 'real'), arrowCell(x.o, x.n, 'profit_lc'), arrowCell(x.o, x.n, 'sale'),
           (() => { const w = fxWhen(x.c.created_at), i = w.indexOf(', '); return i < 0 ? w + ' IST' : el('span', {}, el('span', {style: 'white-space:nowrap', text: w.slice(0, i + 1)}), ' ', el('span', {style: 'white-space:nowrap', text: w.slice(i + 2) + ' IST'})); })()].map((v, i) => el('td', {class: i >= 2 && i <= 6 ? 'num' : null}, v)))), [2, 3, 4, 5, 6]);
   return card(title, `${what} Last sent ${fxWhen(cors[0].created_at)} IST. Tap a day to open it.`, body,
-    el('p', {class: 'note', text: '"new" marks a day not read yet; "—" is a figure that could not be worked out (nothing priced, no costing day, or for the loom cost basis no loom data), or a profit told before the loom cost method of 24 Nov 2026, never a zero; corrections sent before 23 Nov 2026 have no loom cost figure. The last 31 days are checked every hour the daily run runs (10:40 to 16:40 IST); the card keeps the last 30 corrections sent. The phone notice for a correction names the days only.'}));
+    el('p', {class: 'note', text: '"new" marks a day not read yet; "—" is a figure that could not be worked out (nothing priced, no costing day, or for the loom cost basis no loom data), or a profit told before the loom cost method of 24 Nov 2026 (the method changed again on 25 Nov 2026: the 2 paise a pick came out, then the folded basis came in), never a zero; a day is re-checked at the folding shortage it was told with, so a move only from the shortage is never a correction; corrections sent before 23 Nov 2026 have no loom cost figure. The last 31 days are checked every hour the daily run runs (10:40 to 16:40 IST); the card keeps the last 30 corrections sent. The phone notice for a correction names the days only.'}));
 }
 // After sign-in (admin only): settings for the nav (the Realisation item shows only when switched on) and the badges.
 async function fxAfterSignIn() {
@@ -156,7 +156,34 @@ function fxRunning() {
 }
 // Round A3: the compressor's rupees on each day that has a reading (power.json, incl. the 5-19 Nov meter readings), never borrowed
 const fxComp = () => { const P = (D && D.power && D.power.days) || {}, o = {}; for (const [d, p] of Object.entries(P)) if (p && ok(p.rupees)) o[d] = p.rupees; return o; };
-const fxInput = () => ({M: FX.M, loomdays: FX.loomdays, costing: (COST && COST.days) || [], reg: (COST && COST.bq && COST.bq.reg) || [], running: fxRunning(), comp: fxComp()});
+// Round A7 (Divyam, 25 Nov 2026; design 2026-11-25_folded-basis-design.md): realisation is on folded metres, × (1 − s), s =
+// the plant's month-to-date folding shortage as at the date chip's day (fcShortAt: the latest earlier day's figure when the
+// day has none, named); a card whose period crosses a month uses the picks-weighted s of its months (fcShortPeriod). The
+// folding figures (each day's cut piece picks and floor PICK) give every row its A-grade folded picks, the same helper as
+// Folded cost per pick by quality. Cached per costing load.
+let FXSB = null;
+function fxFoldBase() {
+  if (FXSB && FXSB.C === COST) return FXSB;
+  const bq = (COST && COST.bq) || {}, reg = bq.reg || [], regDays = (bq.days || []).filter((d) => d.reg).map((d) => d.date), days = typeof tcDays === 'function' ? tcDays() : (COST && COST.days) || [];
+  const fd = foldDays(days, reg, regDays, null), fold = {}, picks = {};
+  for (const x of fd) { const cd = days.find((d) => d.date === x.date); if (!x.why && cd && cd.metres > 0) fold[x.date] = {C: x.C, w: cd.picks * 1e5 / cd.metres}; }
+  for (const d of days) if (ok(d.picks)) picks[d.date] = d.picks * 1e5;
+  return (FXSB = {C: COST, fd, fold, picks});
+}
+const fxSDay = () => COST ? fcShortAt(fxFoldBase().fd, D.latest) : {s: null, why: 'the costing is not loaded'};
+const fxSPer = (from, to) => !COST ? {s: null, why: 'the costing is not loaded'} : (from || D.latest).slice(0, 7) === D.latest.slice(0, 7) && (to || D.latest).slice(0, 7) === D.latest.slice(0, 7) ? fxSDay()
+  : fcShortPeriod(fxFoldBase().fd, from, to, D.latest, fxFoldBase().picks);
+// The words for the s a figure used: "after a folding shortage of 4.0% (month to date as at 23 Nov)"; the fallback and a
+// period across months are named; no s = the reason with its next step.
+function fxSTxt(S, short) {
+  if (!S || !ok(S.s)) return `no folding shortage yet, so no realisation (shrinkage is counted in it). Next: ${typeof tcNext === 'function' ? tcNext() : 'see Files per day on Data health'}`;
+  const pc = (S.s * 100).toFixed(1) + '%';
+  if (S.weighted) return `after a folding shortage of ${pc}${short ? '' : ` (the months weighted by their picks in the period: ${S.months.map((m) => `${fxMonthName(m.m)} ${(m.s * 100).toFixed(1)}%`).join(', ')}${S.out.length ? `; left out, no figure: ${S.out.map(fxMonthName).join(', ')}` : ''})`}`;
+  return `after a folding shortage of ${pc} (this month's, up to ${dfmt(S.at)}${S.fallback ? `; ${dfmt(D.latest)} has no figure yet, so the latest day's is used` : ''})`;
+}
+const fxMonthName = (m) => new Date(m + '-01T00:00:00Z').toLocaleString('en-IN', {month: 'short', timeZone: 'UTC'});
+const fxInput = () => ({M: FX.M, loomdays: FX.loomdays, costing: (COST && COST.days) || [], reg: (COST && COST.bq && COST.bq.reg) || [], running: fxRunning(), comp: fxComp(),
+  s: fxSDay().s, fold: COST ? fxFoldBase().fold : {}});
 const fxName = (uid) => uid == null ? '—' : fcFabricName(FX.M, uid);
 const fxYarnName = (uid) => { const Y = FX.M.yarn[uid]; return Y ? (fcVal(Y, 'name', '9999-12-31') || 'Yarn ' + uid) : 'Yarn ' + uid; };
 const fxMoney = (x) => !ok(x) ? '—' : (x < 0 ? '−₹' : '₹') + Math.round(Math.abs(x)).toLocaleString('en-IN');
@@ -648,8 +675,8 @@ function fxPerBar(id, redraw, extra, wk) {
 const fxWkRows = (end) => fxRows({from: fcAddDays(end, -(2 * WK_N - 1)), to: end});
 const FX_WK = {
   cov: {what: 'Share of picks priced', fig: (t) => t.picks ? 100 * t.coverage : null, better: 'up', fmt: f1, unit: '%', dunit: 'points'},
-  real: {what: 'Realisation per pick', fig: (t) => t.priced ? t.real_pp : null, better: 'up', fmt: fxPaise, unit: 'paise'},
-  lc: {what: 'Profit per pick (loom cost basis)', fig: (t) => t.lc_ld ? t.profit_lc_pp : null, better: 'up', fmt: fxPaise, unit: 'paise'}};
+  real: {what: 'Realisation per folded pick', fig: (t) => t.priced ? t.real_fp : null, better: 'up', fmt: fxPaise, unit: 'paise'},
+  lc: {what: 'Profit per folded pick (loom cost basis)', fig: (t) => t.lc_ld ? t.profit_lc_pp : null, better: 'up', fmt: fxPaise, unit: 'paise'}};
 function fxWk(k, end) {
   const S = FX_WK[k];
   return wkPill(wkBy(fxWkRows(end), end, (r) => r.date, (L) => S.fig(fcSum(L)), S.better), {...S, basis: FXBASIS});
@@ -661,11 +688,13 @@ const fxLakh = (p) => f2((p || 0) / 1e5);
 // The analysis rows of the current period and basis, once per draw (every card reads the same rows).
 // Round A3 (Divyam, 24 Nov 2026): one profit, the loom cost basis; the Profit basis switches are gone
 let FXRC = null;   // the rows by period during one draw of the Realisation tab (cards that share a period share the work)
-function fxRows(P, allW) {
-  const k = P.from + '|' + P.to + '|' + FXBASIS + '|' + W;
+// Round A7: each card's rows at its own s (the date chip's, or the picks-weighted s of a period across months; chip = the
+// tiles, which are the date chip's day and its month to date); out.S names it.
+function fxRows(P, allW, chip) {
+  const S = chip ? fxSDay() : fxSPer(P.from, P.to), k = P.from + '|' + P.to + '|' + FXBASIS + '|' + W + '|' + S.s;
   if (!allW && FXRC && FXRC.has(k)) return FXRC.get(k);
-  const all = fcAnalyse(Object.assign(fxInput(), {basis: FXBASIS, from: P.from, to: P.to})), out = all.filter((r) => allW || inW(r.width));
-  out.bday = all.bday; out.lday = all.lday;   // Round Y: the day tables (B grade, loom cost) survive the width filter
+  const all = fcAnalyse(Object.assign(fxInput(), {basis: FXBASIS, from: P.from, to: P.to, s: S.s})), out = all.filter((r) => allW || inW(r.width));
+  out.bday = all.bday; out.lday = all.lday; out.S = S;   // Round Y: the day tables (B grade, loom cost) survive the width filter
   if (!allW && FXRC) FXRC.set(k, out);
   return out;
 }   // follows the app's width switch (12 Nov 2026)
@@ -695,12 +724,12 @@ function fxDaysPanel(title, sub, rows, withU) {
     const gapCell = (r) => r.gap ? el('span', {class: 'pill warn', text: r.gap + (r.lcost_gap > 0 ? ` · loom cost ${fxMoney(r.lcost_gap)} not recovered` : '') + '. Next: see Coverage on the Realisation tab', style: 'white-space:normal'})
       : r.profit == null ? el('span', {class: 'note', text: 'no costing day. Next: see Files per day on Data health'}) : r.profit_lc == null ? el('span', {class: 'note', text: `loom cost: ${r.lc_gap || 'not worked out'}. Next: ${fxLcNext(r.lc_gap || 'not worked out')}`})
       : r.lc_norun ? el('span', {class: 'note', text: 'no run minutes: charged only its picks\' share of the day\'s cost. Next: see Files per day on Data health if the loom did run'}) : '';
-    const steps = `sale → yarn → loom cost → B grade${withU ? ' → unpriced looms' : ''} → profit, paise, loom cost basis`;
-    const words = Wf ? `Sale ${fxMoney(Wf.sale)} − yarn ${fxMoney(Wf.yarn)} − loom cost ${fxMoney(Wf.conv)} − B grade ${fxMoney(Wf.bgrade)}${withU ? ` − unpriced looms ${fxMoney(Wf.unrec)}` : ''} = profit ${fxMoney(Wf.profit)} (loom cost basis).` : '';
+    const steps = `sale → yarn → realisation → loom cost → B grade${withU ? ' → loom cost not recovered' : ''} → profit, paise per A-grade folded pick, loom cost basis`;
+    const words = Wf ? `Sale ${fxMoney(Wf.sale)} − yarn ${fxMoney(Wf.yarn)} = realisation ${fxMoney(Wf.real)}; − loom cost ${fxMoney(Wf.conv)} − B grade ${fxMoney(Wf.bgrade)}${withU ? ` − loom cost not recovered ${fxMoney(Wf.unrec)}` : ''} = profit ${fxMoney(Wf.profit)} (loom cost basis), all ÷ ${fxLakh(Wf.picks)} lakh A-grade folded picks.` : '';
     return {title, sub: sub || null, body: [
       el('p', {class: 'note', style: 'margin:0', text: `${cov.loomdays} loom-days · ${fxLakh(cov.picks)} lakh picks · priced ${fxPct(cov.coverage)} · costed ${fxPct(cov.cost_coverage)}${cov.reasons.length ? ' · gaps: ' + cov.reasons.map((x) => `${x.reason} (${fxLakh(x.picks)} lakh)`).join(', ') : ''}${withU && cov.unrec_ld ? ` · loom cost of ${cov.unrec_ld} unpriced loom-day${cov.unrec_ld === 1 ? '' : 's'} ${fxMoney(cov.unrec_rs)}` : ''}`}),
-      Wf ? card('Per pick', `${steps}, over the ${Wf.loomdays} costed loom-days`, waterfall(Wf.steps, `Sale value to profit per pick, ${title}`, null, {flip: true, dec: 2}), el('p', {class: 'note', text: words}))
-        : card('Per pick', null, el('p', {class: 'empty', text: !cov.priced ? 'Nothing priced here: every loom-day is a gap. Next: see Coverage on the Realisation tab.' : cov.costed ? `No loom cost profit here: ${lcWhy || 'not worked out'}. Next: see Files per day on Data health.` : 'No costed loom-day here yet: the waterfall needs a costing day. Next: see Files per day on Data health.'})),
+      Wf ? card('Per folded pick', `${steps}, over the ${Wf.loomdays} costed loom-days`, waterfall(Wf.steps, `Sale value to profit per folded pick, ${title}`, null, {flip: true, dec: 2}), el('p', {class: 'note', text: words}))
+        : card('Per folded pick', null, el('p', {class: 'empty', text: !cov.priced ? 'Nothing priced here: every loom-day is a gap. Next: see Coverage on the Realisation tab.' : cov.costed ? `No loom cost profit here: ${lcWhy || 'not worked out'}. Next: see Files per day on Data health.` : 'No costed loom-day here yet: the waterfall needs a costing day. Next: see Files per day on Data health.'})),
       card(`Loom-days · ${sorted.length}`, 'Newest first. A gap row carries its reason, never a zero.',
         table(['Date', 'Loom', 'Head group', ['Picks', 'lakh'], ['Metres', 'm'], ['Sale', '₹'], ['Realisation', '₹'], ['Loom cost', '₹'], ['Profit (loom cost)', '₹'], 'Gap'],
           sorted.map((r) => [dfmt(r.date), loomLink(r.loom, r.date), hgLink(r.hg, r.width, r.date), fxLakh(r.picks), f0(r.metres), fxMoney(r.sale), fxMoney(r.real), fxMoney(r.lcost), fxMoney(r.profit_lc), gapCell(r)]), [3, 4, 5, 6, 7, 8]))]};
@@ -708,7 +737,7 @@ function fxDaysPanel(title, sub, rows, withU) {
 }
 // Coverage as one bar: costed, priced only, gap; each reason with its picks and a link to where it is put right.
 const FX_GO = {links: ['Head-group links', '#links'], approvals: ['Approvals', '#approvals'], masters: ['Fabric masters', '#masters'], costing: ['Costing', '#costing']};
-function fxCoverageCard(cov, per, R) {
+function fxCoverageCard(cov, per, R, Rr) {
   if (typeof wkPut === 'function') wkPut('K8', cov.picks ? {priced: cov.priced, picks: cov.picks} : null);   // Round J
   const seg = (v, cls, label) => cov.picks && v > 0 ? el('span', {class: 'covseg ' + cls, style: `width:${(100 * v / cov.picks).toFixed(2)}%`, title: `${label}: ${fxLakh(v)} lakh picks, ${fxPct(v / cov.picks)}`}) : null;
   const bar = el('div', {class: 'covbar', role: 'img', 'aria-label': `Coverage: costed ${fxPct(cov.cost_coverage)}, priced ${fxPct(cov.coverage)}`},
@@ -728,8 +757,16 @@ function fxCoverageCard(cov, per, R) {
     urows.length ? el('p', {class: 'note', text: `Loom cost not recovered (loom cost basis): ${fxMoney(cov.unrec_rs)} over ${cov.unrec_ld} running loom-day${cov.unrec_ld === 1 ? '' : 's'} that are not priced. Each day's cost ÷ looms running is charged to every loom that ran; these looms' share is taken off Profit (loom cost basis) for the floor and its width, never put on a priced loom.`}) : null,
     urows.length ? table(['Loom cost not recovered', 'Loom-days', ['Loom cost', '₹']], urows, [1, 2]) : null,
     cov.norun_ld ? el('p', {class: 'note', text: `${cov.norun_ld} loom-day${cov.norun_ld === 1 ? ' has' : 's have'} picks but no run minutes in the loom data: not counted in the looms running, so ${cov.norun_ld === 1 ? 'it is' : 'they are'} charged only ${cov.norun_ld === 1 ? 'its' : 'their'} picks' share of the day's cost (the rest of POWER and the cut piece loss). Next: see Files per day on Data health.`}) : null,
+    fxFoldLine(fcSum(Rr || []), Rr && Rr.S),
     fxTieLine(R),
     low ? el('p', {class: 'note', text: `Below ${FX_COVER_MIN * 100}% priced, the figures above are dimmed until more is linked and priced; they are never filled in.`}) : null);
+}
+// Round A7: Coverage's line on A-grade folded picks: how many priced loom-days have them (a day with its costing and folding
+// figures) and the shortage the period's realisation is after; the rest are named, their rupees still count.
+function fxFoldLine(T, S) {
+  if (!T || !T.priced_ld) return null;
+  const n = T.fp_ld, m = T.priced_ld, miss = T.nofold_ld;
+  return el('p', {class: 'note', text: `A-grade folded picks (the divisor of every per folded pick figure): ${n} of the ${m} priced loom-day${m === 1 ? '' : 's'} have them, ${fxLakh(T.afold)} lakh${miss ? `; ${miss} ha${miss === 1 ? 's' : 've'} none yet (no costing or folding figures for the day): their rupees count, their per folded pick figures are left out. Next: ${tcNext()}` : ''}. Realisation is ${fxSTxt(S)}.`});
 }
 // Round A3 (Divyam, 24 Nov 2026; Q2): the Cost charged card is gone; this line keeps its check that every rupee of each costed
 // day's cost reaches the looms (both widths, whatever width is picked): Σ loom cost + B grade against the plant's folded cost
@@ -756,7 +793,7 @@ function drawRealisation0(box, pend) {
   // the day's figure in ₹ lakh, the change against the average of the days before it, and the last 7 days as a line.
   const asOf = end, CD = (D.complete_days || []).filter((d) => d <= asOf), last7 = CD.slice(-7), prior = CD.filter((d) => d < asOf).slice(-7);
   const spanFrom = [last7[0], prior[0], (last7[0] || asOf).slice(0, 7) + '-01', asOf].filter(Boolean).sort()[0];
-  const span = fxRows({from: spanFrom, to: asOf}), byDay = new Map();
+  const span = fxRows({from: spanFrom, to: asOf}, false, true), byDay = new Map();   // Round A7: the tiles at the date chip's s
   for (const r of span) { if (!byDay.has(r.date)) byDay.set(r.date, []); byDay.get(r.date).push(r); }
   const sumDays = (ds) => fcSum(ds.flatMap((d) => byDay.get(d) || []));
   const DT = sumDays([asOf]), MP = {from: asOf.slice(0, 7) + '-01', to: asOf};
@@ -774,7 +811,7 @@ function drawRealisation0(box, pend) {
     // 18 Nov 2026: fxkpi = a column with the line pinned to the foot, so the four lines and their dates sit level
     return el('div', {class: 'card kpi fxkpi', style: t.coverage == null || t.coverage < FX_COVER_MIN ? 'opacity:.55' : null}, el('div', {class: 'label', text: label}),
       el('div', {class: 'val'}, has ? lk(t[k]) : '—', has ? el('small', {text: 'lakh'}) : null),
-      el('div', {class: 'note', text: has ? `${fxPaise(t[ppk])} paise/pick · ${fxMoney(t[ldk])} per loom per day${sub ? ' · ' + sub : ''}` : (costed && t.priced_ld ? `no costing for ${dfmt(asOf)} yet: profit shows once that day's costing file is read${sp ? '. The line shows the days that have it' : ''}` : 'nothing priced')}), d,
+      el('div', {class: 'note', text: has ? `${ok(t[ppk]) ? fxPaise(t[ppk]) + ' paise per folded pick' : 'per folded pick: costing not in yet'} · ${fxMoney(t[ldk])} per loom per day${sub ? ' · ' + sub : ''}` : (costed && t.priced_ld ? `no costing for ${dfmt(asOf)} yet: profit shows once that day's costing file is read${sp ? '. The line shows the days that have it' : ''}` : 'nothing priced')}), d,
       sp ? el('div', {class: 'kfoot'}, sp) : null);
   };
   const dl = (k, costed) => { const c = dayVal(asOf, k, costed); return ok(c) ? delta(c, avgPrior(k, costed), true, (x) => '₹' + (x / 1e5).toFixed(2), ' lakh') : null; };
@@ -796,7 +833,7 @@ function drawRealisation0(box, pend) {
     return el('div', {class: 'card kpi fxkpi fxprof' + (mtd ? ' fxpmtd' : ''), style: T.coverage == null || T.coverage < FX_COVER_MIN ? 'opacity:.55' : null},
       el('div', {class: 'label', 'data-sm': sm, text: label}),
       el('div', {class: 'val'}, has ? lk(T.profit_lc) : '—', has ? el('small', {text: 'lakh'}) : null),
-      el('div', {class: 'note', text: has ? `${fxPaise(T.profit_lc_pp)} paise/pick · ${fxMoney(T.profit_lc_ld)} per loom per day` : gap}),
+      el('div', {class: 'note', text: has ? `${ok(T.profit_lc_pp) ? fxPaise(T.profit_lc_pp) + ' paise per folded pick' : 'per folded pick: costing not in yet'} · ${fxMoney(T.profit_lc_ld)} per loom per day` : gap}),
       has && T.unrec > 0 ? el('button', {type: 'button', class: 'link fxunrec', title: mtd ? `Open Coverage on this tab: ${T.unrec_ld} loom-day${T.unrec_ld === 1 ? '' : 's'}${T.nopick_ld ? `, ${T.unrec_ld - T.nopick_ld} not priced, ${T.nopick_ld} with no picks woven` : ' not priced'}` : 'Open Coverage on this tab', onclick: () => navGoCard('realisation', 'Coverage'),
         text: `incl. ${fxMoney(T.unrec)} loom cost ${mtd ? 'not recovered' : uTxt(T)} ›`}) : null,
       mtd ? el('span', {class: 'delta flat', text: on}) : dl('profit_lc', 'lc'),
@@ -804,22 +841,24 @@ function drawRealisation0(box, pend) {
   };
   // Round A3 (ask 3): the sale value tile gives the weighted average sale rate a metre (sale value ÷ priced metres)
   const stile = () => {
-    const T = DT, has = T.priced_ld > 0 && T.metres > 0;
+    const T = DT, has = T.priced_ld > 0 && T.fmetres > 0;   // Round A7: the average sale rate a metre is per folded metre (it does not change)
     return el('div', {class: 'card kpi fxkpi', style: T.coverage == null || T.coverage < FX_COVER_MIN ? 'opacity:.55' : null}, el('div', {class: 'label', text: 'Sale value at prevailing rate'}),
       el('div', {class: 'val'}, has ? lk(T.sale) : '—', has ? el('small', {text: 'lakh'}) : null),
-      el('div', {class: 'note', text: has ? `₹${f2(T.sale / T.metres)} a metre on average (${f0(T.metres)} m priced) · covers ${fxPct(DT.coverage)} of picks` : 'nothing priced. Next: see Coverage on this tab'}),
+      el('div', {class: 'note', text: has ? `₹${f2(T.sale / T.fmetres)} a metre on average (${f0(T.fmetres)} folded m priced) · covers ${fxPct(DT.coverage)} of picks` : 'nothing priced. Next: see Coverage on this tab'}),
       dl('sale'), last7.length > 1 ? el('div', {class: 'kfoot'}, spv('sale')) : null);
   };
   // Round A3: one profit, the loom cost basis, in the tables' three profit columns
   const PL = 'Profit (loom cost)';
-  const colsOf = () => ['', 'Loom-days', ['Picks', 'lakh'], ['Sale value', '₹'], ['Realisation', '₹'], [PL, '₹'], ['Realisation', 'paise/pick'], [PL, 'paise/pick'], [PL, '₹/loom/day'], 'Priced', 'Costed'];
-  const nums = [1, 2, 3, 4, 5, 6, 7, 8];
+  // Round A7: per-pick columns per A-grade folded pick, and the folded cost per pick of the same priced loom-days
+  const colsOf = () => ['', 'Loom-days', ['Picks', 'lakh'], ['Sale value', '₹'], ['Realisation', '₹'], [PL, '₹'], ['Realisation', 'paise per folded pick'], ['Folded cost per pick', 'paise'], [PL, 'paise per folded pick'], [PL, '₹/loom/day'], 'Priced', 'Costed'];
+  const nums = [1, 2, 3, 4, 5, 6, 7, 8, 9];
   // every row opens the loom-days behind it (R1); the name inside still opens the app's own loom or head-group panel
   const grow = (name, t, mark, title, lab, basis, withU) => {
     const cc = t.lc_coverage;
     const pr = (v) => t.priced_ld ? fxMoney(v) : '—', co = (v) => t.lc_ld ? fxMoney(v) : '—';   // nothing priced or costed: a dash, never ₹0
     const cells = [el('span', {}, name, mark ? el('span', {class: 'pill warn', text: 'pending change', style: 'margin-left:6px'}) : null), String(t.loomdays), fxLakh(t.picks), pr(t.sale), pr(t.real),
-      co(t.profit_lc), fxPaise(t.real_pp), fxPaise(t.lc_ld ? t.profit_lc_pp : null), co(t.profit_lc_ld),
+    // numbers review (Round A7): realisation over the same loom-days as folded cost and profit, when it has any
+      co(t.profit_lc), fxPaise(ok(t.real_fp_lc) ? t.real_fp_lc : t.real_fp), fxPaise(t.lc_ld ? t.cost_fp : null), fxPaise(t.lc_ld ? t.profit_lc_pp : null), co(t.profit_lc_ld),
       el('span', {class: t.coverage < FX_COVER_MIN ? 'pill warn' : 'note', text: fxPct(t.coverage)}),
       el('span', {class: cc < t.coverage - 1e-9 ? 'pill warn' : 'note', text: fxPct(cc), title: 'Share of picks with a loom cost profit: a day with no costing or no loom data yet has realisation but no profit'})];
     const open = () => fxDaysPanel(title, lab, t.rows, withU);
@@ -832,17 +871,18 @@ function drawRealisation0(box, pend) {
   const rows = rowsOf('trend'), P = RG.trend, tcov = fcCoverage(rows);
   const daily = fcGroup(rows, (r) => r.date, true).sort((a, b) => a.key.localeCompare(b.key)).map((d) => Object.assign(d, {date: d.key}));
   const marks = FXAPP.filter((m) => m.date >= P.from && m.date <= P.to).map((m) => ({date: m.date, text: m.text}));
-  const anyVal = daily.some((d) => ok(d.real_pp));
-  if (typeof wkPut === 'function') { const d = daily.slice().reverse().find((x) => ok(x.real_pp)); wkPut('K13', d ? {date: dfmt(d.date), real: d.real, picks: d.priced} : null); }   // Round J
+  const anyVal = daily.some((d) => ok(d.real_fp));
+  if (typeof wkPut === 'function') { const d = daily.slice().reverse().find((x) => ok(x.real_fp)); wkPut('K13', d ? {date: dfmt(d.date), real: d.real, picks: d.afold} : null); }   // Round J; Round A7: ÷ A-grade folded picks
   // Round A3 (ask 5): no per pick profit line. Risk C: a week adds up its days' rupees, so a day with nothing priced takes its
   // unrecovered loom cost off the week's profit (it is a gap in the daily line)
-  const lcWeek = (L) => { const c = L.reduce((a, d) => a + (d.lc_ld ? d.lc_costed : 0), 0); return c > 0 ? 100 * L.reduce((a, d) => a + (d.lc_ld ? d.profit_lc : d.unrec_only ? -d.unrec : 0), 0) / c : null; };
-  const trend = anyVal ? dayChart('fx', daily, [], {id: 'fx-trend', aria: 'Realisation, profit (loom cost basis) and sale value per pick', fmt: f2, marks, onPick: (d) => fxDaysPanel(dfmt(d), `every loom on ${dfmt(d)} · As sold`, rows.filter((r) => r.date === d), true)}, [
-      {key: 'real', name: 'Realisation', get: (d) => d.real_pp, agg: 'w', w: (d) => d.priced, color: CC[0], avg: false},
+  // Round A7: a week's profit per folded pick is weighted by its days' A-grade folded picks
+  const lcWeek = (L) => { const c = L.reduce((a, d) => a + (d.lc_ld && ok(d.profit_lc_pp) ? d.afold_lc : 0), 0); return c > 0 ? 100 * L.reduce((a, d) => a + (d.lc_ld ? d.profit_lc : d.unrec_only ? -d.unrec : 0), 0) / c : null; };
+  const trend = anyVal ? dayChart('fx', daily, [], {id: 'fx-trend', aria: 'Realisation, profit (loom cost basis) and sale value per folded pick', fmt: f2, marks, onPick: (d) => fxDaysPanel(dfmt(d), `every loom on ${dfmt(d)} · As sold`, rows.filter((r) => r.date === d), true)}, [
+      {key: 'real', name: 'Realisation', get: (d) => d.real_fp, agg: 'w', w: (d) => d.afold, color: CC[0], avg: false},
       {key: 'lc', name: 'Profit (loom cost)', get: (d) => d.lc_ld ? d.profit_lc_pp : null, wk: lcWeek, color: CC[1], avg: false},
-      {key: 'sale', name: 'Sale value', get: (d) => d.sale_pp, agg: 'w', w: (d) => d.priced, color: CC[2], dash: true, avg: false}], ['real', 'lc'])
+      {key: 'sale', name: 'Sale value', get: (d) => d.sale_fp, agg: 'w', w: (d) => d.afold, color: CC[2], dash: true, avg: false}], ['real', 'lc'])
     : el('div', {class: 'empty'}, `Nothing priced in this period${tcov.reasons.length ? ': ' + tcov.reasons[0].reason + ` (${fxPct(tcov.reasons[0].share)} of picks)` : ''}. `, tcov.reasons.length && tcov.reasons[0].go ? el('a', {href: FX_GO[tcov.reasons[0].go][1], text: `Fix on ${FX_GO[tcov.reasons[0].go][0]} ›`}) : null);
-  const trendCard = card('Trend', `Paise per pick each day${cWeekly('fx', daily.length) ? ', week by week (weighted by picks)' : ''}`, fxPerBar('trend', redraw, viewSeg('fx', daily.length), fxWk('real', end)), trend,
+  const trendCard = card('Trend', `Paise per A-grade folded pick each day${cWeekly('fx', daily.length) ? ', week by week (weighted by A-grade folded picks)' : ''} · ${fxSTxt(rows.S, true)}`, fxPerBar('trend', redraw, viewSeg('fx', daily.length), fxWk('real', end)), trend,
     marks.length ? el('p', {class: 'note', text: `Dashed markers: days a money approval took effect (${marks.map((m) => dfmt(m.date)).join(', ')}); hover one to read it.`}) : null,
     el('p', {class: 'note', text: 'Point at or tap a day for its figures, then Open this day for its loom-days. Realisation = sale value less yarn. Profit (loom cost), solid = realisation less each loom\'s loom cost, its own B grade and the loom cost not recovered; a day with nothing priced is a gap in the line, and week by week its loom cost not recovered is still taken off. Sale value is dashed.'}));
   // 12 Nov 2026 (Divyam): the ranking card is gone; By loom / By head group (with its Profit / Realisation / per pick switch)
@@ -851,30 +891,30 @@ function drawRealisation0(box, pend) {
   const wfRows = rowsOf('wf'), wcov = fcCoverage(wfRows), Wf = fcWaterfall(wfRows, 'lc');   // Round A3: the loom cost basis only
   if (typeof wkPut === 'function') wkPut('K9', Wf ? {basis: 'lc', sale: Wf.sale, yarn: Wf.yarn, conv: Wf.conv, bgrade: Wf.bgrade, unrec: Wf.unrec, picks: Wf.picks} : null);   // Round J
   const wfWhy = Object.keys(fcSum(wfRows).lc_gaps)[0];
-  const wfCard = card('Per pick: sale value to profit', Wf ? `paise per pick over the ${Wf.loomdays} costed loom-days · As sold · loom cost basis` : 'paise per pick', fxPerBar('wf', redraw, null, fxWk('lc', end)),
-    Wf ? waterfall(Wf.steps, 'Sale value to profit per pick, whole plant', null, {flip: true, dec: 2}) : el('p', {class: 'empty', text: !wcov.priced ? 'Nothing priced in this period. Next: see Coverage on this tab.' : !wcov.costed ? 'Nothing costed yet in this period: the waterfall needs a costing day. Next: see Files per day on Data health.'
+  const wfCard = card('Per folded pick: sale value to profit', Wf ? `paise per A-grade folded pick over the ${Wf.loomdays} costed loom-days · As sold · loom cost basis · ${fxSTxt(wfRows.S, true)}` : 'paise per A-grade folded pick', fxPerBar('wf', redraw, null, fxWk('lc', end)),
+    Wf ? waterfall(Wf.steps, 'Sale value to profit per folded pick, whole plant', null, {flip: true, dec: 2}) : el('p', {class: 'empty', text: !wcov.priced ? 'Nothing priced in this period. Next: see Coverage on this tab.' : !wcov.costed ? 'Nothing costed yet in this period: the waterfall needs a costing day. Next: see Files per day on Data health.'
       : `No loom cost profit in this period: ${wfWhy || 'not worked out'}. Next: see Files per day on Data health.`}),
     Wf ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2);opacity:.75'}), 'sale value and profit'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), 'what each step takes')) : null,
-    Wf ? el('p', {class: 'note', text: `Sale ${fxMoney(Wf.sale)} − standard yarn ${fxMoney(Wf.yarn)} − loom cost ${fxMoney(Wf.conv)} − the looms' own B grade ${fxMoney(Wf.bgrade)} − the loom cost of ${Wf.unrec_ld} unpriced loom-day${Wf.unrec_ld === 1 ? '' : 's'} ${fxMoney(Wf.unrec)} = profit ${fxMoney(Wf.profit)}, loom cost basis. Costed loom-days only, so the steps add up exactly. Tap any row below for the same chart for that loom or head group.`}) : null);
+    Wf ? el('p', {class: 'note', text: `Every step ÷ ${fxLakh(Wf.picks)} lakh A-grade folded picks${Wf.nofold_ld ? ` (${Wf.nofold_ld} loom-day${Wf.nofold_ld === 1 ? '' : 's'} with no A-grade folded picks yet left out: no costing or folding figures for the day. Next: ${tcNext()})` : ''}. Sale ${fxMoney(Wf.sale)} − standard yarn ${fxMoney(Wf.yarn)} = realisation ${fxMoney(Wf.real)}; − loom cost ${fxMoney(Wf.conv)} − the looms' own B grade ${fxMoney(Wf.bgrade)} − the loom cost not recovered of ${Wf.unrec_ld} unpriced loom-day${Wf.unrec_ld === 1 ? '' : 's'} ${fxMoney(Wf.unrec)} = profit ${fxMoney(Wf.profit)}, loom cost basis. Costed loom-days only, so the steps add up exactly. Tap any row below for the same chart for that loom or head group.`}) : null);
   box.className = 'fxpage';   // 18 Nov 2026: cards keep the page's 16 px gap
   box.replaceChildren(
     el('p', {class: 'note', text: `Masters as of ${FX.M.version ? fxWhen(FX.M.version.at) : '—'} · ${FX_BASIS_NOTE[FC_ASSOLD]}`}),
     fxCorrectionsCard(FXCOR),
     el('div', {class: 'kpis fx6'},   // Round A3: six tiles, 3 × 2 from 720 px, 2 × 3 on a phone
       stile(),
-      tile('Realisation', DT, 'real', 'real_pp', 'real_ld', false, dl('real'), spv('real')),
+      tile('Realisation', DT, 'real', 'real_fp', 'real_ld', false, dl('real'), spv('real')),
       fxBeTile(asOf, DT),
       ptile(DT, 'Profit (loom cost basis)', 'Profit · loom cost'),
-      tile('Realisation, month to date', MT, 'real', 'real_pp', 'real_ld', false, el('span', {class: 'delta flat', text: `${dfmt(MP.from)} to ${dfmt(asOf)}`}),
+      tile('Realisation, month to date', MT, 'real', 'real_fp', 'real_ld', false, el('span', {class: 'delta flat', text: `${dfmt(MP.from)} to ${dfmt(asOf)}`}),
         last7.length > 1 ? (() => { const v = last7.map((d) => { const t = mtdOf(d); return t.priced_ld ? t.real_ld : null; }); return el('div', {}, spark(v, {aria: 'Month-to-date realisation per loom per day, last days', title: 'Month to date, ₹ per loom per day: ' + last7.map((d, i) => `${dfmt(d)} ${fxMoney(v[i])}`).join(' · ')}),
           el('div', {class: 'spk'}, el('span', {text: dfmt(last7[0])}), el('span', {}, `${last7.length} days`, el('br'), '₹/loom/day'), el('span', {text: dfmt(last7.at(-1))}))); })() : null),
       ptile(MT, 'Profit, month to date (loom cost basis)', 'Profit · MTD', true)),
-    el('p', {class: 'note', text: `${dfmt(asOf)}: ${fxLakh(DT.picks)} lakh picks in ${DT.loomdays} loom-days, ${DT.priced_ld} priced. The tiles are the day picked at the top (and its month to date); each card below has its own period.`}),
-    fxCoverageCard(cov, fxPerBar('cov', redraw, null, fxWk('cov', end)), tie),
+    el('p', {class: 'note', text: `${dfmt(asOf)}: ${fxLakh(DT.picks)} lakh picks in ${DT.loomdays} loom-days, ${DT.priced_ld} priced. Sale value and realisation are on folded metres, ${fxSTxt(span.S)}; per-pick figures are per A-grade folded pick (picks × (1 − the shortage) − B grade picks − cut piece picks)${DT.nofold_ld ? `; ${DT.nofold_ld} priced loom-day${DT.nofold_ld === 1 ? ' has' : 's have'} no A-grade folded picks yet (no costing or folding figures for the day): left out of the per folded pick figures, their rupees count. Next: ${tcNext()}` : ''}. The tiles are the day picked at the top (and its month to date); each card below has its own period and names its shortage when it differs.`}),
+    fxCoverageCard(cov, fxPerBar('cov', redraw, null, fxWk('cov', end)), tie, covRows),
     trendCard,
     fxByCard(box, fabPending, rowsOf('by'), RG.by, grow, colsOf, nums, redraw),
     wfCard,
-    card('By width', 'Click a row for its loom-days. Profit on the loom cost basis; a width\'s profit includes the loom cost of its unpriced looms.', fxPerBar('width', redraw, null, fxWk('real', end)),
+    card('By width', 'Click a row for its loom-days. Profit on the loom cost basis; a width\'s profit includes the loom cost of its unpriced looms, so its realisation − folded cost − that loom cost ÷ its A-grade folded picks = its profit per folded pick.', fxPerBar('width', redraw, null, fxWk('real', end)),
       table(['Width', ...colsOf().slice(1)], byW.map((g) => grow(g.key, g, false, g.key, RG.width.label, 'lc', true)), nums)));   // Round A3 (ask 8): no Cost charged card; its check is the line under Coverage
   collapseTables(box);
 }
@@ -901,11 +941,13 @@ function fxBeTile(date, DT) {
 }
 // Round J: the Realisation tiles' figures, and one loom-day's steps (the costed loom-day with the most picks) for K1 to K6
 function fxWkTiles(DT, MT, dayRows, L) {
-  const t = (what, T, k, costed) => (costed ? T.costed_ld : T.priced_ld) ? {what, v: T[k], ld: costed ? T.costed_ld : T.priced_ld, picks: costed ? T.costed : T.priced, costed} : null;
-  wkPut('K7:sale', DT.priced_ld && DT.metres > 0 ? {v: DT.sale, ld: DT.priced_ld, m: DT.metres} : null); wkPut('K7:real', t('Realisation', DT, 'real')); wkPut('K7:mtd', t('Realisation, month to date', MT, 'real'));
+  // Round A7: ÷ A-grade folded picks, only when every priced loom-day has them (else the per folded pick part is left out of the line)
+  const t = (what, T, k, costed) => (costed ? T.costed_ld : T.priced_ld) ? {what, v: T[k], ld: costed ? T.costed_ld : T.priced_ld, picks: !T.nofold_ld ? T.afold : 0, costed} : null;
+  wkPut('K7:sale', DT.priced_ld && DT.fmetres > 0 ? {v: DT.sale, ld: DT.priced_ld, m: DT.fmetres} : null); wkPut('K7:real', t('Realisation', DT, 'real')); wkPut('K7:mtd', t('Realisation, month to date', MT, 'real'));
   // Round Y: the Profit tile's headline on the loom cost basis (K7L) and the loom cost of unpriced looms (K7U); Round A3: the month to date twin
-  wkPut('K7:profit', DT.lc_ld ? {v: DT.profit_lc, ld: DT.lc_run_ld, picks: DT.lc_costed, unrec: DT.unrec, uld: DT.unrec_ld} : null);
-  wkPut('K7:pmtd', MT.lc_ld ? {v: MT.profit_lc, ld: MT.lc_run_ld, picks: MT.lc_costed, unrec: MT.unrec, uld: MT.unrec_ld} : null);
+  const fp = (T) => T.fl_ld === T.lc_ld && Math.abs(T.unrec_fp - T.unrec) < 0.5 ? T.afold_lc : 0;   // Round A7
+  wkPut('K7:profit', DT.lc_ld ? {v: DT.profit_lc, ld: DT.lc_run_ld, picks: fp(DT), unrec: DT.unrec, uld: DT.unrec_ld} : null);
+  wkPut('K7:pmtd', MT.lc_ld ? {v: MT.profit_lc, ld: MT.lc_run_ld, picks: fp(MT), unrec: MT.unrec, uld: MT.unrec_ld} : null);
   const U = new Map();
   for (const r of dayRows) if (r.lcost_gap > 0) { const o = U.get(r.loom) || {loom: r.loom, rs: 0, why: r.gap || 'not priced'}; o.rs += r.lcost_gap; U.set(r.loom, o); }
   wkPut('K7:unrec', DT.lc_ld && DT.unrec > 0 && L && L.per != null ? {date: dfmt(dayRows[0].date), pool: L.pool, n: L.n, per: L.per, items: [...U.values()].sort((a, b) => b.rs - a.rs), unrec: DT.unrec, uld: DT.unrec_ld} : null);
@@ -915,9 +957,9 @@ function fxWkTiles(DT, MT, dayRows, L) {
   if (!r || !f || !pm) return;
   const rfd = f.finish === 'RFD', n = (v) => fcNum(v) ?? 0;
   wkPut('K1', {loom: r.loom, date: dfmt(r.date), picks: r.picks, ppi: fcNum(f.ppi)});
-  wkPut(rfd ? 'K3' : 'K2', {loom: r.loom, rfd, metres: r.metres, price: fcNum(f.price), vat: fcPct(f.vatav_pct), brok: fcPct(f.brokering_pct), proc: n(f.processing_charge), trans: n(f.transport_charge), g: pm.g});
+  wkPut(rfd ? 'K3' : 'K2', {loom: r.loom, rfd, metres: r.metres, s: r.s, price: fcNum(f.price), vat: fcPct(f.vatav_pct), brok: fcPct(f.brokering_pct), proc: n(f.processing_charge), trans: n(f.transport_charge), g: pm.g});
   wkPut('K4', {hg: r.hg, yarns: (pm.yarns || []).map((y) => ({side: y.side, gpm: y.gpm, rate: y.rate}))});
-  wkPut('K5', {loom: r.loom, sale: r.sale, yarn: pm.rm, metres: r.metres, picks: r.picks});
+  wkPut('K5', {loom: r.loom, sale: r.sale, yarn: pm.rm, metres: r.metres, s: r.s, afold: r.afold, picks: r.picks});
   const lp = dayRows.filter((x) => x.loom === r.loom).reduce((a, x) => a + (x.picks || 0), 0), share = lp > 0 ? r.picks / lp : 1;
   const run = (fxRunning()[r.date] || []).filter((x) => String(x.loom) === String(r.loom)), lair = run.reduce((a, x) => a + (x.air || 0), 0);
   // Round A3: the loom-day's loom cost in its parts, for its Working (the costed loom-day with the most picks)
@@ -1018,12 +1060,12 @@ function fxByCard(box, fabPending, rows, range, grow, colsOf, nums, redraw) {
   // figure (per pick only when Profit (per pick) is picked). A loom or head group is never given the loom cost of unpriced looms (D3).
   // Round A3 (ask 6): the per pick basis is gone; Profit (loom cost), Realisation or Realisation per pick
   const hg = bv('fx-by') === 'hg', ref = fxByRef(), ppk = FXBYK === 'pp', lc = !ppk && FXBYK !== 'real', prof = lc;
-  const fl = lc ? 'profit (loom cost basis)' : ppk ? 'realisation per pick' : 'realisation', basis = 'lc', cols = colsOf(basis);
-  const ff = ppk ? (v) => ok(v) ? fxPaise(v) + ' p' : '—' : fxMoney, unit = ppk ? 'paise per pick' : 'per loom per day';
+  const fl = lc ? 'profit (loom cost basis)' : ppk ? 'realisation per folded pick' : 'realisation', basis = 'lc', cols = colsOf(basis);
+  const ff = ppk ? (v) => ok(v) ? fxPaise(v) + ' p' : '—' : fxMoney, unit = ppk ? 'paise per folded pick' : 'per loom per day';
   const keyOf = hg ? (r) => r.hg + '|' + r.width : (r) => r.loom;
   const RR = ref === 'run' ? null : fxRefRows(rows, ref), src = RR ? RR.rows : rows;
   const G = fcGroup(src, keyOf), G0 = new Map(fcGroup(rows, keyOf).map((g) => [g.key, g]));
-  const fig = (g) => lc ? g.profit_lc_ld : prof ? g.profit_ld : ppk ? g.real_pp : g.real_ld;
+  const fig = (g) => lc ? g.profit_lc_ld : prof ? g.profit_ld : ppk ? g.real_fp : g.real_ld;   // Round A7: per A-grade folded pick
   const nLd = (g) => lc ? g.lc_ld : prof ? g.costed_ld : g.priced_ld;
   G.sort((a, b) => (fig(b) ?? -1e18) - (fig(a) ?? -1e18));
   const nm = (k) => hg ? String(k).replace('|', ' · ') + ' cm' : 'Loom ' + k, name = (g) => nm(g.key);
@@ -1032,13 +1074,13 @@ function fxByCard(box, fabPending, rows, range, grow, colsOf, nums, redraw) {
   const seg = (lab, opts, cur, set) => el('div', {class: 'seg', role: 'group', 'aria-label': lab}, opts.map(([v, x]) => el('button', {type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', text: x, onclick: () => { set(v); redraw(); }})));
   const plant = fcSum(src), pv = fig(plant);
   if (typeof wkPut === 'function') { const g = B[0];   // Round J: the first bar, on the figure the switches show
-    wkPut('K11', g ? {name: name(g), what: fl + (ppk ? '' : ' in the period'), v: lc ? g.profit_lc : prof ? g.profit : ppk ? 100 * g.real : g.real, n: lc ? g.lc_ld : prof ? g.costed_ld : ppk ? g.priced : g.priced_ld, pp: ppk} : null); }
+    wkPut('K11', g ? {name: name(g), what: fl + (ppk ? '' : ' in the period'), v: lc ? g.profit_lc : prof ? g.profit : ppk ? 100 * g.rows.reduce((a, r) => a + (!r.gap && r.afold != null ? r.real : 0), 0) : g.real, n: lc ? g.lc_ld : prof ? g.costed_ld : ppk ? g.afold : g.priced_ld, pp: ppk} : null); }
   const rl = FX_REF[ref].toLowerCase(), at = RR ? ` at ${rl} effective RPM` : '', sub = `${range.label} · ${FXBASIS}${at}`;
   const now = (g) => { const g0 = G0.get(g.key); return g0 ? ff(fig(g0)) : '—'; };
-  const sortName = lc ? 'Profit per loom per day (loom cost basis)' : ppk ? 'Realisation per pick' : 'Realisation per loom per day';
+  const sortName = lc ? 'Profit per loom per day (loom cost basis)' : ppk ? 'Realisation per folded pick' : 'Realisation per loom per day';
   const bars = B.length ? signedBars(B.map((g) => ({label: name(g), v: fig(g), text: ff(fig(g)), onClick: () => fxDaysPanel(name(g), sub, g.rows, false),
-    title: `${name(g)}: ${fl}${at} ${ff(fig(g))}${ppk ? '' : ' per loom per day'}${RR ? ` (as run ${now(g)})` : ''} over ${nLd(g)} loom-days · ${ppk ? `${fxMoney(g.real_ld)} per loom per day` : `${fxPaise(lc ? g.profit_lc_pp : prof ? g.profit_pp : g.real_pp)} paise/pick`}. Click for its loom-days.`})),
-    {aria: `${lc ? 'Profit (loom cost basis)' : 'Realisation'} ${unit}${at} ${hg ? 'by head group' : 'by loom'}`, sortId: `fx-by-${hg ? 'hg' : 'loom'}-${lc ? 'lc' : FXBYK}`, limit: FXBY_ALL ? 0 : 15, sortDir: 'a', nameLabel: hg ? 'Head group' : 'Loom', sortLabel: sortName, fmt: ff, axis: ppk ? `paise realisation per pick${at}` : `₹ ${fl} per loom per day${at}`, labelW: hg ? 170 : 90, ref: ok(pv) ? {v: pv, label: `Plant ${ff(pv)}`} : null})
+    title: `${name(g)}: ${fl}${at} ${ff(fig(g))}${ppk ? '' : ' per loom per day'}${RR ? ` (as run ${now(g)})` : ''} over ${nLd(g)} loom-days · ${ppk ? `${fxMoney(g.real_ld)} per loom per day` : `${fxPaise(lc ? g.profit_lc_pp : prof ? g.profit_pp : g.real_fp)} paise per folded pick`}. Click for its loom-days.`})),
+    {aria: `${lc ? 'Profit (loom cost basis)' : 'Realisation'} ${unit}${at} ${hg ? 'by head group' : 'by loom'}`, sortId: `fx-by-${hg ? 'hg' : 'loom'}-${lc ? 'lc' : FXBYK}`, limit: FXBY_ALL ? 0 : 15, sortDir: 'a', nameLabel: hg ? 'Head group' : 'Loom', sortLabel: sortName, fmt: ff, axis: ppk ? `paise realisation per folded pick${at}` : `₹ ${fl} per loom per day${at}`, labelW: hg ? 170 : 90, ref: ok(pv) ? {v: pv, label: `Plant ${ff(pv)}`} : null})
     : el('div', {class: 'empty', text: RR && G0.size && !G.length ? `No ${hg ? 'head group' : 'loom'} in this period has a ${rl} effective RPM${ref === 'tg' ? ' (set target RPMs on Targets)' : ''}.` : lc && plant.costed_ld ? 'No loom cost profit in this period: its costed days have no loom data, or no loom ran. Next: see Files per day on Data health, or pick Realisation.' : lc ? 'Nothing costed in this period yet: switch to Realisation, or see Coverage on this tab.' : 'Nothing priced in this period: see Coverage on this tab.'});
   const trs = G.map((g) => {
     if (!hg) return grow(el('span', {}, loomLink(g.key, range.to, 'Loom ' + g.key), RR ? el('div', {class: 'note', text: `as run ${now(g)}${ppk ? '' : '/loom/day'}`}) : null), g, false, 'Loom ' + g.key, sub, basis, false);
@@ -1046,13 +1088,13 @@ function fxByCard(box, fabPending, rows, range, grow, colsOf, nums, redraw) {
     const mark = g.rows.some((r) => r.fabric != null && fabPending(r.fabric));   // a change to its fabric or yarns waits in Approvals
     return grow(el('span', {}, hgLink(h, w, range.to), el('div', {class: 'note', text: `${w} cm${RR ? ` · as run ${now(g)}${ppk ? '' : '/loom/day'}` : tg ? ` · target ${fxMoney(tg.ld)}/loom/day at ${f0(tg.erpm)} effective RPM · now ${fxMoney(g.real_ld)}` : ''}`})), g, mark, name(g), sub, basis, false);
   });
-  return card(hg ? 'By head group' : 'By loom', `${range.label} · ${fl}${ppk ? '' : ' per loom per day'}${at} · in the Sorting basis order${RR ? ` · bars and table at each loom-day's ${rl} effective RPM × its own run + stop minutes, at its own paise per pick${lc ? ' (the loom cost held at the day\'s, B grade scaled)' : ''}` : ''} · click a bar or row for its loom-days`,
+  return card(hg ? 'By head group' : 'By loom', `${range.label} · ${fl}${ppk ? '' : ' per loom per day'}${at} · in the Sorting basis order${RR ? ` · bars and table at each loom-day's ${rl} effective RPM × its own run + stop minutes, at its own realisation per woven pick${lc ? ' (the loom cost held at the day\'s, B grade scaled)' : ''}` : ''} · click a bar or row for its loom-days`,
     fxPerBar('by', redraw, null, (() => {   // Round D: the figure the card's switches show, valued as the card values it
-      const figL = (L) => { const t = fcSum(RR ? fxRefRows(L, ref).rows : L); return lc ? (t.lc_ld ? t.profit_lc_ld : null) : ppk ? (t.priced ? t.real_pp : null) : (t.priced_ld ? t.real_ld : null); };
+      const figL = (L) => { const t = fcSum(RR ? fxRefRows(L, ref).rows : L); return lc ? (t.lc_ld ? t.profit_lc_ld : null) : ppk ? (t.priced ? t.real_fp : null) : (t.priced_ld ? t.real_ld : null); };
       return wkPill(wkBy(fxWkRows(fxEnd()), fxEnd(), (r) => r.date, figL, 'up'),   // the day at the top, as every other card, whatever period is picked
         {what: sortName, fmt: ppk ? fxPaise : fxMoney, unit: ppk ? 'paise' : '', basis: `${FXBASIS}${at}`});
     })()),
-    el('div', {class: 'toolbar'}, bvSeg('fx-by', redraw), seg('By loom figure', [['lc', 'Profit (loom cost)'], ['real', 'Realisation'], ['pp', 'Realisation per pick']], lc ? 'lc' : FXBYK, (v) => { FXBYK = v; })),
+    el('div', {class: 'toolbar'}, bvSeg('fx-by', redraw), seg('By loom figure', [['lc', 'Profit (loom cost)'], ['real', 'Realisation'], ['pp', 'Realisation per folded pick']], lc ? 'lc' : FXBYK, (v) => { FXBYK = v; })),
     el('div', {class: 'toolbar'}, seg('Valued at', Object.entries(FX_REF), ref, (v) => prefSet('fx_by_ref', v))),
     bars,
     noRef.length ? el('p', {class: 'note', text: `No ${rl} effective RPM, so left out of the bars and the table: ${noRef.map((g) => nm(g.key)).join(', ')}.`}) : null,
@@ -1075,19 +1117,34 @@ function fxLive() {
 }
 function fxAll() {
   const F = fxLive(); if (!F) return null;
-  if (FXALL && FXALL.F === F && FXALL.C === COST && FXALL.D === D) return FXALL;   // Round Y: the rows depend on the loom data too (looms running)
-  const rows = fcAnalyse(Object.assign(fxInput(), {basis: FC_ASSOLD}));
+  const S = fxSDay();   // Round A7: the date chip's folding shortage (cache keyed by it)
+  if (FXALL && FXALL.F === F && FXALL.C === COST && FXALL.D === D && FXALL.s === S.s) return FXALL;   // Round Y: the rows depend on the loom data too (looms running)
+  const rows = fcAnalyse(Object.assign(fxInput(), {basis: FC_ASSOLD, s: S.s}));
   const byKey = new Map();
   for (const r of rows) {
-    const k = r.date + '|' + r.loom + '|' + r.hg, o = byKey.get(k) || {picks: 0, priced: 0, costed: 0, sale: 0, real: 0, profit: 0, lc: 0, lc_picks: 0, lc_gap: null, gaps: []};
+    const k = r.date + '|' + r.loom + '|' + r.hg, o = byKey.get(k) || {picks: 0, priced: 0, costed: 0, sale: 0, real: 0, profit: 0, lc: 0, lc_picks: 0, lc_gap: null, gaps: [], af: 0, afr: 0, afn: 0, lcaf: 0, lcafn: 0};
     o.picks += r.picks;
     if (r.gap) o.gaps.push(r.gap);
     else { o.priced += r.picks; o.sale += r.sale; o.real += r.real; if (r.profit != null) { o.costed += r.picks; o.profit += r.profit; }
-      if (r.profit_lc != null) { o.lc_picks += r.picks; o.lc += r.profit_lc; } else if (r.lc_gap) o.lc_gap = r.lc_gap; }   // Round A4: the loom cost profit of the loom-day
+      if (r.afold != null) { o.af += r.afold; o.afr += r.real; o.afn++; }   // Round A7: its A-grade folded picks
+      if (r.profit_lc != null) { o.lc_picks += r.picks; o.lc += r.profit_lc; if (r.afold != null) { o.lcaf += r.afold; o.lcafn++; } } else if (r.lc_gap) o.lc_gap = r.lc_gap; }   // Round A4: the loom cost profit of the loom-day
     byKey.set(k, o);
   }
-  for (const o of byKey.values()) { o.real_pp = o.priced ? o.real / o.priced * 100 : null; o.profit_pp = o.costed ? o.profit / o.costed * 100 : null; o.profit_lc = o.lc_picks ? o.lc : null; o.profit_lc_pp = o.lc_picks ? o.lc / o.lc_picks * 100 : null; o.gap = o.priced ? null : (o.gaps[0] || 'not priced'); }
-  return (FXALL = {F, C: COST, D, rows, byKey});
+  // Round A7: real_pp stays per woven pick (now after shrinkage) for the rupee valuations (lost picks × it); real_fp and
+  // profit_lc_pp are per A-grade folded pick (a gap until the day's costing is in), for showing
+  for (const o of byKey.values()) { o.real_pp = o.priced ? o.real / o.priced * 100 : null; o.profit_pp = o.costed ? o.profit / o.costed * 100 : null; o.profit_lc = o.lc_picks ? o.lc : null;
+    o.real_fp = o.afn && o.af > 0 ? o.afr / o.af * 100 : null; o.profit_lc_pp = o.lc_picks && o.lcafn && o.lcaf > 0 ? o.lc / o.lcaf * 100 : null; o.gap = o.priced ? null : (o.gaps[0] || 'not priced'); }
+  return (FXALL = {F, C: COST, D, s: S.s, S, rows, byKey, at: new Map()});
+}
+// Round A7: the analysis rows for a period at its own s (a period across months: the picks-weighted s of its months);
+// within the date chip's month they are fxAll's rows. → rows (with .S), or null while the masters load.
+function fxAllAt(from, to) {
+  const A = fxAll(); if (!A) return null;
+  const S = fxSPer(from, to);
+  if (S.s === A.s) { A.rows.S = A.S; return A.rows; }
+  const k = String(S.s);
+  if (!A.at.has(k)) { const R = ok(S.s) && ok(A.s) ? fcAtS(A.rows, S.s) : fcAnalyse(Object.assign(fxInput(), {basis: FC_ASSOLD, s: S.s})); R.S = S; A.at.set(k, R); }
+  return A.at.get(k);
 }
 const fxDayRows = (date) => { const A = fxAll(); return A ? A.rows.filter((r) => r.date === date) : null; };
 const fxLd = (date, loom, hg) => { const A = fxAll(); return A ? A.byKey.get(date + '|' + loom + '|' + hg) || null : null; };
@@ -1100,7 +1157,7 @@ function fxHgPp(date, w, hg) {
   // Round A4 (Divyam, 24 Nov 2026): profit on the loom cost basis (By head group's figure: priced rows only, never U), and the
   // margin over loom cost: realisation above the loom cost of the loom-days with a loom cost profit
   const C = R.filter((r) => r.profit_lc != null), conv = C.reduce((a, r) => a + r.lcost, 0), realC = C.reduce((a, r) => a + r.real, 0);
-  return t.priced ? {real_pp: t.real_pp, coverage: t.coverage, real_ld: t.real_ld, profit_pp: tl.lc_ld ? tl.profit_lc_pp : null, profit_ld: tl.lc_ld ? tl.profit_lc_ld : null, profit: tl.lc_ld ? tl.profit_lc : null,
+  return t.priced ? {real_pp: t.real_pp, real_fp: t.real_fp, coverage: t.coverage, real_ld: t.real_ld, profit_pp: tl.lc_ld ? tl.profit_lc_pp : null, profit_ld: tl.lc_ld ? tl.profit_lc_ld : null, profit: tl.lc_ld ? tl.profit_lc : null,
     lc_ld: tl.lc_ld, lc_gaps: tl.lc_gaps, margin: conv > 0 ? (realC - conv) / conv : null, realC, conv, T: t, R} : null;
 }
 // Quality tab (R2): the head group's realisation and profit beside its running figures, and the margin pill.
@@ -1118,9 +1175,9 @@ function fxHgCells(date, w, hg, mode) {
   const marg = h.margin == null ? null : el('span', {class: 'pill ' + (h.margin >= 0 ? 'good' : 'bad'), title: 'Margin over loom cost: the realisation above the loom cost of the loom-days with a loom cost profit, as a % of that loom cost', text: `${h.margin >= 0 ? '+' : '−'}${Math.abs(h.margin * 100).toFixed(0)}% over loom cost`});
   const nm = {bm: 'benchmark', best: 'best', tgt: 'target'}[mode] || 'benchmark', RR = h.profit_ld == null ? null : fxRefRows(h.R, mode === 'tgt' ? 'tg' : mode || 'bm'), ref = RR ? fcSum(RR.rows, false) : null;
   const miss = RR && RR.miss ? ` · ${RR.miss} loom-day${RR.miss === 1 ? '' : 's'} with no ${nm} effective RPM or minutes left out` : '';
-  const tip = h.profit_ld == null ? null : `${hg}, ${w} cm · Profit (loom cost)\nCurrent: ${fxPaise(h.profit_pp)} paise/pick · ${fxMoney(h.profit_ld)} a loom a day\n${nm.charAt(0).toUpperCase() + nm.slice(1)}: ${ref && ref.lc_ld ? `${fxPaise(ref.profit_lc_pp)} paise/pick · ${fxMoney(ref.profit_lc_ld)} a loom a day (each loom at its ${nm} effective RPM, the loom cost held${miss})` : `none (no ${nm} effective RPM to compare with). Next: ${mode === 'tgt' ? 'set its target RPM on Targets' : 'use another reference above the table'}.`}`;
+  const tip = h.profit_ld == null ? null : `${hg}, ${w} cm · Profit (loom cost)\nCurrent: ${fxPaise(h.profit_pp)} paise per folded pick · ${fxMoney(h.profit_ld)} a loom a day\n${nm.charAt(0).toUpperCase() + nm.slice(1)}: ${ref && ref.lc_ld ? `${fxPaise(ref.profit_lc_pp)} paise per folded pick · ${fxMoney(ref.profit_lc_ld)} a loom a day (each loom at its ${nm} effective RPM, the loom cost held${miss})` : `none (no ${nm} effective RPM to compare with). Next: ${mode === 'tgt' ? 'set its target RPM on Targets' : 'use another reference above the table'}.`}`;
   const why = Object.keys(h.lc_gaps || {})[0];
-  return [el('td', {class: 'num'}, el('div', {class: 'mv'}, el('div', {class: 'v', text: fxPaise(h.real_pp)}), el('div', {class: 'ref', text: `${fxMoney(h.real_ld)} /loom/day${h.coverage < 1 - 1e-9 ? ` · ${fxPct(h.coverage)} priced` : ''}`}))),
+  return [el('td', {class: 'num'}, el('div', {class: 'mv'}, el('div', {class: 'v', text: fxPaise(h.real_fp)}), el('div', {class: 'ref', text: `${fxMoney(h.real_ld)} /loom/day${h.coverage < 1 - 1e-9 ? ` · ${fxPct(h.coverage)} priced` : ''}`}))),
     el('td', {class: 'num', 'data-sort': h.profit_pp == null ? null : String(h.profit_pp)}, el('div', {class: 'mv', 'data-htip': tip}, el('div', {class: 'v', text: h.profit_pp == null ? '—' : fxPaise(h.profit_pp)}),
       el('div', {class: 'ref', text: h.profit_pp == null ? (why || 'no costing day') + '. Next: ' + fxLcNext(why || 'no costing day') : `${fxMoney(h.profit_ld)} /loom/day`}), marg ? el('div', {}, marg) : null))];
 }
@@ -1155,12 +1212,13 @@ function fxActionTiles(kpi, last7, spk) {
     const T = (dates) => A ? fcSum(A.rows.filter((r) => dates.includes(r.date) && inW(r.width))) : null;
     const cur = T([D.latest]), prv = pr.length ? T(pr) : null;
     const mix = A ? fcQualityMix(A.rows.filter((r) => r.date === D.latest && inW(r.width))) : null;
-    const top = mix ? mix.mix.slice(0, 2).map((m) => `${m.key.split('|')[0]} ${fxPct(m.share)} at ${fxPaise(m.real_pp)}`).join(' · ') : '';
-    const has = cur && cur.priced > 0;
-    if (typeof wkPut === 'function') wkPut('B2:real', has ? {real: cur.real, picks: cur.priced} : null);   // Round J
-    out.push(actTap(kpi('Realisation per pick', !A ? '…' : has ? fxPaise(cur.real_pp) : '—', has ? 'paise' : '', has && prv && prv.priced ? delta(cur.real_pp, prv.real_pp, true, (x) => x.toFixed(2), ' paise') : null,
-      !A ? 'loading the fabric masters' : has ? `weighted by each quality's picks · ${top}${cur.coverage < 1 - 1e-9 ? ` · ${fxPct(cur.coverage)} of picks priced` : ''}` : 'nothing priced on this day',
-      spk(last7.map((d) => { const t = T([d]); return t && t.priced ? t.real_pp : null; }), f2, 'Realisation per pick, paise')), 'real'));   // Round A1: opens Realisation per pick by quality
+    // Round A7 (design): realisation per A-grade folded pick for the day; a gap until the day's costing is in (its rupees still count)
+    const top = mix ? mix.mix.slice(0, 2).map((m) => `${m.key.split('|')[0]} ${fxPct(m.share)} at ${fxPaise(m.real_fp)}`).join(' · ') : '';
+    const has = cur && cur.priced > 0, hasF = has && ok(cur.real_fp);
+    if (typeof wkPut === 'function') wkPut('B2:real', hasF ? {real: cur.real, picks: cur.afold} : null);   // Round J
+    out.push(actTap(kpi('Realisation per pick', !A ? '…' : hasF ? fxPaise(cur.real_fp) : '—', hasF ? 'paise per folded pick' : '', hasF && prv && ok(prv.real_fp) ? delta(cur.real_fp, prv.real_fp, true, (x) => x.toFixed(2), ' paise') : null,
+      !A ? 'loading the fabric masters' : hasF ? `per A-grade folded pick, ${fxSTxt(A.S, true)} · ${top}${cur.coverage < 1 - 1e-9 ? ` · ${fxPct(cur.coverage)} of picks priced` : ''}` : has ? `costing for ${dfmt(D.latest)} not in yet: realisation per folded pick needs the day's B grade and cut pieces. Next: ${tcNext()}` : 'nothing priced on this day',
+      spk(last7.map((d) => { const t = T([d]); return t && t.priced ? t.real_fp : null; }), f2, 'Realisation per folded pick, paise')), 'real'));   // Round A1: opens Realisation per pick by quality
   }
   if (COST && typeof cDays === 'function') {
     const C = cDays(), byD = new Map(C.map((d) => [d.date, d])), cd = byD.get(D.latest), last = C.filter((d) => d.date <= D.latest).slice(-1)[0];
@@ -1188,7 +1246,7 @@ function fxTargetTiles(kpi, tc, fs) {
   const ex = new Map();
   for (const x of tc.looms || tcLooms(tc.date || D.latest)) { const k = x.loom + '|' + x.hg, v = ex.has(k) ? ex.get(k) : 0, e = tcExtraFab(x); ex.set(k, v == null || e == null ? null : v + e / FC_PICKS_PER_INCH); }
   const T = fcTargetReal(rows, (r) => ex.has(r.loom + '|' + r.hg) ? ex.get(r.loom + '|' + r.hg) : null), now = fcSum(rows);
-  if (typeof wkPut === 'function') { wkPut('B5:real', ok(T.pp) ? {num: T.num, tp: T.tp, now: now.real_pp} : null); wkPut('B5:profit', null); }   // Round J
+  if (typeof wkPut === 'function') { wkPut('B5:real', ok(T.pp) ? {num: T.num, tp: T.tp, s: T.s, now: now.real_fp} : null); wkPut('B5:profit', null); }   // Round J; Round A7: ÷ target A-grade folded picks
   // Round A1 (Divyam, 24 Nov 2026): the Target realisation per pick tile is gone; its figure stays inside Target profit per pick
   const date = tc.date || D.latest, out = [];
   if (!tc.ok) { out.push(kpi('Target profit per pick', '—', '', null, `${tcUnavail(date)}. Next: see Files per day on Data health.`)); return out; }
@@ -1268,19 +1326,26 @@ function fxBeTrendCard() {
 }
 // Realisation per pick by quality: the day's priced picks, quality by quality (As sold), with the floor's figure as a line.
 // A quality with nothing priced is named under the chart with its reason, never drawn as 0.
-// Round A5 (Divyam, 25 Nov 2026, option B): each bar carries the quality's folded cost per pick (Folded cost per pick by
-// quality, fcFoldByQuality, the loom cost method): grey = the cost the realisation covers, green = the realisation left above
-// it, red = how far the cost runs past it (fcRealLessFold). Realisation stays on priced picks (Divyam, answer 2), the cost
-// is on A-grade folded picks, so the difference is named "realisation less folded cost", never profit. A quality whose
-// folded cost is not known keeps its plain bar (faded) and its reason, never a cost of 0.
-function fxRealFold(date) {
-  if (!COST) return {why: 'the costing is not loaded'};
-  const {reg, s, fold, pick} = fxFoldIn(date);
+// Round A5 (Divyam, 25 Nov 2026, option B): the split bar. Round A7 (the folded basis, design 2026-11-25): each bar is the
+// quality's realisation per A-grade folded pick, and inside it the folded cost per pick of the SAME priced loom-days with a
+// loom cost profit (their loom cost and own B grade ÷ their A-grade folded picks; fcSum's real_fp_lc and cost_fp): grey = the
+// cost the realisation covers, green = the realisation left above it, red = how far the cost runs past it (fcRealLessFold).
+// The difference is the quality's profit per folded pick (the Realisation tab's By head group figure). Not Folded cost per pick
+// by quality's figure (that one covers every loom-day of the quality, priced or not), named. Round A7, scope item 1 (Divyam,
+// answer a): a hollow diamond at the quality's target folded cost (Round A6's Target folded cost, which covers every loom-day
+// of the quality, named), and the column Profit per folded pick at target = its realisation per target A-grade folded pick
+// (every target pick A grade: its realisation per woven pick ÷ (1 − s)) − that target folded cost. A quality whose folded cost
+// is not known keeps its plain bar (faded) and its reason, never a cost of 0.
+function fxRealTgt(date) {
+  const {s} = fxFoldIn(date);
   if (!ok(s)) return {why: 'no folding shortage this month yet'};
-  const F = fcFoldByQuality(pick(date), reg, fold, s, date, date), out = F.out.find((o) => o.date === date);
+  const R = fxTgtFoldQ(date, date, s), T = R.T;
+  if (!T) return {why: 'no folding shortage this month yet'};
+  const out = R.out.find((o) => o.date === date);
   if (out) return {why: out.why};
-  return {F, map: new Map(F.groups.map((g) => [g.hg + '|' + g.width, g]))};
+  return {T, map: new Map(T.groups.map((g) => [g.key, g]))};
 }
+const fxTgtReal = (rows) => { let r = 0, p = 0, sv = null; for (const x of rows) if (!x.gap && x.real != null && x.picks > 0) { r += x.real; p += x.picks; if (ok(x.s)) sv = x.s; } return p > 0 && ok(sv) && sv < 1 ? 100 * r / (p * (1 - sv)) : null; };
 function fxRealQCard() {
   if (!fxOn()) return null;
   const title = ACTV.real[0], A = fxAll(), sub = `${dfmt(D.latest)} · ${wLabel()} · As sold`;
@@ -1291,40 +1356,45 @@ function fxRealQCard() {
   const cov = el('button', {class: 'link', type: 'button', text: 'Coverage on the Realisation tab ›', onclick: () => navGoCard('realisation', 'Coverage')});
   if (!P.length) return card(title, sub, el('p', {class: 'empty', text: 'Nothing priced on this day.'}), cov);
   const why = (g) => { const r = g.rows.find((x) => x.gap); return r ? r.gap : 'not priced'; };
-  const FQ = fxRealFold(D.latest);
-  const fg = (g) => FQ.map ? FQ.map.get(g.hg + '|' + g.width) : null;
-  const fpp = (g) => { const f = fg(g); return f && ok(f.pp) ? f.pp : null; };
-  const fwhy = (g) => { if (FQ.why) return FQ.why; const f = fg(g); return !f ? 'no loom cost for it that day' : f.noair && !(f.ld > 0) ? 'no CFM reading' : 'no A-grade picks left after its B grade and cut pieces'; };
-  const fnote = (f) => f && f.noair ? ` (${f.noair} loom-day${f.noair === 1 ? '' : 's'} with no CFM reading left out of its folded cost)` : '';
-  const sp = (g) => { const c = fpp(g), d = fcRealLessFold(g.real_pp, c); return d ? {cost: c, ...d} : {cost: null}; };
-  const fx2 = (v) => ok(v) ? fxPaise(v) : '—';
-  const lf = (g) => { const d = fcRealLessFold(g.real_pp, fpp(g)); return d ? d.diff : null; };
-  const unk = P.filter((g) => !ok(fpp(g)));
-  // the Total row: the floor's (or the width's) folded cost per pick, as the width rows of Folded cost per pick by quality
-  const tf = FQ.F ? (W === 'all' ? FQ.F.all : FQ.F.widths.find((x) => x.width === W)) : null, tfp = tf && ok(tf.pp) ? tf.pp : null, tlf = ok(tfp) && ok(T.real_pp) ? T.real_pp - tfp : null;
-  const twhy = ok(tfp) ? null : FQ.why || (!tf ? 'no loom cost for the width that day' : tf.noair && !(tf.ld > 0) ? 'no CFM reading' : 'no A-grade picks left after B grade and cut pieces');
-  const top = P.find((g) => ok(lf(g)));
-  if (typeof wkPut === 'function') wkPut('B2:rlf', top ? {hg: `${top.hg} · ${top.width}`, real: top.real_pp, fold: fpp(top)} : null);
-  return card(title, `${sub} · each quality's realisation ÷ its priced picks, against its folded cost per pick`,
-    signedBars(P.map((g) => { const s = sp(g), c = s.cost, d = ok(c) ? g.real_pp - c : null;
-      return {label: `${g.hg} · ${g.width}`, v: g.real_pp, split: s, lf: d, fc: c,
-        text: ok(d) ? `${fxPaise(g.real_pp)} · ${d >= 0 ? '+' : '−'}${fxPaise(Math.abs(d))}` : `${fxPaise(g.real_pp)} · cost —`, onClick: () => openHg(g.hg, g.width, D.latest),
-        title: `${g.hg}, ${g.width} cm: realisation ${fxPaise(g.real_pp)} paise a pick (${fxMoney(g.real)} over ${fxLakh(g.priced)} lakh priced picks, ${fxPct(T.priced ? g.priced / T.priced : null)} of the day's priced picks); folded cost ${ok(c) ? `${fxPaise(c)} paise a pick${fnote(fg(g))}; realisation less folded cost ${d >= 0 ? '+' : '−'}${fxPaise(Math.abs(d))} paise` : `not known (${fwhy(g)})`}`}; }),
-      {aria: 'Realisation per pick by quality, against its folded cost per pick', fmt: fxPaise, wideText: true, axis: 'Paise a pick', labelW: 150, limit: 15, nameLabel: 'Head group', sortLabel: 'Realisation per pick',
-        sortBases: [{v: 'lf', label: 'Realisation less folded cost', get: (r) => ok(r.lf) ? r.lf : null}, {v: 'fc', label: 'Folded cost per pick', get: (r) => ok(r.fc) ? r.fc : null}],
-        ref: ok(T.real_pp) ? {v: T.real_pp, label: `Floor ${fxPaise(T.real_pp)}`} : null}),
+  const rv = (g) => ok(g.real_fp_lc) ? g.real_fp_lc : g.real_fp;   // the bar: realisation per folded pick of the loom-days with a loom cost profit (else of every priced one)
+  const fpp = (g) => ok(g.cost_fp) ? g.cost_fp : null;
+  const noair = (g) => new Set(g.rows.filter((r) => r.lc_gap === 'no CFM reading for the loom').map((r) => r.date + '|' + r.loom)).size;
+  const fwhy = (g) => !ok(g.real_fp) && g.nofold_ld ? `costing for ${dfmt(D.latest)} not in yet (no A-grade folded picks)` : noair(g) && !g.fl_ld ? 'no CFM reading' : Object.keys(g.lc_gaps)[0] || 'no loom cost for it that day';
+  const fnote = (g) => { const n = noair(g); return n ? ` (${n} loom-day${n === 1 ? '' : 's'} with no CFM reading left out of its realisation and folded cost)` : ''; };
+  const sp = (g) => { const c = fpp(g), d = fcRealLessFold(rv(g), c); return d ? {cost: c, ...d} : {cost: null}; };
+  const sg = (v) => ok(v) ? `${v >= 0 ? '+' : '−'}${fxPaise(Math.abs(v))}` : '—';
+  const lf = (g) => ok(fpp(g)) && ok(g.real_fp_lc) ? g.profit_fp : null;
+  const Q = fxRealTgt(D.latest), tg = (g) => Q.map ? Q.map.get(g.hg + '|' + g.width) : null, tpp = (g) => { const t = tg(g); return t && ok(t.pp) ? t.pp : null; };
+  const tprof = (g) => { const r = fxTgtReal(g.rows), c = tpp(g); return ok(r) && ok(c) ? r - c : null; };
+  const twhy = (g) => Q.why || (!tg(g) ? 'no target folded cost for it that day' : fxTwhy(tg(g)) || 'no target left after the loom-days left out');
+  const bars = P.filter((g) => ok(rv(g))), nofp = P.filter((g) => !ok(rv(g))), unk = bars.filter((g) => !ok(lf(g))), notg = bars.filter((g) => !ok(tpp(g)));
+  // the Total row: the width's (or the floor's) realisation per folded pick against its cost per folded pick incl. the loom cost not recovered
+  const tlf = ok(T.cost_fp_u) && ok(T.real_fp_lc) ? T.profit_fp : null;
+  const TT = Q.T ? (W === 'all' ? Q.T.all : Q.T.widths.find((x) => x.width === W)) : null, ttp = TT && ok(TT.pp) ? TT.pp : null, ttr = fxTgtReal(rows), ttprof = ok(ttr) && ok(ttp) ? ttr - ttp : null;
+  const top = bars.find((g) => ok(lf(g)));
+  if (typeof wkPut === 'function') wkPut('B2:rlf', top ? {hg: `${top.hg} · ${top.width}`, real: top.real_fp_lc, fold: fpp(top), A: top.afold_lc, tgt: tpp(top), treal: fxTgtReal(top.rows)} : null);
+  return card(title, `${sub} · each quality's realisation per A-grade folded pick against the folded cost per pick of the same loom-days · ${fxSTxt(A.S, true)}`,
+    bars.length ? signedBars(bars.map((g) => { const s = sp(g), c = s.cost, d = lf(g), t = tpp(g);
+      return {label: `${g.hg} · ${g.width}`, v: rv(g), split: s, lf: d, fc: c, dia: t, tp: tprof(g),
+        text: ok(d) ? `${fxPaise(rv(g))} · ${sg(d)}` : `${fxPaise(rv(g))} · cost —`, onClick: () => openHg(g.hg, g.width, D.latest),
+        title: `${g.hg}, ${g.width} cm: realisation ${fxPaise(rv(g))} paise per folded pick (${fxMoney(g.real)} over ${fxLakh(g.priced)} lakh priced picks, ${fxPct(T.priced ? g.priced / T.priced : null)} of the day's priced picks); folded cost ${ok(c) ? `${fxPaise(c)} paise a pick${fnote(g)}; profit ${sg(d)} paise per folded pick` : `not known (${fwhy(g)})`}; target folded cost ${ok(t) ? `${fxPaise(t)} paise (the diamond); profit at target ${sg(tprof(g))} paise per folded pick` : `none (${twhy(g)})`}`}; }),
+      {aria: 'Realisation per folded pick by quality, against its folded cost per pick and its target folded cost', fmt: fxPaise, wideText: true, axis: 'Paise per A-grade folded pick', labelW: 150, limit: 15, nameLabel: 'Head group', sortLabel: 'Realisation per folded pick',
+        sortBases: [{v: 'lf', label: 'Profit per folded pick', get: (r) => ok(r.lf) ? r.lf : null}, {v: 'fc', label: 'Folded cost per pick', get: (r) => ok(r.fc) ? r.fc : null}, {v: 'tp', label: 'Profit per folded pick at target', get: (r) => ok(r.tp) ? r.tp : null}],
+        ref: ok(T.real_fp_lc) ? {v: T.real_fp_lc, label: `Floor ${fxPaise(T.real_fp_lc)}`} : null}) : el('p', {class: 'empty', text: `No priced quality has A-grade folded picks on ${dfmt(D.latest)} yet: the day's costing is not in. Next: ${tcNext()}.`}),
     el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2);opacity:.55'}), 'folded cost the realisation covers'),
-      el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--good)'}), 'realisation left after the folded cost'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), 'folded cost the realisation does not cover'),
-      el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar);opacity:.45'}), 'folded cost not known'), el('span', {class: 'lg'}, legendShape('dash'), 'the floor\'s realisation')),
-    actCut(P.length, 15, 'qualities'),
-    actTable('real', ['Head group', ['Priced picks', 'lakh'], ['Share', 'of priced picks'], ['Realisation per pick', 'paise'], ['Realisation', '₹, the day'], ['Folded cost per pick', 'paise'], ['Realisation less folded cost', 'paise']],
-      P.map((g) => [[actHgCell(g), fxLakh(g.priced), fxPct(T.priced ? g.priced / T.priced : null), fxPaise(g.real_pp), fxMoney(g.real), fx2(fpp(g)), ok(lf(g)) ? `${lf(g) >= 0 ? '+' : '−'}${fxPaise(Math.abs(lf(g)))}` : '—'], [g.hg, g.priced, g.priced, g.real_pp, g.real, fpp(g), lf(g)]]), [1, 2, 3, 4, 5, 6],
-      [el('b', {text: 'Total'}), fxLakh(T.priced), '100%', el('b', {text: fxPaise(T.real_pp)}), fxMoney(T.real), fx2(tfp), ok(tlf) ? `${tlf >= 0 ? '+' : '−'}${fxPaise(Math.abs(tlf))}` : '—']),
+      el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--good)'}), 'profit: realisation left after the folded cost'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), 'loss: folded cost the realisation does not cover'),
+      el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar);opacity:.45'}), 'folded cost not known'), el('span', {class: 'lg'}, legendShape('diamond'), 'target folded cost'), el('span', {class: 'lg'}, legendShape('dash'), 'the floor\'s realisation')),
+    actCut(bars.length, 15, 'qualities'),
+    actTable('real', ['Head group', ['Priced picks', 'lakh'], ['Share', 'of priced picks'], ['Realisation per pick', 'paise per folded pick'], ['Realisation', '₹, the day'], ['Folded cost per pick', 'paise'], ['Profit per folded pick', 'paise'], ['Target folded cost', 'paise'], ['Profit per folded pick at target', 'paise']],
+      P.map((g) => [[actHgCell(g), fxLakh(g.priced), fxPct(T.priced ? g.priced / T.priced : null), ok(rv(g)) ? fxPaise(rv(g)) : '—', fxMoney(g.real), ok(fpp(g)) ? fxPaise(fpp(g)) : '—', sg(lf(g)), ok(tpp(g)) ? fxPaise(tpp(g)) : '—', sg(tprof(g))],
+        [g.hg, g.priced, g.priced, rv(g), g.real, fpp(g), lf(g), tpp(g), tprof(g)]]), [1, 2, 3, 4, 5, 6, 7, 8],
+      [el('b', {text: 'Total'}), fxLakh(T.priced), '100%', el('b', {text: ok(T.real_fp_lc) ? fxPaise(T.real_fp_lc) : '—'}), fxMoney(T.real), ok(T.cost_fp_u) ? fxPaise(T.cost_fp_u) : '—', sg(tlf), ok(ttp) ? fxPaise(ttp) : '—', sg(ttprof)]),
     gaps.length ? el('p', {class: 'note', text: `Not priced (left out, never 0): ${gaps.map((g) => `${g.hg} · ${g.width} (${why(g)})`).join('; ')}.`}) : null,
-    unk.length ? el('p', {class: 'note', text: `Folded cost not known (its bar is faded, never a cost of 0): ${FQ.why ? `${FQ.why} (every quality)` : unk.map((g) => `${g.hg} · ${g.width} (${fwhy(g)})`).join('; ')}. Next: ${tcNext()}.`}) : null,
-    twhy && !FQ.why ? el('p', {class: 'note', text: `The Total row's folded cost is not known: ${twhy}. Next: ${tcNext()}.`}) : null,
-    el('p', {class: 'note', text: 'Realisation = sale value at the prevailing rate less the standard yarn cost (As sold: each head group on its default record, greige where linked, else RFD). The Total row is the tile: the day\'s realisation ÷ its priced picks.'}),
-    el('p', {class: 'note', text: 'Folded cost per pick is the quality\'s figure in Folded cost per pick by quality (open it from the Folded cost per pick tile): its loom cost and own B grade ÷ its A-grade folded picks. Realisation is ÷ priced picks and the folded cost is ÷ A-grade folded picks, so "realisation less folded cost" is a guide to which qualities cover their cost, not their profit. Profit (loom cost basis) is on the Realisation tab. A bar ends at the higher of the two: at the realisation where it covers the folded cost, at the folded cost where it does not. The Total row\'s folded cost is the width\'s row of Folded cost per pick by quality (both widths when both are shown).'}), cov);
+    nofp.length ? el('p', {class: 'note', text: `No realisation per folded pick yet (left out of the bars; their rupees count in the table): ${nofp.map((g) => `${g.hg} · ${g.width} (${fwhy(g)})`).join('; ')}. Next: ${tcNext()}.`}) : null,
+    unk.length ? el('p', {class: 'note', text: `Folded cost not known (its bar is faded, never a cost of 0): ${unk.map((g) => `${g.hg} · ${g.width} (${fwhy(g)})`).join('; ')}. Next: ${tcNext()}.`}) : null,
+    notg.length ? el('p', {class: 'note', text: `No target folded cost (no diamond): ${Q.why ? `${Q.why} (every quality)` : notg.map((g) => `${g.hg} · ${g.width} (${twhy(g)})`).join('; ')}. Next: ${Q.why ? tcNext() : notg.map(tg).filter(Boolean).length ? fxTnext(notg.map(tg).find(Boolean)) : tcNext()}.`}) : null,
+    el('p', {class: 'note', text: `Realisation = sale value at the prevailing rate less the standard yarn cost, on folded metres (woven metres × (1 − the folding shortage); As sold: each head group on its default record, greige where linked, else RFD), ÷ A-grade folded picks (picks × (1 − the shortage) − B grade picks − cut piece picks). The Total row: the ${W === 'all' ? 'floor\'s' : 'width\'s'} realisation per folded pick against its cost per folded pick including the loom cost not recovered (the loom cost of looms that ran unpriced), so its profit is the Realisation tab's profit per folded pick.`}),
+    el('p', {class: 'note', text: 'Folded cost per pick here is the loom cost and own B grade of the same priced loom-days ÷ their A-grade folded picks, so realisation − folded cost = profit per folded pick. Folded cost per pick by quality (the Folded cost per pick tile) covers every loom-day of the quality, priced or not, so the two can differ when a quality has unpriced loom-days. The diamond is that view\'s Target folded cost for the day, which also covers every loom-day of the quality. Profit per folded pick at target = its realisation per target A-grade folded pick (every target pick A grade) − the target folded cost. A bar ends at the higher of realisation and folded cost.'}), cov);
 }
 // Round A3, item 8 (Divyam, 24 Nov 2026): Folded cost per pick by quality, opened from the Folded cost per pick tile (owner).
 // Each quality (head group × width, both widths: the cost is the whole plant's) on the loom cost method (fcFoldByQuality):
@@ -1464,40 +1534,46 @@ function fxFoldQCard() {
 function fxLoomRealCell(x) {
   if (!fxAll()) return fxRsCell(null);
   const o = fxLd(x.date, x.loom, x.hg);
-  if (!o || o.real_pp == null) return fxRsCell(null);
-  return el('div', {class: 'mv'}, el('div', {class: 'v', text: fxMoney(o.real)}), el('div', {class: 'ref', text: `${fxPaise(o.real_pp)} paise/pick${o.priced < o.picks - 1e-9 ? ` · ${fxPct(o.priced / o.picks)} priced` : ''}`}));
+  if (!o || o.real_pp == null) return fxRsCell(null);   // Round A7: per A-grade folded pick, a gap until the day's costing is in
+  return el('div', {class: 'mv'}, el('div', {class: 'v', text: fxMoney(o.real)}), el('div', {class: 'ref', text: `${ok(o.real_fp) ? fxPaise(o.real_fp) + ' p/folded pick' : 'per folded pick: costing not in yet'}${o.priced < o.picks - 1e-9 ? ` · ${fxPct(o.priced / o.picks)} priced` : ''}`}));
 }
 // Costing tab (R2): the profit layer. Realisation per pick against cost per pick by day, with the B grade loss per good
 // pick and profit per pick, on the Cost per pick chart's own period (dayChart 'cpp'); and the closing stock valued at the
 // month's average sale value per metre.
 function fxCostChart(P, pre) {
   if (!fxOn()) return null;
-  const A = fxAll();
+  // Round A7 (design, Costing chart answer 1 and question 3 a): three folded-basis lines, all ÷ the A-grade folded picks of
+  // the loom-days with a loom cost profit, so realisation − cost = profit on the chart: realisation per folded pick, cost per
+  // folded pick (their loom cost and own B grade + the loom cost not recovered) and profit per folded pick; plus B grade loss
+  // per good pick. The period's own folding shortage (a period across months: the picks-weighted s).
+  const A = fxAll(), AR = A && P.length ? fxAllAt(P[0].date, P.at(-1).date) : null;
   const by = new Map();
-  if (A) for (const r of A.rows) { if (!by.has(r.date)) by.set(r.date, []); by.get(r.date).push(r); }
+  if (AR) for (const r of AR) { if (!by.has(r.date)) by.set(r.date, []); by.get(r.date).push(r); }
   const day = (d) => { const R = by.get(d.date); return R ? fcSum(R) : null; };
-  const g = (k) => (d) => { const t = day(d); return t && t.priced ? t[k] : null; };
+  const fl = (k) => (d) => { const t = day(d); return t && t.lc_ld ? t[k] : null; }, fw = (d) => { const t = day(d); return t && t.lc_ld && ok(t.profit_fp) ? t.afold_lc : null; };
+  const wkOf = (k) => (L) => { const t = fcSum(L.flatMap((d) => by.get(d.date) || [])); return t.lc_ld ? t[k] : null; };
   const bq = (COST.bq && COST.bq.days) || [], bqOf = new Map(bq.map((x) => [x.date, x]));
   const bp = (d) => { const x = bqOf.get(d.date); return x && ok(x.bgrade_loss) && x.afold ? 100 * x.bgrade_loss / x.afold : null; };
   const body = !A ? el('p', {class: 'note', text: 'Loading the fabric masters…'}) : !P.some((d) => { const t = day(d); return t && t.priced; }) ? el('div', {class: 'empty', text: 'No priced loom-day in this period: see Coverage on the Realisation tab.'})
-    : dayChart('cpp', P, pre, {id: 'fx-cost', aria: 'Realisation and cost per pick by day', fmt: (v) => pn(v, 2), onPick: pickDay}, [
-      {key: 'real', name: 'Realisation per pick', get: g('real_pp'), agg: 'w', w: g('priced'), color: CC[0], avg: false},
-      {key: 'cpp', name: 'Cost per pick (incl. cut piece loss)', get: (d) => d.cpp, agg: 'w', w: (d) => d.picks, color: CC[3], avg: false},
+    : dayChart('cpp', P, pre, {id: 'fx-cost', aria: 'Realisation, cost and profit per folded pick by day', fmt: (v) => pn(v, 2), onPick: pickDay}, [
+      {key: 'real', name: 'Realisation per folded pick', get: fl('real_fp_lc'), agg: 'w', w: fw, wk: wkOf('real_fp_lc'), color: CC[0], avg: false},
+      {key: 'cpp', name: 'Cost per folded pick (loom cost)', get: fl('cost_fp_u'), agg: 'w', w: fw, wk: wkOf('cost_fp_u'), color: CC[3], avg: false},
       {key: 'bg', name: 'B grade loss per good pick', get: bp, agg: 'w', w: (d) => d.afold, color: CC[2], avg: false},
-      {key: 'profit', name: 'Profit per pick (loom cost)', get: (d) => { const t = day(d); return t && t.lc_ld ? t.profit_lc_pp : null; }, agg: 'w', w: (d) => { const t = day(d); return t && t.lc_ld ? t.lc_costed : null; },
-        wk: (L) => { const t = fcSum(L.flatMap((d) => by.get(d.date) || [])); return t.lc_ld ? t.profit_lc_pp : null; }, color: CC[1], dash: true, avg: false}], ['real', 'cpp', 'profit']);   // a week or rolling 7 days: the days' rows added up, so a day with nothing priced still takes off its loom cost (risk C)   // Round A4: the loom cost basis
+      {key: 'profit', name: 'Profit per folded pick', get: fl('profit_fp'), agg: 'w', w: fw,
+        wk: wkOf('profit_fp'), color: CC[1], dash: true, avg: false}], ['real', 'cpp', 'profit']);   // a week or rolling 7 days: the days' rows added up, so a day with nothing priced still takes off its loom cost (risk C)
   const last = A ? [...P].reverse().map(day).find((t) => t && t.priced) : null;
   if (typeof wkPut === 'function') { const d0 = A ? [...P].reverse().find((d) => { const t = day(d); return t && t.priced; }) : null;   // Round J
-    wkPut('J22', d0 ? {date: dfmt(d0.date), real: day(d0).real, picks: day(d0).priced, cpp: d0.cpp} : null); }
-  return card('Realisation against cost per pick', 'paise per pick by day · the period of the Cost per pick chart above · realisation As sold, from the Realisation tab', body,
-    el('p', {class: 'note', text: `Realisation = sale value at prevailing rate less standard yarn cost, over the priced loom-days of the day; cost per pick is the Costing figure above; profit (loom cost) = realisation less each loom's loom cost and its own B grade, less the loom cost not recovered, over the picks with a loom cost profit, as the Realisation tab's Profit (loom cost basis). The B grade line is the plant's B grade loss per A-grade folded pick, already in the Quality loss table.${last ? ` Latest priced day covers ${fxPct(last.coverage)} of its picks.` : ''}`}));
+    const t0 = d0 ? day(d0) : null; wkPut('J22', t0 && t0.lc_ld && ok(t0.profit_fp) ? {date: dfmt(d0.date), real: t0.real_fp_lc * t0.afold_lc / 100, cost: t0.cost_fp_u * t0.afold_lc / 100, picks: t0.afold_lc} : null); }   // Round A7
+  return card('Realisation against cost per pick', `paise per A-grade folded pick by day · the period of the Cost per pick chart above · realisation As sold, from the Realisation tab · ${AR ? fxSTxt(AR.S, true) : ''}`, body,
+    el('p', {class: 'note', text: `Every line but B grade is ÷ the A-grade folded picks (picks × (1 − the folding shortage) − B grade picks − cut piece picks) of the priced loom-days with a loom cost profit. Realisation = sale value at prevailing rate less standard yarn cost, on folded metres. Cost per folded pick (loom cost) = their loom cost and own B grade plus the loom cost not recovered (looms that ran unpriced), so realisation − cost = profit per folded pick, the Realisation tab's Profit (loom cost basis) per folded pick. The day's headline cost per pick is on the Cost per pick chart above (it is ÷ every production pick). The B grade line is the plant's B grade loss per A-grade folded pick, already in the Quality loss table.${last ? ` Latest priced day covers ${fxPct(last.coverage)} of its picks.` : ''}`}));
 }
 function fxStockRows(st, cur, MD) {
   if (!fxOn()) return [];
   const A = fxAll();
   if (!A) return [['Closing stock at prevailing rate', el('span', {class: 'note', text: '…'}), '']];
   const ym = cur.date.slice(0, 7), R = A.rows.filter((r) => r.date.slice(0, 7) === ym && r.date <= cur.date && !r.gap);
-  const metres = R.reduce((a, r) => a + r.metres, 0), sale = R.reduce((a, r) => a + r.sale, 0), real = R.reduce((a, r) => a + r.real, 0);
+  // Round A7: sale value and realisation are on folded metres, so their rate a metre is per folded metre (closing stock is folded fabric)
+  const metres = R.reduce((a, r) => a + (r.fmetres ?? r.metres), 0), sale = R.reduce((a, r) => a + r.sale, 0), real = R.reduce((a, r) => a + r.real, 0);
   if (!metres) return [['Closing stock at prevailing rate', el('span', {class: 'pill muted', text: 'not priced', title: 'No priced loom-day this month yet'}), '']];
   const perM = sale / metres, realM = real / metres;
   if (typeof wkPut === 'function') wkPut('J16', ok(st.closing) ? {sale, metres, closing: st.closing} : null);   // Round J
@@ -1542,10 +1618,12 @@ function fxErpmRealTiles(recs, kp) {
   const P = L.filter((y) => !y.gap && ok(y.now)), n = P.reduce((a, y) => a + y.now, 0), a = P.reduce((s, y) => s + (ok(y.after) ? y.after : y.now), 0);
   const np = P.reduce((s, y) => s + y.picks, 0), ap = P.reduce((s, y) => s + (y.apicks || y.picks), 0), gaps = L.length - P.length;
   if (!P.length) return [kp('Realisation after the work', ['—'], '', 'no loom priced on this day')];
-  const ppN = np ? n / np * 100 : null, ppA = ap ? a / ap * 100 : null;
-  if (typeof wkPut === 'function') { wkPut('F3:rs', {rows: P.map((y) => ({after: ok(y.after) ? y.after : y.now})), now: n}); wkPut('F3:pp', {after: a, picks: ap}); }   // Round J
+  // Round A7: per A-grade folded pick with every pick taken as A grade, as Target realisation per pick: ÷ (picks × (1 − s))
+  const s7 = (fxAll() || {}).s, k7 = ok(s7) && s7 < 1 ? 1 - s7 : null;
+  const ppN = np && k7 ? n / (np * k7) * 100 : null, ppA = ap && k7 ? a / (ap * k7) * 100 : null;
+  if (typeof wkPut === 'function') { wkPut('F3:rs', {rows: P.map((y) => ({after: ok(y.after) ? y.after : y.now})), now: n}); wkPut('F3:pp', k7 ? {after: a, picks: ap * k7} : null); }   // Round J
   return [kp('Realisation after the work', [fxMoney(a)], '', `+${fxMoney(a - n)} on ${fxMoney(n)} now · ${P.length} priced loom${P.length === 1 ? '' : 's'}${gaps ? `, ${gaps} not priced` : ''}`),
-    kp('Realisation per pick after the work', [fxPaise(ppA)], 'paise', `now ${fxPaise(ppN)}: each loom keeps its own quality's rate, so this moves only as the mix of picks shifts`)];
+    kp('Realisation per pick after the work', [fxPaise(ppA)], 'paise per folded pick', `now ${fxPaise(ppN)}: each loom keeps its own quality's rate, so this moves only as the mix of picks shifts; every pick taken as A grade, after the folding shortage`)];
 }
 let FXER_ALL = false;
 function fxErpmRealCard(recs) {
@@ -1556,7 +1634,7 @@ function fxErpmRealCard(recs) {
   const refOfY = (y) => ok(y.tg) ? y.tg : y.bm;   // sorted on the target, the benchmark where no target RPM is set
   let rows;
   if (!hg) rows = L.filter((y) => !y.gap && ok(y.now)).map((y) => ({x: y.r.x, v: y.now, bm: y.bm, best: y.best, tg: y.tg, ref: refOfY(y), ex: ok(refOfY(y)) ? Math.max(0, refOfY(y) - y.now) : 0, sk: ok(refOfY(y)) ? refOfY(y) - y.now : -1e18,
-    tip: `Loom ${y.r.x.loom} · ${y.r.x.hg} · ${y.r.x.width} cm: ${fxMoney(y.now)} now · benchmark ${fxMoney(y.bm)} · best ${fxMoney(y.best)} · target ${fxMoney(y.tg)} · ${fxPaise(y.pp)} paise/pick`}));
+    tip: `Loom ${y.r.x.loom} · ${y.r.x.hg} · ${y.r.x.width} cm: ${fxMoney(y.now)} now · benchmark ${fxMoney(y.bm)} · best ${fxMoney(y.best)} · target ${fxMoney(y.tg)} · ${fxPaise(y.pp)} paise of realisation per woven pick (after the folding shortage)`}));
   else {
     const by = new Map();
     for (const y of L) { if (y.gap || !ok(y.now)) continue; const k = key(y.r.x.width, y.r.x.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(y); }
@@ -1662,7 +1740,7 @@ function fxGapWorth(w, hg, A, date, loom) {
   const cfmB = cfmOf(b.apk, w, hg, A.rpm);
   out.cfm = ok(cfmB) && ok(A.cfm) ? cell(A.cfm - cfmB, c ? Math.max(0, A.cfm - cfmB) * A.run * c.sRsFt3 : null, 'air') : '—';
   out.apk = ok(b.apk) && ok(A.apk) ? cell(A.apk - b.apk, c ? Math.max(0, A.apk - b.apk) * A.fpicks / 1000 * c.sRsFt3 : null, 'air') : '—';
-  out.note = `Gap worth: a picks gap × ${pp == null ? 'the realisation per pick (not priced here)' : fxPaise(pp) + ' paise of realisation per pick'} on ${dfmt(date)} (As sold); an air gap × ${c ? '₹' + pn(c.sRsFt3 * 1000, 2) + ' per 1,000 ft³ of air saved (the energy rate on the CFM tab, at the compressor\'s ₹ a unit) on ' + dfmt(c.date) : 'the compressor\'s rupees per ft³ (no reading yet)'}. For the day's run time; pressure is floor-wide and has no figure of its own.`;
+  out.note = `Gap worth: a picks gap × ${pp == null ? 'the realisation per woven pick (not priced here)' : fxPaise(pp) + ' paise of realisation per woven pick, after the folding shortage'} on ${dfmt(date)} (As sold); an air gap × ${c ? '₹' + pn(c.sRsFt3 * 1000, 2) + ' per 1,000 ft³ of air saved (the energy rate on the CFM tab, at the compressor\'s ₹ a unit) on ' + dfmt(c.date) : 'the compressor\'s rupees per ft³ (no reading yet)'}. For the day's run time; pressure is floor-wide and has no figure of its own.`;
   return out;
 }
 // Targets tab (R2; 12 Nov 2026: the realisation target is worked out from the target RPM, not typed): realisation now against
@@ -1742,8 +1820,8 @@ function fxLoomLines(loom, days, recs) {
     for (const hg of hgs) {
       const o = A.byKey.get(d + '|' + loom + '|' + hg);
       rows.push([dfmt(d), hgLink(hg, (R[0] || {}).width, d), o ? fxLakh(o.picks) : '—',
-        o && o.priced ? fxMoney(o.sale) : '—', o && o.priced ? el('span', {}, fxMoney(o.real), el('div', {class: 'note', text: `${fxPaise(o.real_pp)} paise/pick`})) : '—',
-        o && o.profit_lc != null ? el('span', {}, fxMoney(o.profit_lc), el('div', {class: 'note', text: `${fxPaise(o.profit_lc_pp)} paise/pick`})) : (o && o.priced ? el('span', {class: 'note', text: `${o.lc_gap || 'no costing day'}. Next: ${fxLcNext(o.lc_gap || 'no costing day')}`}) : '—'),   // Round A4: loom cost basis
+        o && o.priced ? fxMoney(o.sale) : '—', o && o.priced ? el('span', {}, fxMoney(o.real), el('div', {class: 'note', text: ok(o.real_fp) ? `${fxPaise(o.real_fp)} paise per folded pick` : 'per folded pick: costing not in yet'})) : '—',
+        o && o.profit_lc != null ? el('span', {}, fxMoney(o.profit_lc), el('div', {class: 'note', text: ok(o.profit_lc_pp) ? `${fxPaise(o.profit_lc_pp)} paise per folded pick` : 'per folded pick: costing not in yet'})) : (o && o.priced ? el('span', {class: 'note', text: `${o.lc_gap || 'no costing day'}. Next: ${fxLcNext(o.lc_gap || 'no costing day')}`}) : '—'),   // Round A4: loom cost basis
         !o ? el('span', {class: 'pill muted', text: 'not in the analysis'}) : o.priced ? (o.gaps.length ? el('span', {class: 'pill warn', text: 'partly: ' + o.gaps[0]}) : '') : el('span', {class: 'pill warn', text: o.gaps[0] || 'not priced', style: 'white-space:normal'})]);
     }
   }
@@ -1755,7 +1833,7 @@ function fxLoomLines(loom, days, recs) {
 // (both widths), beside Realisation; the loom panel's is that loom. Owner with the analysis on only.
 const fxLast7 = (end) => fxDays().filter((d) => d <= end).slice(-7);
 function fxSparkTitle(label, S) {
-  return `${label}, paise per pick (As sold): ` + S.map((p) => `${dfmt(p.date)} ${p.real_pp == null ? '— not priced' : fxPaise(p.real_pp) + (p.coverage < 1 - 1e-9 ? ` (${fxPct(p.coverage)} of picks priced)` : '')}`).join(' · ');
+  return `${label}, paise per folded pick (As sold): ` + S.map((p) => `${dfmt(p.date)} ${p.real_fp == null ? (p.nofold ? '— costing not in yet' : '— not priced') : fxPaise(p.real_fp) + (p.coverage < 1 - 1e-9 ? ` (${fxPct(p.coverage)} of picks priced)` : '')}`).join(' · ');
 }
 function fxNavSpark() {
   for (const a of document.querySelectorAll('#sbnav .sb-item[data-tab="realisation"]')) {
@@ -1763,11 +1841,12 @@ function fxNavSpark() {
     if (!box) { box = el('span', {class: 'sb-spark'}); const bd = a.querySelector('.badge'); a.insertBefore(box, bd || null); }
     if (!sub) { const lab = a.querySelector('span:not(.badge):not(.sb-spark)'); sub = el('small', {class: 'sb-sub'}); if (lab) { lab.classList.add('sb-lab'); lab.append(sub); } }
     const A = fxOn() && D ? fxAll() : null;
-    const S = A ? fcRealSeries(A.rows, fxLast7(D.latest)) : [], last = [...S].reverse().find((p) => p.real_pp != null);
-    const show = S.filter((p) => p.real_pp != null).length >= 2;
+    const L7 = A ? fxLast7(D.latest) : [], AR = L7.length ? fxAllAt(L7[0], L7.at(-1)) : null;   // Round A7: the 7 days at their own s
+    const S = AR ? fcRealSeries(AR, L7) : [], last = [...S].reverse().find((p) => p.real_fp != null);
+    const show = S.filter((p) => p.real_fp != null).length >= 2;
     box.hidden = sub.hidden = !show; a.classList.toggle('sb-two', show);
-    box.replaceChildren(...(show ? [spark(S.map((p) => p.real_pp), {aria: `Realisation per pick, whole floor, last ${S.length} days`, title: fxSparkTitle('Realisation per pick, whole floor, both widths', S)})] : []));
-    sub.textContent = show ? `${fxPaise(last.real_pp)} paise/pick` : '';
+    box.replaceChildren(...(show ? [spark(S.map((p) => p.real_fp), {aria: `Realisation per folded pick, whole floor, last ${S.length} days`, title: fxSparkTitle('Realisation per folded pick, whole floor, both widths', S)})] : []));
+    sub.textContent = show ? `${fxPaise(last.real_fp)} p/folded pick` : '';
   }
 }
 // Round A4 (Divyam, 24 Nov 2026): beside it, the loom's profit per pick on the loom cost basis over the same days (its own
@@ -1776,23 +1855,23 @@ function fxLoomSpark(loom, date) {
   if (!fxOn()) return null;
   const A = fxAll(); if (!A) return null;
   const L7 = fxLast7(date); if (!L7.length) return null;
-  const S = fcRealSeries(A.rows, L7, (r) => +r.loom === +loom, false), n = S.filter((p) => p.real_pp != null).length, np = S.filter((p) => p.profit_pp != null).length;
-  const last = [...S].reverse().find((p) => p.real_pp != null), lastP = [...S].reverse().find((p) => p.profit_pp != null);
+  const S = fcRealSeries(fxAllAt(L7[0], L7.at(-1)), L7, (r) => +r.loom === +loom, false), n = S.filter((p) => p.real_fp != null).length, np = S.filter((p) => p.profit_pp != null).length;
+  const last = [...S].reverse().find((p) => p.real_fp != null), lastP = [...S].reverse().find((p) => p.profit_pp != null);
   return el('div', {class: 'fx-lspark'},
-    el('div', {class: 'note', text: n ? `Realisation per pick, last ${S.length} days: ${fxPaise(last.real_pp)} paise on ${dfmt(last.date)}${n < S.length ? ` · ${S.length - n} day${S.length - n === 1 ? '' : 's'} not priced (gap in the line)` : ''}` : `Realisation per pick, last ${S.length} days: no day priced (see Coverage on the Realisation tab)`}),
-    n >= 2 ? spark(S.map((p) => p.real_pp), {aria: `Realisation per pick, loom ${loom}, last ${S.length} days`, title: fxSparkTitle(`Loom ${loom}`, S)}) : null,
-    el('div', {class: 'note', text: np ? `Profit per pick (loom cost), last ${S.length} days: ${fxPaise(lastP.profit_pp)} paise on ${dfmt(lastP.date)}${np < S.length ? ` · ${S.length - np} day${S.length - np === 1 ? '' : 's'} with no loom cost profit (gap in the line)` : ''}` : `Profit per pick (loom cost), last ${S.length} days: no day with a loom cost profit (a costing day, loom data and a CFM reading are needed: see Files per day on Data health)`}),
-    np >= 2 ? spark(S.map((p) => p.profit_pp), {aria: `Profit per pick on the loom cost basis, loom ${loom}, last ${S.length} days`, title: `Loom ${loom}, profit per pick (loom cost): ` + S.map((p) => `${dfmt(p.date)} ${p.profit_pp == null ? '—' : fxPaise(p.profit_pp)}`).join(' · ')}) : null);
+    el('div', {class: 'note', text: n ? `Realisation per folded pick, last ${S.length} days: ${fxPaise(last.real_fp)} paise on ${dfmt(last.date)}${n < S.length ? ` · ${S.length - n} day${S.length - n === 1 ? '' : 's'} not priced or costing not in yet (gap in the line)` : ''}` : `Realisation per folded pick, last ${S.length} days: no day priced with its costing in (see Coverage on the Realisation tab)`}),
+    n >= 2 ? spark(S.map((p) => p.real_fp), {aria: `Realisation per folded pick, loom ${loom}, last ${S.length} days`, title: fxSparkTitle(`Loom ${loom}`, S)}) : null,
+    el('div', {class: 'note', text: np ? `Profit per folded pick (loom cost), last ${S.length} days: ${fxPaise(lastP.profit_pp)} paise on ${dfmt(lastP.date)}${np < S.length ? ` · ${S.length - np} day${S.length - np === 1 ? '' : 's'} with no loom cost profit (gap in the line)` : ''}` : `Profit per folded pick (loom cost), last ${S.length} days: no day with a loom cost profit (a costing day, loom data and a CFM reading are needed: see Files per day on Data health)`}),
+    np >= 2 ? spark(S.map((p) => p.profit_pp), {aria: `Profit per folded pick on the loom cost basis, loom ${loom}, last ${S.length} days`, title: `Loom ${loom}, profit per folded pick (loom cost): ` + S.map((p) => `${dfmt(p.date)} ${p.profit_pp == null ? '—' : fxPaise(p.profit_pp)}`).join(' · ')}) : null);
 }
 // Benchmarks quality list (Round C, backlog 5): the head group's realisation per pick on the latest day, under its RPM and
 // air. "—" = not priced that day (a gap, never 0); owner with the analysis on only.
 function fxBenchListLine(w, hg) {
   if (!fxOn()) return null;
-  if (!fxAll()) return [el('br'), 'paise/pick …'];
+  if (!fxAll()) return [el('br'), 'p/folded pick …'];
   const h = hg === 'Unassigned' ? null : fxHgPp(D.latest, w, hg);
-  return [el('br'), el('span', {class: h ? 'qreal' : null, title: h ? `Realisation per pick on ${dfmt(D.latest)}, As sold${h.coverage < 1 - 1e-9 ? ` · ${fxPct(h.coverage)} of picks priced` : ''}` : `Not priced on ${dfmt(D.latest)}: see Coverage on the Realisation tab`, text: h ? `${fxPaise(h.real_pp)} paise/pick` : 'not priced'})];
+  return [el('br'), el('span', {class: h ? 'qreal' : null, title: h ? `Realisation per folded pick on ${dfmt(D.latest)}, As sold${h.coverage < 1 - 1e-9 ? ` · ${fxPct(h.coverage)} of picks priced` : ''}${ok(h.real_fp) ? '' : ': the day\'s costing is not in yet'}` : `Not priced on ${dfmt(D.latest)}: see Coverage on the Realisation tab`, text: h ? (ok(h.real_fp) ? `${fxPaise(h.real_fp)} p/folded pick` : 'costing not in') : 'not priced'})];
 }
-const fxBenchListNote = () => fxOn() ? el('p', {class: 'note', text: `paise/pick = realisation per pick on ${dfmt(D.latest)}, As sold (from the Realisation tab). "not priced": nothing of that quality was priced that day; see Coverage on the Realisation tab.`}) : null;
+const fxBenchListNote = () => fxOn() ? el('p', {class: 'note', text: `p/folded pick = realisation per A-grade folded pick on ${dfmt(D.latest)}, As sold (from the Realisation tab); "costing not in": that day's costing file is not read yet (Next: ${tcNext()}). "not priced": nothing of that quality was priced that day; see Coverage on the Realisation tab.`}) : null;
 // Search (R2): fabric names, for the owner with the analysis on. A hit opens the product's loom-days (its own waterfall
 // and coverage) for the Realisation tab's period, or Fabric masters while the masters are still loading.
 function fxSearchHits(q) {
