@@ -626,3 +626,7 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
 .prio-co{margin:2px 0 4px}
 .actblk{padding:8px 0;border-top:1px solid var(--line)}.actblk.tot{font-weight:600}.actblk-h{margin-bottom:2px}
 .actblk-b{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:13px;font-variant-numeric:tabular-nums}
+
+/* Round A8: the Quality period bar's week line, the count of head groups worse (pointing on a laptop, shown under the line on a phone) */
+.onph{display:none}
+@media (max-width:560px){.onph{display:block;margin-top:2px}}

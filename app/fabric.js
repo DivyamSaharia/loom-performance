@@ -1003,13 +1003,14 @@ function fxSlotRefs(d, s, w, hg, m) {
 }
 // Quality tab heat grid (12 Nov 2026): loom realisation per loom per day and in total for the day, each against the same
 // figure at the reference effective RPM (benchmark, best or target, as the grid's switch). Owner only; gaps never ₹0.
-function fxHeatReal(date, w, hg, mode) {
+function fxHeatReal(P0, w, hg, mode) {
   if (!fxOn()) return null;
+  const P = fxP(P0), date = P.to, one = fxOne(P), inD = one ? 'on this day' : 'in this period';   // Round A8: a day or the Quality bar's period
   if (!fxAll()) return [{none: '…', tip: 'Loading the realisation analysis'}, {none: '…', tip: 'Loading the realisation analysis'}];
-  const h = hg === 'Unassigned' ? null : fxHgPp(date, w, hg);
-  if (!h) { const t = `${hg}, ${w} cm · Loom realisation\nCurrent: not priced (no priced loom-day for this head group on this day)\nNext: see Coverage on the Realisation tab`; return [{none: 'not priced', tip: t}, {none: 'not priced', tip: t}]; }
+  const h = hg === 'Unassigned' ? null : fxHgPer(P, w, hg);
+  if (!h) { const t = `${hg}, ${w} cm · Loom realisation\nCurrent: not priced (no priced loom-day for this head group ${inD})\nNext: see Coverage on the Realisation tab`; return [{none: 'not priced', tip: t}, {none: 'not priced', tip: t}]; }
   const name = {bm: 'benchmark', best: 'best', tg: 'target'}[mode];
-  const R = fxRefLd(fxDayRows(date), w, hg, fxRefErpm(w, hg, mode));
+  const R = fxRefLd(fxPerRows(P), w, hg, fxRefErpm(w, hg, mode));
   const cov = h.coverage < 1 - 1e-9 ? ` · ${fxPct(h.coverage)} of picks priced` : '';
   // 13 Nov 2026 (Divyam): each cell shows the gap in rupees (− deficit in red, + surplus in green), not the figure itself.
   const Gp = fcRealGap(h.real_ld, R && R.ld, h.T.priced_ld);
@@ -1023,7 +1024,7 @@ function fxHeatReal(date, w, hg, mode) {
       onClick: () => openHg(hg, w, date)};
   };
   if (typeof wkPut === 'function' && !WKD.C4 && R && Gp && Gp.tot != null) wkPut('C4', {hg, now: h.T.real, at: R.ld * h.T.priced_ld, ref: name});   // Round J: the first head group with a reference
-  return [cell(h.real_ld, R && R.ld, Gp && Gp.ld, 'realisation per loom-day'), cell(h.T.real, R && R.ld * h.T.priced_ld, Gp && Gp.tot, 'realisation in the day')];
+  return [cell(h.real_ld, R && R.ld, Gp && Gp.ld, 'realisation per loom-day'), cell(h.T.real, R && R.ld * h.T.priced_ld, Gp && Gp.tot, one ? 'realisation in the day' : `realisation in the period (${h.T.priced_ld} priced loom-days, ${fxSTxt(h.T.S || (fxPerRows(P) || {}).S, true)})`)];
 }
 // The analysis rows as they would be had every loom-day run at its head group's benchmark, best or target effective RPM
 // (Divyam, 12 Nov 2026, second round): each loom-day's picks become that effective RPM × its own run + stop minutes × panna
@@ -1151,8 +1152,21 @@ const fxLd = (date, loom, hg) => { const A = fxAll(); return A ? A.byKey.get(dat
 // Rupees of realisation for a number of picks (costing basis) on one loom-day: null when that loom-day is not priced.
 const fxPicksRs = (date, loom, hg, picks) => { const o = fxLd(date, loom, hg); return o && o.real_pp != null ? picks * o.real_pp / 100 : null; };
 // The realisation per pick of a head group on a day (all its priced looms), or null.
-function fxHgPp(date, w, hg) {
-  const rows = fxDayRows(date); if (!rows) return null;
+function fxHgPp(date, w, hg) { const rows = fxDayRows(date); return rows ? fxHgOf(rows, w, hg) : null; }
+// Round A8 (Divyam, 25 Nov 2026): the Quality period bar. A period's analysis rows (from..to) at the period's folded-basis s
+// (fxAllAt: the date chip's s within its month, the picks-weighted s across months), cut to the period; Last day gives the
+// same rows as fxDayRows. Cached with fxAll.
+function fxPerRows(P) {
+  const A = fxAll(); if (!A) return null;
+  if (!A.per) A.per = new Map();
+  const k = P.from + '|' + P.to;
+  if (!A.per.has(k)) { const R0 = fxAllAt(P.from, P.to), R = R0.filter((r) => r.date >= P.from && r.date <= P.to); R.S = R0.S; R.lday = R0.lday || A.rows.lday; A.per.set(k, R); }
+  return A.per.get(k);
+}
+const fxHgPer = (P, w, hg) => { const rows = fxPerRows(P); return rows ? fxHgOf(rows, w, hg) : null; };
+const fxP = (P) => typeof P === 'string' ? {from: P, to: P} : P;   // a day, or a period {from, to}
+const fxOne = (P) => P.from === P.to;
+function fxHgOf(rows, w, hg) {
   const R = rows.filter((r) => r.hg === hg && r.width === String(w)), t = fcSum(R), tl = fcSum(R, false);
   // Round A4 (Divyam, 24 Nov 2026): profit on the loom cost basis (By head group's figure: priced rows only, never U), and the
   // margin over loom cost: realisation above the loom cost of the loom-days with a loom cost profit
@@ -1167,11 +1181,12 @@ function fxHgPp(date, w, hg) {
 // Advisory round (24 Nov 2026): the next step for a loom cost profit gap. A missing costing day, loom data or CFM reading is put right in
 // Files per day on Data health; a day on which no loom ran needs another day; the fabric records lag the loom data (Coverage).
 const fxLcNext = (why) => why === 'no loom ran' ? 'pick another day with the date chip' : why === 'no fabric data for the day' ? 'see Coverage on the Realisation tab' : 'see Files per day on Data health';
-function fxHgCells(date, w, hg, mode) {
+function fxHgCells(P0, w, hg, mode) {
   if (!fxOn()) return null;
   if (!fxAll()) return [el('td', {class: 'num'}, el('span', {class: 'note', text: '…'})), el('td', {class: 'num'})];
-  const h = hg === 'Unassigned' ? null : fxHgPp(date, w, hg);
-  if (!h) return [el('td', {class: 'num'}, el('span', {class: 'pill muted', text: 'not priced', title: 'No priced loom-day for this head group on this day: see Coverage on the Realisation tab'})), el('td', {class: 'num'})];
+  const P = fxP(P0), inD = fxOne(P) ? 'on this day' : 'in this period';   // Round A8: a day or the Quality bar's period
+  const h = hg === 'Unassigned' ? null : fxHgPer(P, w, hg);
+  if (!h) return [el('td', {class: 'num'}, el('span', {class: 'pill muted', text: 'not priced', title: `No priced loom-day for this head group ${inD}: see Coverage on the Realisation tab`})), el('td', {class: 'num'})];
   const marg = h.margin == null ? null : el('span', {class: 'pill ' + (h.margin >= 0 ? 'good' : 'bad'), title: 'Margin over loom cost: the realisation above the loom cost of the loom-days with a loom cost profit, as a % of that loom cost', text: `${h.margin >= 0 ? '+' : '−'}${Math.abs(h.margin * 100).toFixed(0)}% over loom cost`});
   const nm = {bm: 'benchmark', best: 'best', tgt: 'target'}[mode] || 'benchmark', RR = h.profit_ld == null ? null : fxRefRows(h.R, mode === 'tgt' ? 'tg' : mode || 'bm'), ref = RR ? fcSum(RR.rows, false) : null;
   const miss = RR && RR.miss ? ` · ${RR.miss} loom-day${RR.miss === 1 ? '' : 's'} with no ${nm} effective RPM or minutes left out` : '';
@@ -1183,15 +1198,17 @@ function fxHgCells(date, w, hg, mode) {
 }
 // Quality, Current vs reference (13 Nov 2026): total loom realisation = looms ran × the head group's realisation per loom-day.
 // Unpriced looms are not guessed: with fewer priced, the cell shows the priced looms' total and says how many.
-function fxHgTotalCell(date, w, hg, looms) {
+// Round A8: over a period, looms = the period's loom-days that ran (60 min or more) and the total is loom-days × ₹ per loom-day.
+function fxHgTotalCell(P0, w, hg, looms) {
   if (!fxOn()) return null;
   if (!fxAll()) return el('td', {class: 'num'}, el('span', {class: 'note', text: '…'}));
-  const h = hg === 'Unassigned' ? null : fxHgPp(date, w, hg), T = h ? fcLoomTotal(looms, h.real_ld, h.T.priced_ld) : null;
-  if (!T) return el('td', {class: 'num'}, el('span', {class: 'pill muted', text: 'not priced', title: 'No priced loom-day for this head group on this day: see Coverage on the Realisation tab'}));
+  const P = fxP(P0), one = fxOne(P), u = one ? 'looms' : 'loom-days';
+  const h = hg === 'Unassigned' ? null : fxHgPer(P, w, hg), T = h ? fcLoomTotal(looms, h.real_ld, h.T.priced_ld) : null;
+  if (!T) return el('td', {class: 'num'}, el('span', {class: 'pill muted', text: 'not priced', title: `No priced loom-day for this head group ${one ? 'on this day' : 'in this period'}: see Coverage on the Realisation tab`}));
   if (typeof wkPut === 'function' && !WKD.C2) wkPut('C2', {hg, looms, ld: h.real_ld, priced: T.priced, full: T.full});   // Round J: the first priced head group
   if (typeof wkPut === 'function' && !WKD.C3 && h.margin != null) wkPut('C3', {hg, real: h.realC, conv: h.conv});
   return el('td', {class: 'num', 'data-sort': String(Math.round(T.rs))}, el('div', {class: 'mv'}, el('div', {class: 'v', text: fxMoney(T.rs)}),
-    el('div', {class: 'ref', text: T.full ? `${looms} × ${fxMoney(h.real_ld)}` : `${T.priced} of ${looms} looms priced`, title: T.full ? null : 'Only the priced looms are counted; the rest are a gap in the realisation analysis, not guessed'})));
+    el('div', {class: 'ref', text: T.full ? `${looms} × ${fxMoney(h.real_ld)}` : `${T.priced} of ${looms} ${u} priced`, title: T.full ? null : `Only the priced ${u} are counted; the rest are a gap in the realisation analysis, not guessed`})));
 }
 // A money cell beside an existing figure: rupees, or a "not priced" pill (a gap, never ₹0); '…' while the masters load.
 function fxRsCell(rs, o) {
@@ -1415,12 +1432,10 @@ function fxFoldIn(date) {
 // picks × (reference effective RPM × its run + stop minutes × panna ÷ 39.37 ÷ its picks), the loom cost held, B grade and
 // cut piece picks scaled. The cell is the % gap (lower is better); pointing shows both figures. mode 'bm' | 'best' | 'tg'.
 let FXFQ = null;
-function fxHeatFold(date, w, hg, mode) {
-  if (!fxOn()) return null;
-  const A = fxAll(), head = `${hg}, ${w} cm · Folded cost per pick (loom cost method)`;
-  if (!A) return {none: '…', tip: 'Loading the realisation analysis'};
-  if (hg === 'Unassigned') return {none: 'no head group', tip: `${head}\nNext: assign a head group (Needs a head group on Actions).`};
-  const key = date + '|' + mode;
+// One day of the grid's Folded cost column (cached per fxAll): fcFoldByQuality now and at the reference, at the day's own
+// month-to-date folding shortage (Round A8 answer 3 b: over a period each day keeps its own). → {s, now, ref} or {s: null}.
+function fxFqDay(date, mode) {
+  const A = fxAll(), key = date + '|' + mode;
   if (!FXFQ || FXFQ.A !== A) FXFQ = {A, m: new Map()};
   if (!FXFQ.m.has(key)) {
     const {reg, s, fold, pick} = fxFoldIn(date), M = fxMinutes(), P = (r) => r.synth ? (r.lpicks || 0) : (r.picks || 0);
@@ -1430,7 +1445,15 @@ function fxHeatFold(date, w, hg, mode) {
       return !ok(e) ? null : min > 0 && p > 0 ? e * min * pf(r.width, r.hg) / FC_PICKS_PER_INCH / p : 1; };   // no picks or no minutes: nothing to re-work, it stays as it is
     FXFQ.m.set(key, ok(s) ? {s, now: fcFoldByQuality(pick(date), reg, fold, s, date, date), ref: fcFoldByQuality(pick(date), reg, fold, s, date, date, scale)} : {s: null});
   }
-  const F = FXFQ.m.get(key), name = {bm: 'benchmark', best: 'best', tg: 'target'}[mode], Nm = name.charAt(0).toUpperCase() + name.slice(1);
+  return FXFQ.m.get(key);
+}
+function fxHeatFold(P0, w, hg, mode) {
+  if (!fxOn()) return null;
+  const A = fxAll(), head = `${hg}, ${w} cm · Folded cost per pick (loom cost method)`, P = fxP(P0), date = P.to;
+  if (!A) return {none: '…', tip: 'Loading the realisation analysis'};
+  if (hg === 'Unassigned') return {none: 'no head group', tip: `${head}\nNext: assign a head group (Needs a head group on Actions).`};
+  if (!fxOne(P)) return fxHeatFoldPer(P, w, hg, mode, head);
+  const F = fxFqDay(date, mode), name = {bm: 'benchmark', best: 'best', tg: 'target'}[mode], Nm = name.charAt(0).toUpperCase() + name.slice(1);
   if (!ok(F.s)) return {none: 'no shortage', tip: `${head}\nNo folding shortage for this month yet (no costing day has all its figures), so no A-grade folded picks to divide by.\nNext: ${tcNext()}.`};
   const out = F.now.out.find((o) => o.date === date);
   if (out) return {none: 'no figure', tip: `${head}\n${dfmt(date)} has no figure: ${out.why}.\nNext: ${tcNext()}.`};
@@ -1448,6 +1471,42 @@ function fxHeatFold(date, w, hg, mode) {
   return {text: txt, level: heatLevel(G.p), tone: Math.abs(G.p) < 0.05 ? 'none' : G.worse ? 'bad' : 'good',
     tip: `${head}\n${cur}\n${Nm} (each loom at its ${name} effective RPM, the loom cost held): ${pn(r.pp, 2)} paise (${txt})${lo}\nClick to open the head group.`,
     onClick: () => openHg(hg, w, date)};
+}
+// Round A8 (Divyam, 25 Nov 2026, answers 2 a and 3 b): the grid's Folded cost cell over a period: Σ the days' cost ÷ Σ their
+// A-grade folded picks, each day at its own month-to-date folding shortage, against the same loom-days re-worked at the
+// reference effective RPM day by day (fcFoldPool). A day with no figure is left out and named; the rest stands.
+function fxHeatFoldPer(P, w, hg, mode, head) {
+  const name = {bm: 'benchmark', best: 'best', tg: 'target'}[mode], Nm = name.charAt(0).toUpperCase() + name.slice(1);
+  const days = fxDays().filter((d) => d >= P.from && d <= P.to).map((d) => { const F = fxFqDay(d, mode);
+    if (!ok(F.s)) return {date: d, why: 'no folding shortage for its month yet'};
+    const o = F.now.out.find((x) => x.date === d); return o ? {date: d, why: o.why} : {date: d, F: F.now, R: F.ref}; });
+  const g = fcFoldPool(days, hg + '|' + String(w)), outT = (L) => L.length ? `\n${L.length} day${L.length === 1 ? '' : 's'} left out (no figure): ${L.map((o) => `${dfmt(o.date)} (${o.why})`).join(', ')}. Next: ${tcNext()}.` : '';
+  if (!g || !ok(g.pp)) return {none: g && g.noair && !g.days.length ? 'no CFM reading' : 'no figure', tip: `${head}\n${g && g.days.length ? 'B grade and cut pieces took more than its folded share over the period' : 'No day of the period has a folded cost for this head group'}${g ? outT(g.out) : ''}${g && g.noair ? `\n${g.noair} loom-day${g.noair === 1 ? '' : 's'} left out: no CFM reading.` : ''}\nNext: ${g && g.days.length ? `check those days' B grade and cut piece figures; ${tcNext()}` : 'see Coverage on the Realisation tab'}.`};
+  const lo = (g.noair ? `\n${g.noair} loom-day${g.noair === 1 ? '' : 's'} left out: no CFM reading (its compressor part is not known). Next: ${tcNext()}.` : '') + outT(g.out);
+  const cur = `Current: ${pn(g.pp, 2)} paise over ${g.days.length} day${g.days.length === 1 ? '' : 's'} (each day at its own month-to-date folding shortage)`;
+  if (!g.ref || !ok(g.ref.pp)) return {none: `no ${name}`, tip: `${head}\n${cur}\n${Nm}: none (no ${name} effective RPM to compare with)\n${mode === 'tg' ? 'Next: set its target RPM on Targets.' : `Next: the ${name} comes with more loom-days of this head group; meanwhile use another reference above the grid.`}${lo}`};
+  const G = gapPct(g.pp, g.ref.pp, false), txt = `${Math.abs(G.p) < 0.05 ? '±' : G.p > 0 ? '+' : '−'}${Math.abs(G.p).toFixed(1)}%`;
+  if (typeof wkPut === 'function' && !WKD.C5) wkPut('C5', {hg: `${hg}, ${w} cm`, now: g.pp, ref: g.ref.pp, name, cost: g.cost, A: g.A, rcost: g.ref.cost, rA: g.ref.A});
+  return {text: txt, level: heatLevel(G.p), tone: Math.abs(G.p) < 0.05 ? 'none' : G.worse ? 'bad' : 'good',
+    tip: `${head}\n${cur}\n${Nm} (each loom at its ${name} effective RPM, the loom cost held, day by day): ${pn(g.ref.pp, 2)} paise (${txt})${lo}\nClick to open the head group.`,
+    onClick: () => openHg(hg, w, P.to)};
+}
+// Round A8 (scope items 2 and 3): Folded cost per pick by quality's figures for one day and its month to date, in one place
+// for the Actions view, the head group panel and Costing's Production by quality head group. all: All widths (fcFqAll).
+// Cached per analysis load, targets and set point (the month-to-date target runs Target cost per pick once a costing day).
+// → {A, fs, s, reg, fold, pick, m0, Fd, Fm, Td, Tm}; {A: null} while the masters load; Fd… missing when s is not known.
+let FXFQD = null;
+function fxFqData(date, all) {
+  const A = fxAll(); if (!A) return {A: null};
+  const sig = JSON.stringify([typeof TG !== 'undefined' ? TG : null, typeof COMP_SP !== 'undefined' ? COMP_SP : null, typeof SP_HIST !== 'undefined' && SP_HIST ? SP_HIST.length : null]);
+  if (!FXFQD || FXFQD.A !== A || FXFQD.sig !== sig) FXFQD = {A, sig, m: new Map()};
+  const k = date + '|' + (all ? 'all' : 'w');
+  if (FXFQD.m.has(k)) return FXFQD.m.get(k);
+  const key = all ? fcFqAll : undefined, {reg, fs, s, fold, pick} = fxFoldIn(date), Q = {A, fs, s, reg, fold, pick};
+  if (ok(s)) { const m0 = date.slice(0, 7) + '-01';
+    Object.assign(Q, {m0, Fd: fcFoldByQuality(pick(date), reg, fold, s, date, date, null, key), Fm: fcFoldByQuality(pick(m0), reg, fold, s, m0, date, null, key),
+      Td: fxTgtFoldQ(date, date, s, key), Tm: fxTgtFoldQ(m0, date, s, key)}); }
+  FXFQD.m.set(k, Q); return Q;
 }
 // Round A6 (Divyam, 25 Nov 2026, answer 1 b): the view by width (each quality on its width, as before) or all widths
 // together (a quality across both widths by its head group's Style-map root, fcFqAll). A choice only, kept with lsSet.
@@ -1477,18 +1536,17 @@ const fxTnext = (g) => { const w = Object.keys(g.why || {}), t = w.some((x) => x
   return t && o ? `set its targets on Targets; for the rest, ${tcNext()}` : t ? 'set its targets on Targets' : tcNext(); };
 function fxFoldQCard() {
   if (!fxOn() || !COST) return null;
-  const all = FXFQW === 'all', key = all ? fcFqAll : undefined;
+  const all = FXFQW === 'all';
   const title = ACTV.fq[0], A = fxAll(), sub = `${dfmt(D.latest)} and month to date · ${all ? 'all widths together' : 'by width'} · loom cost method`;
   if (!A) return card(title, sub, el('p', {class: 'note', text: 'Loading the fabric masters… If this stays, press Refresh (the round arrow).'}));
-  const {reg, fs, s, fold, pick} = fxFoldIn(D.latest);
+  const Q = fxFqData(D.latest, all), {fs, s} = Q;   // Round A8: one source with the head group panel and Costing
   const b = (v, t) => el('button', {type: 'button', 'aria-pressed': FXFQW === v ? 'true' : 'false', text: t, onclick: () => { FXFQW = v; lsSet('w2-act-fq-width', v); render(); }});
   const bar = el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Loom width'}, b('w', 'By width'), b('all', 'All widths')),
     el('span', {class: 'note', text: all ? 'each quality across both widths (its head group\'s Style-map name), whatever its fabric name on each width' : 'each quality on its own width, with a row for each width'}));
   if (!ok(s)) return card(title, sub, bar, el('p', {class: 'empty', text: `No folding shortage for this month yet (no costing day has all its figures), so there is no A-grade folded picks figure to divide by. Next: ${tcNext()}.`}));
-  const m0 = D.latest.slice(0, 7) + '-01', Fd = fcFoldByQuality(pick(D.latest), reg, fold, s, D.latest, D.latest, null, key), Fm = fcFoldByQuality(pick(m0), reg, fold, s, m0, D.latest, null, key);
+  const {Fd, Fm, Td, Tm} = Q;
   const mOf = new Map([...Fm.groups, ...Fm.widths, Fm.all].map((g) => [g.key, g]));
   // Round A6: the targets, the day and month to date, on the same grouping
-  const Td = fxTgtFoldQ(D.latest, D.latest, s, key), Tm = fxTgtFoldQ(m0, D.latest, s, key);
   const tOf = (T) => new Map(T.T ? [...T.T.groups, ...T.T.widths, T.T.all].map((g) => [g.key, g]) : []), tdOf = tOf(Td), tmOf = tOf(Tm);
   // Round A4 (Divyam, 24 Nov 2026, answer 1 a): a loom-day with no CFM reading is left out of its quality and named; the rest stands
   const lo = (g) => g.noair ? ` · ${g.noair} loom-day${g.noair === 1 ? '' : 's'} left out` : '';
@@ -1536,6 +1594,70 @@ function fxLoomRealCell(x) {
   const o = fxLd(x.date, x.loom, x.hg);
   if (!o || o.real_pp == null) return fxRsCell(null);   // Round A7: per A-grade folded pick, a gap until the day's costing is in
   return el('div', {class: 'mv'}, el('div', {class: 'v', text: fxMoney(o.real)}), el('div', {class: 'ref', text: `${ok(o.real_fp) ? fxPaise(o.real_fp) + ' p/folded pick' : 'per folded pick: costing not in yet'}${o.priced < o.picks - 1e-9 ? ` · ${fxPct(o.priced / o.picks)} priced` : ''}`}));
+}
+// Round A8: a loom's own realisation over the Quality bar's period (its drill-down), at the period's s; a gap never ₹0.
+function fxLoomRealPer(P, x) {
+  const rows = fxPerRows(P); if (!rows) return fxRsCell(null);
+  const t = fcSum(rows.filter((r) => r.loom === x.loom && r.hg === x.hg && r.width === String(x.width)));
+  if (!t.priced) return fxRsCell(null);
+  return el('div', {class: 'mv'}, el('div', {class: 'v', text: fxMoney(t.real)}), el('div', {class: 'ref', text: `${ok(t.real_fp) ? fxPaise(t.real_fp) + ' p/folded pick' : 'per folded pick: costing not in yet'}${t.coverage < 1 - 1e-9 ? ` · ${fxPct(t.coverage)} priced` : ''}`}));
+}
+// Round A8 (scope item 2): the head group panel's owner block. Folded cost per pick and its target for the panel's day and
+// month to date, on its width (fxFqData, the Actions view's figures), the loom-days left out of either, and the All widths
+// figure when the quality runs on both widths (by its head group's Style-map name). Owner only; a gap is "—" with its reason.
+const fxFqDash = (t) => el('span', {class: 'note', text: '— ' + t});
+function fxFqCost(g, Q, date) {
+  const o = Q.Fd && date && Q.Fd.out.find((x) => x.date === date);
+  if (o) return fxFqDash(`${o.why}. Next: ${tcNext()}`);
+  if (!g) return fxFqDash('did not run with a loom cost. Next: see Coverage on the Realisation tab');
+  return ok(g.pp) ? el('span', {}, pn(g.pp, 2), g.noair ? el('div', {class: 'note', text: `${g.noair} loom-day${g.noair === 1 ? '' : 's'} left out: no CFM reading`}) : null)
+    : fxFqDash(g.noair && !(g.ld > 0) ? `no CFM reading. Next: ${tcNext()}` : `no A-grade picks left. Next: check the day's B grade and cut piece figures; ${tcNext()}`);
+}
+function fxFqTgt(g, T) {
+  if (!g) return fxFqDash(T && T.out.length && !T.days.length ? `${T.out[0].why}. Next: ${tcNext()}` : `no target. Next: ${tcNext()}`);
+  return ok(g.pp) ? el('span', {}, pn(g.pp, 2), g.lo ? el('div', {class: 'note', text: `${g.lo} loom-day${g.lo === 1 ? '' : 's'} left out (${fxTwhy(g)})`}) : null)
+    : fxFqDash(g.lo && !(g.ld > 0) ? `no target (${fxTwhy(g)}). Next: ${fxTnext(g)}` : `no target A-grade picks. Next: ${tcNext()}`);
+}
+const fxFqFind = (F, k) => F ? (F.groups || []).find((g) => g.key === k) || null : null;
+const fxFqTFind = (T, k) => T && T.T ? (T.T.groups || []).find((g) => g.key === k) || null : null;
+function fxHgFoldBlock(hg, w, date) {
+  if (!fxOn() || !COST || !hg || hg === 'Unassigned') return null;
+  const title = 'Folded cost per pick', sub = `${dfmt(date)} and month to date · ${w} cm · loom cost method`;
+  const Q = fxFqData(date, false);
+  if (!Q.A) return card(title, sub, el('p', {class: 'note', text: 'Loading the fabric masters… If this stays, press Refresh (the round arrow).'}));
+  const open = el('button', {class: 'link', type: 'button', text: 'Open Folded cost per pick by quality ›', onclick: () => { closePanel(); FXFQW = 'w'; ACTOPEN = 'fq'; setTab('actions'); }});
+  const chip = date !== D.latest ? el('p', {class: 'note', text: `The view opens on the date chip's day, ${dfmt(D.latest)}; pick ${dfmt(date)} with the date chip at the top of the page to see this day there.`}) : null;
+  if (!ok(Q.s)) return card(title, sub, el('p', {class: 'empty', text: `No folding shortage for this month yet (no costing day has all its figures), so there is no A-grade folded picks figure to divide by. Next: ${tcNext()}.`}), open);
+  const k = hg + '|' + w, gd = fxFqFind(Q.Fd, k), gm = fxFqFind(Q.Fm, k), td = fxFqTFind(Q.Td, k), tm = fxFqTFind(Q.Tm, k);
+  const Qa = fxFqData(date, true), inA = (F) => F ? F.groups.find((g) => (g.names || []).includes(hg) && (g.ws || []).includes(w) && g.ws.length > 1) || null : null;
+  const ga = inA(Qa.Fd) || inA(Qa.Fm), K = ga && ga.key, ad = fxFqFind(Qa.Fd, K), am = fxFqFind(Qa.Fm, K), at = fxFqTFind(Qa.Td, K), atm = fxFqTFind(Qa.Tm, K);
+  const v = (g) => g && ok(g.pp) ? pn(g.pp, 2) : 'no figure';
+  return card(title, sub,
+    table(['', ['The day', 'paise'], ['Month to date', 'paise']], [['Folded cost per pick', fxFqCost(gd, Q, date), fxFqCost(gm, Q, null)], ['Target folded cost', fxFqTgt(td, Q.Td), fxFqTgt(tm, Q.Tm)]], [1, 2]),
+    ga ? el('p', {class: 'note', text: `All widths (${(ga.names || []).join(' / ')}, ${ga.ws.join(' and ')} cm together by its Style-map name): ${v(ad)} paise the day, ${v(am)} month to date; target ${v(at)} the day, ${v(atm)} month to date.`}) : null,
+    el('p', {class: 'note', text: `Loom cost + its own B grade ÷ its A-grade folded picks, with the folding shortage applied equally to every quality (${(100 * Q.s).toFixed(1)}%, month to date). Target: at target CFM, best main pressure and target effective RPM, with no B grade and no cut pieces. A loom-day left out is named, never counted as 0.`}),
+    Q.Fm.out.length ? el('p', {class: 'note', text: `Left out of the month to date (never counted as 0): ${Q.Fm.out.map((o) => `${dfmt(o.date)} (${o.why})`).join(', ')}. Next: ${tcNext()}.`}) : null,
+    open, chip);
+}
+// Round A8 (scope item 3): Costing's Production by quality head group, the owner's columns. Each costing head group is
+// matched to the loom data's quality across both widths by its Style-map name (hg0, fcFqAll), case and spaces aside; a name
+// with no match shows "—" and is named under the table. mtd: the month to date figures, else the day's. Owner only.
+const fxNm = (t) => String(t || '').trim().replace(/\s+/g, ' ').toUpperCase();
+function fxCostFq(date, mtd) {
+  if (!fxOn() || !COST) return null;
+  const Q = fxFqData(date, true);
+  if (!Q.A) return {cells: () => ['…', '…'], miss: []};
+  if (!ok(Q.s)) return {cells: () => [fxFqDash(`no folding shortage this month yet. Next: ${tcNext()}`), fxFqDash('no folding shortage this month yet')], miss: []};
+  const F = mtd ? Q.Fm : Q.Fd, T = mtd ? Q.Tm : Q.Td, by = new Map(), miss = [];
+  const G = [...Q.Fm.groups, ...((Q.Tm.T || {}).groups || [])];
+  for (const g of G) if (!by.has(fxNm(g.hg))) by.set(fxNm(g.hg), g.key);   // the Style-map name (hg0) first
+  for (const g of G) for (const n of g.names || []) if (!by.has(fxNm(n))) by.set(fxNm(n), g.key);   // then its head groups' shown names
+  return {miss, cells: (name) => {
+    if (name === 'Unassigned') return [fxFqDash('no head group. Next: give its looms one under Needs a head group on Actions'), fxFqDash('no head group')];
+    const k = by.get(fxNm(name));
+    if (!k) { if (!miss.includes(name)) miss.push(name); return [fxFqDash('no match'), fxFqDash('no match')]; }
+    return [fxFqCost(fxFqFind(F, k), Q, mtd ? null : date), fxFqTgt(fxFqTFind(T, k), T)];
+  }};
 }
 // Costing tab (R2): the profit layer. Realisation per pick against cost per pick by day, with the B grade loss per good
 // pick and profit per pick, on the Cost per pick chart's own period (dayChart 'cpp'); and the closing stock valued at the

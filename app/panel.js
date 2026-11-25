@@ -257,6 +257,7 @@ function hgView(hg, w, date) {
       other.map((ow) => el('button', {class: 'ghost', type: 'button', text: `Same quality on ${ow} cm`, onclick: () => openHg(hg, ow, date)})),
       el('button', {class: 'link', type: 'button', text: 'Open in Benchmarks tab ›', onclick: () => { BQ = key(w, hg); closePanel(); setTab('benchmarks'); }})),
     card('Benchmark, best and target', `Day figures from looms that ran at least 60 min on ${dfmt(date)}`, benchSummary(w, hg, A, `${dfmt(date)}, all looms`, {date})),
+    typeof fxHgFoldBlock === 'function' ? fxHgFoldBlock(hg, w, date) : null,   // Round A8 (scope item 2): owner only
     card(`Looms running ${hg} on ${dfmt(date)} · ${new Set(L.map((x) => x.loom)).size}`, 'Each loom against the head group benchmark and target',
       L.length ? loomTable(L) : el('div', {class: 'empty', text: 'No loom ran this quality on this day.'})),
     hg !== 'Unassigned' ? panelTrend({kind: 'hg', w, hg}) : null]};

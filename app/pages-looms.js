@@ -417,10 +417,10 @@ function loomTable(recs) {
       mcell(x.cfm, cB, t.cfm, f1, false, tolAir, tolAir, {w: x.width, hg: x.hg, m: 'apk', view: 'cfm', rpm: x.rpm}), mcell(x.apk, b.apk, null, f1, false, tolAir, null, {w: x.width, hg: x.hg, m: 'apk'}),
       mcell(x.main_max, ok(b.main_max) ? b.main_max : b.main, null, f2, false, tolP, tolP, {w: x.width, hg: x.hg, m: pkey(b)}),   // Round A2: no pressure target
       sortAs(el('span', {}, f0(x.warp), el('div', {class: 'note', text: f1(x.warp_rate) + ' /100k'})), x.warp), x.beam || '—', f1(x.run / 60),
-      ...(money ? [fxLoomRealCell(x)] : [])];
+      ...(money ? [x.P && typeof fxLoomRealPer === 'function' ? fxLoomRealPer(x.P, x) : fxLoomRealCell(x)] : [])];   // Round A8: x.P, a loom pooled over the Quality bar's period
   });
   return table(['Loom', ['RPM', 'picks/min'], ['Eff', '%'], ['Eff. RPM', 'RPM × eff'], ['CFM', 'ft³/min'], ['Air', 'ft³/1,000 picks'], ['Main', 'kgf/cm², max'], ['Warp', 'breaks'], 'Beam', ['Run', 'h'],
-    ...(money ? [['Realisation', '₹ in the day · paise per folded pick']] : [])], rows, money ? [1, 2, 3, 4, 5, 6, 7, 9, 10] : [1, 2, 3, 4, 5, 6, 7, 9]);
+    ...(money ? [['Realisation', recs.length && recs[0].P ? '₹ in the period · paise per folded pick' : '₹ in the day · paise per folded pick']] : [])], rows, money ? [1, 2, 3, 4, 5, 6, 7, 9, 10] : [1, 2, 3, 4, 5, 6, 7, 9]);
 }
 // The Trend card's first head group (Round A2: on Actions, as it was on Quality): the day's biggest by picks, width by width.
 function trendSubj0() {
@@ -429,19 +429,69 @@ function trendSubj0() {
   const g = [...by.values()].map((r) => ({w: r[0].width, hg: r[0].hg, A: agg(r)})).filter((x) => x.A).sort((a, b) => String(a.w).localeCompare(String(b.w)) || b.A.picks - a.A.picks)[0];
   return g ? {kind: 'hg', w: String(g.w), hg: g.hg} : null;
 }
+// ---- Round A8 (Divyam, 25 Nov 2026): the Quality period bar. One bar for "Gap to the reference, by head group" and "Current
+// vs reference": Last day (the default here, an exception to the app's Month to date), 7, 14, 30 days, Month to date or
+// Dates, ending on the date chip's day; kept per email (user_prefs q_period); it stays at the top while either card is on
+// screen. A period pools the loom-days that ran 60 minutes or more, run-weighted (agg).
+const QP_OK = ['day', '7', '14', '30', 'mtd', 'range'];
+const qPer = () => { const v = typeof prefGet === 'function' ? prefGet('q_period') : null; return QP_OK.includes(v) ? v : 'day'; };
+const qDays = () => [...new Set((D.complete_days || []).concat(D.latest ? [D.latest] : []))].sort();
+function qRange() {
+  const t = D.latest, p = qPer(), m0 = t.slice(0, 7) + '-01';
+  if (p === 'range') { const r = rngOf(qDays()); if (r.from && r.to) return {from: r.from, to: r.to, label: r.from === r.to ? dfmt(r.from) : `${dfmt(r.from)} to ${dfmt(r.to)}`}; }
+  if (p === 'day') return {from: t, to: t, label: dfmt(t)};
+  if (p === 'range') return {from: m0, to: t, label: `pick both dates; showing month to date, ${dfmt(m0)} to ${dfmt(t)}`};
+  if (p === 'mtd') return {from: m0, to: t, label: `month to date, ${dfmt(m0)} to ${dfmt(t)}`};
+  const n = +p; return {from: addDays(t, -(n - 1)), to: t, label: `${n} days, ${dfmt(addDays(t, -(n - 1)))} to ${dfmt(t)}`};
+}
+const qRecs = (P) => (D.loomdays || []).filter((x) => x.date >= P.from && x.date <= P.to && x.run >= 60 && inW(x.width));
+// A head group's looms pooled over the period, one row a loom (its drill-down): the loom's loom-days run-weighted; x.P carries the period.
+function qPoolLooms(recs, P) {
+  const by = new Map();
+  for (const x of recs) { if (!by.has(x.loom)) by.set(x.loom, []); by.get(x.loom).push(x); }
+  return [...by.values()].map((L) => { const A = agg(L), x0 = L.reduce((a, x) => x.date > a.date ? x : a);
+    return A ? Object.assign({}, x0, {rpm: A.rpm, eff: A.eff, erpm: A.erpm, cfm: A.cfm, apk: A.apk, main_max: A.main_max, warp: A.warp, warp_rate: A.warpRate, run: A.run, P, nld: L.length}) : null; }).filter(Boolean);
+}
+// The bar's This week vs last week line (answer 4 a, with b on pointing): the floor's effective RPM gap to the grid's
+// reference (erpmGapPool), the 7 days to the date chip's day against the 7 before; pointing shows how many head groups were
+// worse than the reference in each week, and on a phone that count shows under the line. No money: every role sees it.
+function qWk() {
+  const end = D.latest, from = addDays(end, -(2 * WK_N - 1)), nm = HEAT_REF[QHM];
+  const ref = (x) => { const R = heatRef({w: x.width, hg: x.hg, A: null}, 'erpm', QHM); return R.none ? null : R.v; };
+  const L = (D.loomdays || []).filter((x) => x.date >= from && x.date <= end && x.run >= 60 && inW(x.width) && x.hg !== 'Unassigned')
+    .map((x) => ({date: x.date, k: key(x.width, x.hg), picks: x.picks, run: x.run, stop: x.stop, ref: ref(x)}));
+  const c = wkBy(L, end, (x) => x.date, (R) => { const g = erpmGapPool(R); return g ? g.p : null; }, 'up');
+  const p = wkPill(c, {what: `Floor effective RPM gap to the ${nm}`, fmt: (v) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(1), unit: '%', dunit: 'points'});
+  if (!p || !c.dir) return p;
+  const S = wkSpans(end), side = (sp) => erpmWorse(L.filter((x) => x.date >= sp.from && x.date <= sp.to), (x) => x.k), a = side(S.cur), b = side(S.prev);
+  const t = `Head groups worse than the ${nm} effective RPM: this week ${a.worse} of ${a.of}, last week ${b.worse} of ${b.of}.`;
+  p.title += '\n' + t; p.setAttribute('data-worse', `${a.worse}|${b.worse}`);
+  p.append(el('div', {class: 'note onph', text: t}));
+  return p;
+}
+function qBar(P) {
+  const cur = qPer(), n = qDays().filter((d) => d >= P.from && d <= P.to).length;
+  const opts = [['day', 'Last day', 'Day'], ['7', '7 days', '7d'], ['14', '14 days', '14d'], ['30', '30 days', '30d'], ['mtd', 'Month to date', 'MTD'], ['range', 'Dates', 'Dates']];
+  const sg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Period for both Quality cards'}, opts.map(([v, t, sh]) => el('button', {type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', 'aria-label': t,
+    onclick: () => { prefSet('q_period', v); render(); }}, el('span', {class: 'lgl', text: t}), el('span', {class: 'sml', text: sh}))));
+  return el('div', {class: 'toolbar perbar stickper', 'data-qper': cur}, sg, cur === 'range' ? rngCtl(qDays(), render) : null,
+    el('span', {class: 'note', text: `${P.label}${cur === 'mtd' || cur === 'range' ? ` · ${n} day${n === 1 ? '' : 's'}` : ''} · for both cards below; the week line is always the 7 days to the date chip's day against the 7 before`}), qWk());
+}
 function pageQuality() {
-  const s = el('section', {class: 'page', id: 'quality'});
-  s.append(el('div', {}, el('h2', {text: `Head groups on ${wLabel()} looms, ${dfmt(D.latest)}`}),
-    el('p', {class: 'lead', text: `Running conditions from the day shown (looms that ran at least 60 min), against each head group's benchmark from all history and your target where set. Benchmarks become final after ${S().benchmark_min_loom_days} loom-days on ${S().benchmark_min_dates} dates from ${S().benchmark_min_looms} looms. Open a head group to see its looms.`})));
-  const L = latestRecs();
+  const s = el('section', {class: 'page', id: 'quality'}), P = qRange(), one = P.from === P.to;
+  s.append(el('div', {}, el('h2', {text: `Head groups on ${wLabel()} looms, ${P.label}`}),
+    el('p', {class: 'lead', text: `Running conditions over the period picked in the bar below (Last day to begin with; looms that ran at least 60 min, run-weighted over a longer period), against each head group's benchmark from all history and your target where set. Benchmarks become final after ${S().benchmark_min_loom_days} loom-days on ${S().benchmark_min_dates} dates from ${S().benchmark_min_looms} looms. Open a head group to see its looms.`})));
+  const L = qRecs(P);   // Round A8: the period's loom-days (Last day: latestRecs())
   const by = new Map();
   for (const x of L) { const k = key(x.width, x.hg); if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
   // R2 (11 Nov 2026): for the owner with the analysis on, two money columns beside the running figures and a sort by profit
   const money = typeof fxOn === 'function' && fxOn();
-  const groups = [...by.entries()].map(([k, recs]) => ({k, w: recs[0].width, hg: recs[0].hg, recs, A: agg(recs)})).filter((g) => g.A)
+  const groups = [...by.entries()].map(([k, recs]) => ({k, w: recs[0].width, hg: recs[0].hg, recs, ld: recs.length, A: agg(recs)})).filter((g) => g.A)
     .sort((a, b) => (a.hg === 'Unassigned') - (b.hg === 'Unassigned') || a.w.localeCompare(b.w) || b.A.picks - a.A.picks);
   if (typeof wkPut === 'function') { wkPut('C2', null); wkPut('C3', null); wkPut('C4', null); wkPut('C5', null); }   // Round J: filled by the first head group drawn
-  s.append(qualityHeat(groups.filter((g) => g.hg !== 'Unassigned')));
+  const wrap = el('div', {class: 'qper'}, qBar(P));   // Round A8: one bar, sticky over both cards
+  s.append(wrap);
+  wrap.append(qualityHeat(groups.filter((g) => g.hg !== 'Unassigned'), P));
   { const g = groups.find((x) => x.hg !== 'Unassigned'), b = g && bench(g.w, g.hg), t = g && (tgt(g.w, g.hg) || {});   // Round J: A5, the first head group's RPM
     let rv = !g ? null : QREF === 'tgt' ? t.rpm : QREF === 'best' ? bestVal(g.w, g.hg, 'rpm') : b && b.rpm, nm = REF_NAME[QREF];
     if (g && !ok(rv) && b && ok(b.rpm)) { rv = b.rpm; nm = 'benchmark'; }
@@ -449,7 +499,7 @@ function pageQuality() {
   MREF = QREF;   // 12 Nov 2026: one reference at a time in this card (reset below)
   const t = el('table');
   // 13 Nov 2026 (Divyam): the money columns sit right after Looms ran, with Total loom realisation (looms ran × ₹ per loom).
-  const hdr = ['Head group', ['Looms', 'ran'], ...(money ? [['Realisation', 'paise per folded pick · ₹/loom/day'], ['Total loom realisation', '₹ in the day · looms × ₹/loom'], ['Profit (loom cost)', 'paise per folded pick · ₹/loom/day', 'Profit']] : []),
+  const hdr = ['Head group', ['Looms', 'ran'], ...(money ? [['Realisation', 'paise per folded pick · ₹/loom/day'], one ? ['Total loom realisation', '₹ in the day · looms × ₹/loom'] : ['Total loom realisation', '₹ in the period · loom-days × ₹/loom-day'], ['Profit (loom cost)', 'paise per folded pick · ₹/loom/day', 'Profit']] : []),
     ['RPM', 'picks/min'], ['Efficiency', '%'], ['Eff. RPM', 'RPM × eff'], ['CFM', 'ft³/min running'], ['Air', 'ft³/1,000 picks'], ['Main pressure', 'kgf/cm², highest'], ['Warp breaks', 'total · /100k picks'], 'Benchmark basis', ''];
   t.append(el('thead', {}, el('tr', {}, hdr.map((h, i) => Array.isArray(h) ? th(h[0], h[1], i > 0 && i < hdr.length - 2, h[2]) : th(h, null, false)))));
   const tb = el('tbody');
@@ -460,9 +510,9 @@ function pageQuality() {
     const btn = el('button', {class: 'drill', type: 'button', 'aria-expanded': open ? 'true' : 'false', text: open ? 'Hide looms' : 'Looms ▸',
       onclick: () => { open ? OPEN.delete(g.k) : OPEN.add(g.k); render(); }});
     tb.append(el('tr', {},
-      el('td', {}, hgLink(g.hg, g.w, D.latest), el('div', {class: 'note', text: g.w + ' cm · ' + [...new Set(g.recs.map((x) => x.type))].join(', ')}), String(g.w) === '280' && g.hg !== 'Unassigned' ? el('div', {class: 'note', text: pf(g.w, g.hg) === 2 ? 'double panna' : 'single panna'}) : null),
-      el('td', {class: 'num', text: A.looms}),
-      ...(money ? (() => { const c = fxHgCells(D.latest, g.w, g.hg, QREF) || []; return [c[0], fxHgTotalCell(D.latest, g.w, g.hg, A.looms), c[1]]; })() : []),
+      el('td', {}, hgLink(g.hg, g.w, P.to), el('div', {class: 'note', text: g.w + ' cm · ' + [...new Set(g.recs.map((x) => x.type))].join(', ')}), String(g.w) === '280' && g.hg !== 'Unassigned' ? el('div', {class: 'note', text: pf(g.w, g.hg) === 2 ? 'double panna' : 'single panna'}) : null),
+      el('td', {class: 'num', 'data-sort': String(A.looms)}, String(A.looms), one ? null : el('div', {class: 'note', text: `${g.ld} loom-day${g.ld === 1 ? '' : 's'}`})),
+      ...(money ? (() => { const c = fxHgCells(P, g.w, g.hg, QREF) || []; return [c[0], fxHgTotalCell(P, g.w, g.hg, one ? A.looms : g.ld), c[1]]; })() : []),
       el('td', {class: 'mvc'}, mcell(A.rpm, b.rpm, tg.rpm, f0, true, tolRpm, tolRpm, {w: g.w, hg: g.hg, m: 'rpm'})),
       el('td', {class: 'mvc'}, effCell(A.eff)),
       el('td', {class: 'mvc'}, mcell(A.erpm, b.erpm, tgtE(g.w, g.hg), f0, true, tolRpm, tolRpm, {w: g.w, hg: g.hg, m: 'erpm'})),
@@ -472,15 +522,15 @@ function pageQuality() {
       el('td', {class: 'num', 'data-sort': String(A.warp)}, f0(A.warp), el('div', {class: 'note', text: f1(A.warpRate) + ' /100k'})),
       el('td', {}, g.hg === 'Unassigned' ? el('span', {class: 'pill muted', text: 'assign a head group'}) : benchTag(bench(g.w, g.hg))),
       el('td', {}, btn)));
-    if (open) tb.append(el('tr', {class: 'drillrow'}, el('td', {colspan: hdr.length}, el('div', {class: 'note', style: 'margin-bottom:6px', text: `${g.hg}, ${g.w} cm: each loom against the head group benchmark and target`}), loomTable(g.recs))));
+    if (open) tb.append(el('tr', {class: 'drillrow'}, el('td', {colspan: hdr.length}, el('div', {class: 'note', style: 'margin-bottom:6px', text: `${g.hg}, ${g.w} cm: each loom against the head group benchmark and target${one ? '' : `, pooled over its loom-days in the period (${P.label})`}`}), loomTable(one ? g.recs : qPoolLooms(g.recs, P)))));
   }
   t.append(tb);
   // 18 Nov 2026: the By picks / By profit per pick switch is gone; Sorting basis above the table does it (Profit, lowest first, by default)
-  const sortSeg = money ? el('p', {class: 'note', text: 'Realisation and profit are the day\'s, As sold, from the Realisation tab; profit is on the loom cost basis and the pill is the margin over loom cost. Point at a profit for the head group\'s profit at the reference above; on a phone, By head group on the Realisation tab gives the same figure at Benchmark, Best or Target.'}) : null;
+  const sortSeg = money ? el('p', {class: 'note', text: `Realisation and profit are ${one ? 'the day\'s' : 'the period\'s, pooled over its loom-days at the period\'s folding shortage'}, As sold, from the Realisation tab; profit is on the loom cost basis and the pill is the margin over loom cost. Point at a profit for the head group\'s profit at the reference above; on a phone, By head group on the Realisation tab gives the same figure at Benchmark, Best or Target.`}) : null;
   MREF = null;
   const nTq = groups.filter((g) => { const x = tgt(g.w, g.hg); return x && (ok(x.rpm) || ok(x.cfm)); }).length;   // Round A2: pressure targets are not counted
   const qb = (v, text) => el('button', {type: 'button', 'aria-pressed': QREF === v ? 'true' : 'false', text, onclick: () => { QREF = v; try { localStorage.setItem('w2-q-ref', v); } catch (e) {} render(); }});
-  s.append(card('Current vs reference', `Against the ${HEAT_REF[QREF]} · CFM references are air per 1,000 picks at the RPM actually run`,
+  wrap.append(card('Current vs reference', `Against the ${HEAT_REF[QREF]} · ${P.label} · CFM references are air per 1,000 picks at the RPM actually run`,
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference'}, qb('bm', 'Benchmark'), qb('best', 'Best'), qb('tgt', `Target (${nTq} set)`))),
     sortSeg, el('div', {class: 'tablebox'}, t)));   // Round A2 (Divyam, 24 Nov 2026): no key note under this table
   // Round A2 (Divyam, 24 Nov 2026): the Trend card moved to Actions (trendSubj0 gives it the same first head group)
@@ -513,21 +563,23 @@ function heatRef(g, m, mode) {
   if (m === 'cfm') v = cfmOf(v, w, hg, A.rpm);
   return ok(v) ? {v, name: m === 'cfm' ? `${HEAT_REF[mode]} at this RPM` : HEAT_REF[mode]} : {none: mode === 'best' ? 'no best yet' : 'no benchmark'};
 }
-function qualityHeat(groups) {
+function qualityHeat(groups, P) {
+  P = P || {from: D.latest, to: D.latest, label: dfmt(D.latest)};
+  const one = P.from === P.to;   // Round A8: the Quality bar's period
   const nowOf = (A, m) => m === 'main' ? (A.main_max > 0 ? A.main_max : null) : m === 'warp' ? A.warpRate : A[m];
   const money = typeof fxOn === 'function' && fxOn();   // 12 Nov 2026: loom realisation per loom and in total, first (owner)
-  const rows = groups.map((g) => ({hg: g.hg, label: el('div', {}, hgLink(g.hg, g.w, D.latest), el('div', {class: 'note', text: `${g.w} cm · ${g.A.looms} loom${g.A.looms === 1 ? '' : 's'}`})),
-    cells: [...(money ? fxHeatReal(D.latest, g.w, g.hg, QHM === 'tgt' ? 'tg' : QHM) : []), ...(money ? [fxHeatFold(D.latest, g.w, g.hg, QHM === 'tgt' ? 'tg' : QHM)] : []), ...HEAT_M.map(([m, label, unit, hi, fmt]) => {
+  const rows = groups.map((g) => ({hg: g.hg, label: el('div', {}, hgLink(g.hg, g.w, P.to), el('div', {class: 'note', text: `${g.w} cm · ${g.A.looms} loom${g.A.looms === 1 ? '' : 's'}${one ? '' : ` · ${g.ld} loom-days`}`})),
+    cells: [...(money ? fxHeatReal(P, g.w, g.hg, QHM === 'tgt' ? 'tg' : QHM) : []), ...(money ? [fxHeatFold(P, g.w, g.hg, QHM === 'tgt' ? 'tg' : QHM)] : []), ...HEAT_M.map(([m, label, unit, hi, fmt]) => {
       const now = nowOf(g.A, m), R = heatRef(g, m, QHM);
       // Round A2 (Divyam, 24 Nov 2026): pointing at any cell shows the head group's figure and the reference's
-      const head = `${g.hg}, ${g.w} cm · ${label}`, cur = `Current: ${ok(now) ? `${fmt(now)} ${unit}` : 'no figure on this day'}`, cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+      const head = `${g.hg}, ${g.w} cm · ${label}`, cur = `Current: ${ok(now) ? `${fmt(now)} ${unit}` : `no figure ${one ? 'on this day' : 'in this period'}`}`, cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
       if (R.none) return {none: R.none, tip: `${head}\n${cur}\n${cap(HEAT_REF[QHM])}: none (${R.none})`};
       const G = gapPct(now, R.v, hi);
       if (!G) return {none: 'no figure', tip: `${head}\n${cur}\n${cap(R.name)}: ${fmt(R.v)} ${unit}`};
       const txt = `${Math.abs(G.p) < 0.05 ? '±' : G.p > 0 ? '+' : '−'}${Math.abs(G.p).toFixed(1)}%`;
       return {text: txt, level: heatLevel(G.p), tone: Math.abs(G.p) < 0.05 ? 'none' : G.worse ? 'bad' : 'good',
         tip: `${head}\n${cur}\n${cap(R.name)}: ${fmt(R.v)} ${unit} (${txt})\nClick to open the head group.`,
-        onClick: () => openHg(g.hg, g.w, D.latest)};
+        onClick: () => openHg(g.hg, g.w, P.to)};
     })]}));
   if (typeof wkPut === 'function') {   // Round J: C1, the first cell of the grid that has a reference
     let c1 = null;
@@ -536,11 +588,11 @@ function qualityHeat(groups) {
   }
   const nT = groups.filter((g) => { const t = tgt(g.w, g.hg); return t && (ok(t.rpm) || ok(t.cfm)); }).length;
   const b = (v, text) => el('button', {type: 'button', 'aria-pressed': QHM === v ? 'true' : 'false', text, onclick: () => { QHM = v; try { localStorage.setItem('w2-heat-ref', v); } catch (e) {} render(); }});
-  return card('Gap to the reference, by head group', `% of the ${HEAT_REF[QHM]} · ${dfmt(D.latest)} · ${wLabel()}`,
+  return card('Gap to the reference, by head group', `% of the ${HEAT_REF[QHM]} · ${P.label} · ${wLabel()}`,
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference for the heat grid'}, b('bm', 'Benchmark'), b('best', 'Best'), b('tgt', `Target (${nT} set)`))),
-    rows.length ? heatTable([...(money ? [{label: 'Loom realisation gap', unit: '₹ per loom per day'}, {label: 'Loom realisation gap', unit: '₹ total in the day'}, {label: 'Folded cost per pick', unit: '% of the reference', sm: 'Folded cost'}] : []), ...HEAT_M.map(([, label, unit]) => ({label, unit}))], rows, {first: 'Head group'}) : el('div', {class: 'empty', text: 'No head group ran on this width on this day.'}),
+    rows.length ? heatTable([...(money ? [{label: 'Loom realisation gap', unit: '₹ per loom per day'}, {label: 'Loom realisation gap', unit: one ? '₹ total in the day' : '₹ total in the period'}, {label: 'Folded cost per pick', unit: '% of the reference', sm: 'Folded cost'}] : []), ...HEAT_M.map(([, label, unit]) => ({label, unit}))], rows, {first: 'Head group'}) : el('div', {class: 'empty', text: one ? 'No head group ran on this width on this day.' : 'No head group ran on this width in this period. Pick a longer period or another width.'}),
     heatKey(`full colour at ${HEAT_FULL}% or more`),
-    el('p', {class: 'note', text: `Each cell is the head group's figure for the day (looms that ran at least 60 min) against its ${HEAT_REF[QHM]}, as a % of it: + above, − below. Efficiency is always against the ${f0(EFF_BAD())}% line, and warp breaks against the head group's median rate (it has no best or target). CFM is compared at the RPM the head group ran. Point at a cell for the head group's figure and the reference's; click it to open the head group.${money ? ` Loom realisation gap (As sold) is the rupees above (+, green) or below (−, red) the same loom-days re-worked at the ${HEAT_REF[QHM]} effective RPM; point at it for both figures. Folded cost per pick (loom cost method, the Actions view Folded cost per pick by quality) is the head group's paise against the same loom-days at the ${HEAT_REF[QHM]} effective RPM, their loom cost held and B grade scaled with the picks: − below (green, cheaper now), + above (red); point at it for both figures. A grey word in a Folded cost per pick cell ("no shortage", "no figure" and so on) has its next step in the Guide, under Quality; a phone cannot point.` : ''}`}));
+    el('p', {class: 'note', text: `Each cell is the head group's figure ${one ? 'for the day (looms that ran at least 60 min)' : 'over the period (its loom-days that ran at least 60 min, run-weighted: picks ÷ minutes, air ÷ minutes run)'} against its ${HEAT_REF[QHM]}, as a % of it: + above, − below. Efficiency is always against the ${f0(EFF_BAD())}% line, and warp breaks against the head group's median rate (it has no best or target). CFM is compared at the RPM the head group ran. Point at a cell for the head group's figure and the reference's; click it to open the head group.${money ? ` Loom realisation gap (As sold) is the rupees above (+, green) or below (−, red) the same loom-days re-worked at the ${HEAT_REF[QHM]} effective RPM; point at it for both figures. Folded cost per pick (loom cost method, the Actions view Folded cost per pick by quality) is the head group's paise against the same loom-days at the ${HEAT_REF[QHM]} effective RPM, their loom cost held and B grade scaled with the picks${one ? '' : '; over a period Σ the days\' cost ÷ Σ their A-grade folded picks, each day at its own month-to-date folding shortage, so it can differ a little from the Realisation tab, which uses one shortage for the period'}: − below (green, cheaper now), + above (red); point at it for both figures.${one ? '' : ' Loom realisation gap over a period: ₹ per loom per day is its priced loom-days\' average, ₹ total is that × the priced loom-days, at the period\'s folding shortage.'} A grey word in a Folded cost per pick cell ("no shortage", "no figure" and so on) has its next step in the Guide, under Quality; a phone cannot point.` : ''}`}));
 }
 
 // ---------------------------------------------------------------- Pressure

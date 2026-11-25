@@ -522,6 +522,30 @@ function fcFoldByQuality(rows, reg, fold, s, from, to, scale, key) {
   [...groups, ...widths, all].forEach(strip);
   return {s, groups, widths, all, days: [...use], out};
 }
+// ---- Round A8 (Divyam, 25 Nov 2026, the Quality period bar, answers 2 a and 3 b): a quality's folded cost per pick over a
+// period = Σ the days' cost ÷ Σ their A-grade folded picks × 100, each day worked by fcFoldByQuality at its own month-to-date
+// folding shortage, and the reference the same way (each day re-worked at the reference effective RPM). days: [{date, why}
+// (a day with no figure: no shortage, no costing, no loom cost or no folding figures; left out and named) or {date, F, R}
+// (fcFoldByQuality now and at the reference, R null when there is no reference)]; k: the group's key. A day the quality did
+// not weave is skipped. The reference stands only when every day used has one (a head group with no reference effective
+// RPM has none on any day). → {cost, A, pp, ld, noair, days (dates used), out, ref: {cost, A, pp} | null}, or null when the
+// quality wove on no day with a figure (its cost is never shown as 0).
+function fcFoldPool(days, k) {
+  let cost = 0, A = 0, ld = 0, noair = 0, rc = 0, rA = 0, refOk = true;
+  const used = [], out = [];
+  for (const d of days || []) {
+    if (d.why) { out.push({date: d.date, why: d.why}); continue; }
+    const g = d.F && d.F.groups.find((x) => x.key === k);
+    if (!g) continue;
+    noair += g.noair || 0;
+    if (!(g.ld > 0)) continue;
+    cost += g.cost; A += g.A; ld += g.ld; used.push(d.date);
+    const r = d.R && d.R.groups.find((x) => x.key === k);
+    if (!r || !(r.ld > 0) || r.noref) refOk = false; else { rc += r.cost; rA += r.A; }
+  }
+  if (!used.length) return noair || out.length ? {cost: null, A: null, pp: null, ld: 0, noair, days: used, out, ref: null} : null;
+  return {cost, A, pp: A > 0 ? 100 * cost / A : null, ld, noair, days: used, out, ref: refOk ? {cost: rc, A: rA, pp: rA > 0 ? 100 * rc / rA : null} : null};
+}
 // ---- Round A6 (Divyam, 25 Nov 2026, answers 2 a and 3 a): the target folded cost per pick of each quality, the day and month
 // to date: Target profit per pick's target folded cost (fcTargetFoldLc) split quality by quality. Each loom-day row keeps its
 // loom cost (fcLoomCost's parts r.lc; Round Y decision 4) less its share of the cut piece loss (its picks × the cut piece loss

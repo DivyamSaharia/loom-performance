@@ -494,6 +494,32 @@ function bridgeBasis(days, date, mode, pick) {
   return {ref: null, why: 'mode'};
 }
 
+// ---- Round A8 (Divyam, 25 Nov 2026, the Quality period bar, answer 4 a with b on pointing): the floor's effective RPM gap
+// to the reference over a set of loom-days: now = Σ picks ÷ Σ (minutes run + stopped); reference = Σ (each loom-day's
+// reference effective RPM × its minutes) ÷ Σ minutes, over the loom-days that have a reference (the others are left out of
+// both sides, counted in miss). p = (now − reference) ÷ reference × 100 (+ faster, − slower). L: [{picks, run, stop, ref}].
+// → {now, ref, p, n, miss} or null (no loom-day with a reference and minutes: a gap, never 0).
+function erpmGapPool(L) {
+  let p = 0, m = 0, rm = 0, n = 0, miss = 0;
+  for (const x of L || []) {
+    const mm = (x.run || 0) + (x.stop || 0);
+    if (!ok(x.ref) || !(x.ref > 0) || !(mm > 0)) { miss++; continue; }
+    p += x.picks || 0; m += mm; rm += x.ref * mm; n++;
+  }
+  if (!(m > 0)) return null;
+  const now = p / m, ref = rm / m;
+  return {now, ref, p: (now - ref) / ref * 100, n, miss};
+}
+// The head groups worse than the reference over the same loom-days: each group's erpmGapPool, worse when its gap is −0.05%
+// or lower (the grid shows ±0.0% above that). keyOf(x) → the group's key. → {worse, of} (of = groups with a figure).
+function erpmWorse(L, keyOf) {
+  const by = new Map();
+  for (const x of L || []) { const k = keyOf(x); if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
+  let worse = 0, of = 0;
+  for (const R of by.values()) { const g = erpmGapPool(R); if (!g) continue; of++; if (g.p <= -0.05) worse++; }
+  return {worse, of};
+}
+
 // ---- This week vs last week on every period bar (Round D, Divyam 17 Nov 2026, D1–D4).
 // D1: "this week" = the 7 days to the day shown, "last week" = the 7 days before them (rolling, not calendar weeks).
 const WK_N = 7;
