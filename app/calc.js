@@ -839,7 +839,8 @@ function targetCost(inp) {
   const parts = recs.map((r) => {
     const cRs = r.cfmKwh != null ? r.cfmKwh * rho : null;
     const aRs = (r.addKwh != null ? r.addKwh * rho : 0) + (r.dM != null ? (rW || 0) * r.dM + (rT || 0) * r.dM + (rP || 0) * r.dM : 0);
-    return {loom: r.x.loom, width: r.x.width, hg: r.x.hg, cfmRs: cRs, E: r.E, Eraw: ok(r.eFab) ? r.eFab / TC_PPI : null, dM: r.dM, gaps: r.gaps,
+    // Round A6: a1 (its air after step 1, ft³) and addRs (its added costs, ₹) for the target folded cost per pick by quality
+    return {loom: r.x.loom, width: r.x.width, hg: r.x.hg, cfmRs: cRs, E: r.E, Eraw: ok(r.eFab) ? r.eFab / TC_PPI : null, dM: r.dM, gaps: r.gaps, a1: r.a1, addRs: aRs,
       effect: 100 * (-(cRs || 0) + aRs - c0 * (ok(r.E) ? r.E : 0)) / (P + E)};
   });
   const rows = tcGroup(parts, (q) => q.loom);

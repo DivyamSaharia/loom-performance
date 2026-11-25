@@ -1048,12 +1048,22 @@ const tcDays = () => !COST ? [] : (cHasFix() ? COST.days_entered : COST.days) ||
 const tcOwner = () => typeof fxIsOwner === 'function' && fxIsOwner();
 const tcNext = () => tcOwner() ? 'see Files per day on Data health' : 'tell the owner';
 const TC_CARD = 'Where the saving is';
+// Round A6 (25 Nov 2026): the looms at the floor pressure on an earlier day (Folded cost per pick by quality's month to date
+// target): each loom's highest main pressure over its shifts of 60 minutes or more (the loom data's main_max, as the
+// pipeline's day floor), with its head group's best; the day on the date chip keeps pressLooms (the Pressure tab's own list).
+function tcPressAt(date) {
+  const by = new Map();
+  for (const x of D.loomdays || []) if (x.date === date && x.main_max > 0 && (!by.has(x.loom) || x.main_max > by.get(x.loom).main)) by.set(x.loom, {loom: x.loom, hg: x.hg || 'Unassigned', width: String(x.width), main: x.main_max});
+  return [...by.values()].map((l) => ({...l, best: pBest(l.width, l.hg)}));
+}
 function tcRun(date) {
   const days = tcDays(), day = days.find((d) => d.date === date) || null;
-  const PL = date === D.latest ? pressLooms() : [];
+  const PL = date === D.latest ? pressLooms() : tcPressAt(date);
   // Round A2 (Divyam, 24 Nov 2026): every loom at its best main pressure (the pressure target is the best), else where it ran
   const floorT = PL.length ? Math.max(...PL.map((l) => ok(l.best) ? Math.min(l.main, l.best) : l.main)) : null;
-  const need = pressNeed(floorT, pMargin()), frac = pressFrac(COMP_SP, need, POWER_PCT);
+  // Round A6: an earlier day uses the set point in force that day (the set point history), never today's
+  const sp = date === D.latest ? COMP_SP : SP_HIST && SP_HIST.length ? spAt(SP_HIST, date) : COMP_SP_ROW;
+  const need = pressNeed(floorT, pMargin()), frac = pressFrac(sp, need, POWER_PCT);
   const c = compDay(date), comp = c && c.exact ? {kwh: c.kwh, rate: c.rate, k: c.sFt3} : null;   // Round V: k, the energy rate for the CFM saving
   const looms = tcLooms(date);
   const tc = targetCost({day, comp, pack: packRate(days, date), frac, looms});

@@ -336,7 +336,7 @@ function fcLoomCost(rows, cost, running, picksOf, inp) {
     // no fabric record with picks: no row carries the day's B grade (fcAnalyse charges it over the picks), so it goes per loom too
     L.bper = rows.bday && rows.bday.has(d) ? 0 : L.bnet;
     if (Ptot > 0) { L.pp = pickPool / Ptot; L.per = (L.other + L.bper) / L.n; } else { L.pp = 0; L.per = (L.other + L.bper + pickPool) / L.n; }   // no picks woven at all: the whole day per loom
-    L.pick = pickPool;
+    L.pick = pickPool; L.ptot = Ptot;   // Round A6: the picks the per pick part is shared over (fcTargetFoldByQuality takes each row's cut piece share off)
     const ran = new Set(looms.map((x) => String(x.loom)));
     for (const x of looms) {
       const k = d + '|' + x.loom, rs = byLd.get(k) || [], P = picksOf.get(k) || 0;
@@ -391,8 +391,13 @@ function fcLoomCost(rows, cost, running, picksOf, inp) {
 // Round A4, the reference (the Quality grid): scale(r) = how many times its picks the loom-day would weave at the reference
 // effective RPM (null = no reference for it). Its picks, B grade picks and rupees and cut piece share scale; the loom cost
 // stays (Round Y decision 4). A loom-day with no reference is left out and counted in noref.
-// → {s, groups: [{key, hg, width, ld, picks, cost, B, C, A, pp, noair, noref}], widths, all, days, out}
-function fcFoldByQuality(rows, reg, fold, s, from, to, scale) {
+// Round A6 (Divyam, 25 Nov 2026, answer 1 b): key(r) → [group key, name, width] groups the rows another way; fcFqAll groups a
+// quality across both widths by its head group's Style-map root (hg0), whatever its fabric names on each width. With a key
+// there are no width rows (widths []); each group carries names (its head groups' shown names) and ws (its widths).
+// → {s, groups: [{key, hg, width, names, ws, ld, picks, cost, B, C, A, pp, noair, noref}], widths, all, days, out}
+const fcFqWidth = (r) => [r.hg + '|' + r.width, r.hg, r.width];
+const fcFqAll = (r) => ['r:' + (r.hg0 || r.hg), r.hg0 || r.hg, 'all'];
+function fcFoldByQuality(rows, reg, fold, s, from, to, scale, key) {
   if (!(typeof s === 'number' && isFinite(s))) return null;
   const lday = rows.lday || {}, P = (r) => r.synth ? (r.lpicks || 0) : (r.picks || 0);
   const okDay = (d) => lday[d] && lday[d].per != null && fold && fold[d] && typeof fold[d].C === 'number' && isFinite(fold[d].C);
@@ -410,9 +415,10 @@ function fcFoldByQuality(rows, reg, fold, s, from, to, scale) {
     const lp = rs.reduce((a, r) => a + P(r), 0);
     if (lp > 0) for (const r of rs) bp.set(r, (bp.get(r) || 0) + b * P(r) / lp); else spread.set(e.date, (spread.get(e.date) || 0) + b);
   }
-  const G = new Map(), add = (k, hg, width) => { if (!G.has(k)) G.set(k, {key: k, hg, width, ld: new Set(), picks: 0, cost: 0, B: 0, C: 0, noair: new Set(), noref: new Set()}); return G.get(k); };
+  const G = new Map(), add = (k, hg, width) => { if (!G.has(k)) G.set(k, {key: k, hg, width, names: new Set(), ws: new Set(), ld: new Set(), picks: 0, cost: 0, B: 0, C: 0, noair: new Set(), noref: new Set()}); return G.get(k); };
   for (const r of R) {
-    const g = add(r.hg + '|' + r.width, r.hg, r.width), p = P(r), dp = dayP.get(r.date) || 0, db = r.synth ? 0 : dayB.get(r.date) || 0, k = r.date + '|' + r.loom;
+    const g = add(...(key || fcFqWidth)(r)), p = P(r), dp = dayP.get(r.date) || 0, db = r.synth ? 0 : dayB.get(r.date) || 0, k = r.date + '|' + r.loom;
+    g.names.add(r.hg); g.ws.add(String(r.width));
     if (r.noair) { g.noair.add(k); continue; }   // answer 1 a: left out and named, the rest of the quality stands
     const f = scale ? scale(r) : 1;
     if (!(typeof f === 'number' && isFinite(f) && f >= 0)) { g.noref.add(k); continue; }
@@ -427,11 +433,87 @@ function fcFoldByQuality(rows, reg, fold, s, from, to, scale) {
   const groups = [...G.values()].map(fin).sort((a, b) => b.picks - a.picks);
   const tot = (L, x) => L.reduce((a, g) => a + g[x], 0), un = (L, x) => new Set(L.flatMap((g) => [...g.keys[x]]));
   const sum = (L, key) => fin({key, ld: un(L, 'ld'), picks: tot(L, 'picks'), cost: tot(L, 'cost'), B: tot(L, 'B'), C: tot(L, 'C'), noair: un(L, 'noair'), noref: un(L, 'noref')});
-  const strip = (g) => { delete g.keys; return g; };
-  const widths = [...new Set(groups.map((g) => g.width))].sort().map((w) => Object.assign(sum(groups.filter((g) => g.width === w), w + ' cm'), {width: w}));
+  const strip = (g) => { delete g.keys; if (g.names) { g.names = [...g.names].sort(); g.ws = [...g.ws].sort(); } return g; };
+  const widths = key ? [] : [...new Set(groups.map((g) => g.width))].sort().map((w) => Object.assign(sum(groups.filter((g) => g.width === w), w + ' cm'), {width: w}));
   const all = sum(groups, 'Both widths');
   [...groups, ...widths, all].forEach(strip);
   return {s, groups, widths, all, days: [...use], out};
+}
+// ---- Round A6 (Divyam, 25 Nov 2026, answers 2 a and 3 a): the target folded cost per pick of each quality, the day and month
+// to date: Target profit per pick's target folded cost (fcTargetFoldLc) split quality by quality. Each loom-day row keeps its
+// loom cost (fcLoomCost's parts r.lc; Round Y decision 4) less its share of the cut piece loss (its picks × the cut piece loss
+// ÷ the day's picks, as the per pick part charges it), less its own CFM saving (Target cost per pick step 1), less its share
+// of the pressure saving (step 2, by its air after step 1), plus its own added costs (step 4); no B grade and no cut pieces
+// (step 5). Its target A-grade folded picks = (its picks + its extra picks at the target effective RPM) × (1 − s, the same
+// month-to-date folding shortage as the folded cost). A quality = Σ its loom-days' target cost ÷ Σ their target A-grade folded
+// picks × 100 (paise); the width rows, Both widths and month to date add up the same way (Σ cost ÷ Σ picks, never an average).
+// A loom-day whose Target cost per pick record has a gap (no CFM reading, no target CFM, no target RPM, no picks per metre)
+// is left out of its quality and named (lo, with its reasons), never counted as 0; a quality with nothing left is a gap.
+// The tie (each day): the qualities' target cost + that of the loom-days left out = the day's target cost on Target profit
+// per pick (L.total − L.cut − Sc − Sp + Add), to the rupee. A row that wove picks with no run minutes has no record: no
+// saving, no extra picks (it did not run), not a gap.
+// days: [{date, rows (fcAnalyse rows of that day, with r.lc), L (rows.lday[date]), parts (targetCost's parts: loom, hg,
+// cfmRs, E, a1, addRs, gaps), Sc, Sp, Add (the day's savings and added costs, ₹, or null)}]; s: the folding shortage; key as
+// fcFoldByQuality. → {s, groups: [{key, hg, width, names, ws, ld, lo, why, picks, E, lc, cut, cfm, press, add, cost, A, pp}],
+// widths, all, tie: [{date, cost, lo, sum, want, diff, nrec, gaps}], out: [{date, why}] (days left out)}
+function fcTargetFoldByQuality(days, s, key) {
+  const n = (v) => typeof v === 'number' && isFinite(v);
+  if (!n(s)) return null;
+  const P = (r) => r.synth ? (r.lpicks || 0) : (r.picks || 0), G = new Map(), tie = [], out = [];
+  const add = (k, hg, width) => { if (!G.has(k)) G.set(k, {key: k, hg, width, names: new Set(), ws: new Set(), ld: new Set(), lo: new Set(), why: {}, picks: 0, E: 0, lc: 0, cut: 0, cfm: 0, press: 0, add: 0}); return G.get(k); };
+  for (const D of days || []) {
+    const L = D.L, rows = (D.rows || []).filter((r) => r.date === D.date && r.lc);
+    if (!L || L.per == null) { out.push({date: D.date, why: (L && L.why) || 'no loom cost for the day'}); continue; }
+    if (!rows.length) { out.push({date: D.date, why: 'no fabric data for the day'}); continue; }
+    if (!(L.ptot > 0)) { out.push({date: D.date, why: 'no picks woven'}); continue; }   // numbers review: nothing to share the day's cost over
+    const rec = new Map();   // the Target cost per pick records of a loom × head group, added up
+    for (const q of D.parts || []) {
+      const k = q.loom + '|' + q.hg, o = rec.get(k) || {cfm: 0, add: 0, E: 0, a1: 0, gaps: []};
+      if (n(q.cfmRs)) o.cfm += q.cfmRs;
+      if (n(q.addRs)) o.add += q.addRs;
+      if (n(q.E)) o.E += q.E;
+      if (n(q.a1)) o.a1 += q.a1;
+      for (const x of q.gaps || []) if (!o.gaps.includes(x)) o.gaps.push(x);
+      rec.set(k, o);
+    }
+    const A1 = [...rec.values()].reduce((a, o) => a + o.a1, 0), Sp = n(D.Sp) ? D.Sp : 0;
+    const lp = new Map(), cnt = new Map();   // the picks and rows of a loom × head group (a share when one record covers several rows)
+    for (const r of rows) { const k = r.loom + '|' + r.hg; lp.set(k, (lp.get(k) || 0) + P(r)); cnt.set(k, (cnt.get(k) || 0) + 1); }
+    let tot = 0, lo = 0;
+    const used = new Set();
+    for (const r of rows) {
+      const k = r.loom + '|' + r.hg, o = rec.get(k), p = P(r), lpk = lp.get(k) || 0, f = lpk > 0 ? p / lpk : 1 / cnt.get(k);
+      // numbers review: a day whose B grade could not ride on a fabric record carries it per loom (L.bper inside L.per); the
+      // target has no B grade, so that share comes off the loom cost
+      const bp = L.bper && L.per > 0 && L.n > 0 ? r.lc.loom * (L.bper / L.n) / L.per : 0, lc = r.lc.loom + r.lc.comp + r.lc.pick - bp;
+      const cut = n(L.cut) && L.cut ? p * L.cut / L.ptot : 0;
+      if (o) used.add(k);
+      const cfm = o ? o.cfm * f : 0, press = o && A1 > 0 ? Sp * o.a1 / A1 * f : 0, ad = o ? o.add * f : 0, E = o ? o.E * f : 0;
+      const tc = lc - cut - cfm - press + ad, g = add(...(key || fcFqWidth)(r)), ldk = r.date + '|' + r.loom;
+      g.names.add(r.hg); g.ws.add(String(r.width)); tot += tc;
+      const gaps = o ? o.gaps : r.lrun ? ['not on Target cost per pick that day'] : [];
+      if (gaps.length) { g.lo.add(ldk); for (const x of gaps) (g.why[x] = g.why[x] || new Set()).add(ldk); lo += tc; continue; }
+      g.ld.add(ldk); g.picks += p; g.E += E; g.lc += lc; g.cut += cut; g.cfm += cfm; g.press += press; g.add += ad;
+    }
+    // numbers review: a record with no row of its own (its loom|hg not in the fabric rows) and a pressure saving with no air
+    // to share it by belong to no quality: they go with what is left out, so the day still ties
+    let nrec = 0;
+    for (const [k, o] of rec) if (!used.has(k)) { const x = -o.cfm - (A1 > 0 ? Sp * o.a1 / A1 : 0) + o.add; lo += x; tot += x; nrec++; }
+    if (!(A1 > 0) && Sp) { lo -= Sp; tot -= Sp; }
+    const want = L.total - (n(L.cut) ? L.cut : 0) - (n(D.Sc) ? D.Sc : 0) - Sp + (n(D.Add) ? D.Add : 0);
+    tie.push({date: D.date, cost: tot - lo, lo, sum: tot, want, diff: tot - want, nrec, gaps: D.gaps || []});
+  }
+  const fin = (g) => { g.cost = g.lc - g.cut - g.cfm - g.press + g.add; g.A = (g.picks + g.E) * (1 - s); g.pp = g.ld.size > 0 && g.A > 0 ? 100 * g.cost / g.A : null; return g; };
+  const groups = [...G.values()].map(fin).sort((a, b) => b.picks - a.picks);
+  const F = ['picks', 'E', 'lc', 'cut', 'cfm', 'press', 'add'];
+  const sum = (L, k) => { const o = {key: k, ld: new Set(L.flatMap((g) => [...g.ld])), lo: new Set(L.flatMap((g) => [...g.lo])), why: {}};
+    for (const x of F) o[x] = L.reduce((a, g) => a + g[x], 0);
+    for (const g of L) for (const [w, c] of Object.entries(g.why)) for (const x of c) (o.why[w] = o.why[w] || new Set()).add(x);
+    return fin(o); };
+  const widths = key ? [] : [...new Set(groups.map((g) => g.width))].sort().map((w) => Object.assign(sum(groups.filter((g) => g.width === w), w + ' cm'), {width: w}));
+  const all = sum(groups, 'Both widths');
+  for (const g of [...groups, ...widths, all]) { g.ld = g.ld.size; g.lo = g.lo.size; for (const w in g.why) g.why[w] = g.why[w].size; if (g.names) { g.names = [...g.names].sort(); g.ws = [...g.ws].sort(); } }
+  return {s, groups, widths, all, tie, out};
 }
 // Round A5 (Divyam, 25 Nov 2026, option B): the split bar of Realisation per pick by quality on Actions. real = the quality's
 // realisation per pick (paise, ÷ its priced picks); fold = its folded cost per pick (paise, ÷ its A-grade folded picks,
@@ -836,6 +918,8 @@ const WKLF = {
     return fwOut(`${d.hg}: realisation ${fwP(d.real)} paise (÷ its priced picks) − folded cost ${fwP(d.fold)} paise (÷ its A-grade folded picks)`, (r.diff < 0 && /[1-9]/.test(Math.abs(r.diff).toFixed(2)) ? '−' : '') + Math.abs(r.diff).toFixed(2), 'paise', r.diff); },
   FQ: (d) => { if (!d || !fwOk(d.cost) || !fwOk(d.s)) return null; const A = d.picks * (1 - d.s) - d.B - d.C; if (!(A > 0)) return null; const v = 100 * d.cost / A;
     return fwOut(`${d.hg}: loom cost and own B grade ${fwR(d.cost)} ÷ (${fwN(d.picks)} picks × (1 − ${(d.s * 100).toFixed(1)}% folding shortage) − ${fwN(d.B)} B grade picks − ${fwN(d.C)} cut piece picks = ${fwN(A)} A-grade folded picks) × 100`, fwP(v), 'paise', v); },
+  FQT: (d) => { if (!d || !fwOk(d.lc) || !fwOk(d.s)) return null; const c = d.lc - d.cut - d.cfm - d.press + d.add, A = (d.picks + d.E) * (1 - d.s); if (!(A > 0)) return null; const v = 100 * c / A;
+    return fwOut(`${d.hg}: (loom cost ${fwR(d.lc)} − its cut piece share ${fwR(d.cut)} − CFM saving ${fwR(d.cfm)} − its share of the pressure saving ${fwR(d.press)} + added costs ${fwR(d.add)} = ${fwR(c)}) ÷ ((${fwN(d.picks)} picks + ${fwN(d.E)} extra picks) × (1 − ${(d.s * 100).toFixed(1)}% folding shortage) = ${fwN(A)} target A-grade folded picks) × 100`, fwP(v), 'paise', v); },
   C2: (d) => { if (!d || !fwOk(d.ld)) return null; const n = d.full ? d.looms : d.priced, v = n * d.ld;
     return fwOut(`${d.hg}: ${n} loom${n === 1 ? '' : 's'}${d.full ? ' that ran' : ' priced (of ' + d.looms + ' that ran)'} × ${fwR(d.ld)} realisation per loom-day`, fwR(v), 'in the day', v); },
   C3: (d) => { if (!d || !(d.conv > 0) || !fwOk(d.real)) return null; const v = (d.real - d.conv) / d.conv;
