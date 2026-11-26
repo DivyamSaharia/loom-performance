@@ -630,5 +630,7 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
 /* Round A8: the Quality period bar's week line, the count of head groups worse (pointing on a laptop, shown under the line on a phone) */
 .onph{display:none}
 @media (max-width:560px){.onph{display:block;margin-top:2px}}
+/* Round A10: a long note's laptop text; the phone shows its short twin (.onph, 280 characters or fewer) */
+@media (max-width:560px){.offph{display:none}}
 .pcset{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:6px 0}
 .pcset input,.pcset select{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);max-width:100%}

@@ -449,7 +449,7 @@ function wkPill(c, o) {
   return el('div', {class: 'wkcmp', 'data-wk': c.dir, title: tip},
     el('b', {text: o.what}), ', this week', dd(c.cur), ` ${o.fmt(c.cur.v)}${unit}${cov(c.cur)} vs last week`, dd(c.prev), ` ${o.fmt(c.prev.v)}${unit}${cov(c.prev)} `,
     el('span', {class: 'delta ' + cls, text: chg}), basis,
-    typeof wkMark === 'function' ? wkMark(['A7'], `This week vs last week: ${o.what}`, {A7: {cur: c.cur.v, prev: c.prev.v, cn: c.cur.days, pn: c.prev.days, of: c.of, fmt: o.fmt, unit, dunit}}) : null);   // Round J
+    typeof wkMark === 'function' ? wkMark(['A7', ...((o.wk && o.wk.ids) || [])], `This week vs last week: ${o.what}`, Object.assign({A7: {cur: c.cur.v, prev: c.prev.v, cn: c.cur.days, pn: c.prev.days, of: c.of, fmt: o.fmt, unit, dunit}}, (o.wk && o.wk.data) || {})) : null);   // Round J; Round A10: o.wk adds a line's own entries (the Quality bar's C7)
 }
 
 // ---------------------------------------------------------------- Search, favourites and recent places (Round E, 17 Nov 2026)

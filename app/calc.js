@@ -948,6 +948,17 @@ const WKL = {
     return wkOut(`${wkF(d.c0, 2)} paise now ${S.map((s) => `${s.pp < 0 ? '−' : '+'} ${Math.abs(s.pp).toFixed(Math.abs(s.pp) < 0.1 && s.pp !== 0 ? 3 : 2)} (${s.name})`).join(' ')}${d.left ? ` (left out: ${d.left})` : ''}`, wkF(v, 2), 'paise', v); },
   B4: (d) => { if (!d || !(d.P > 0)) return null; const v = 1 - (d.A + d.B + d.C) / d.P;
     return wkOut(`${d.days} of ${d.of} days: 1 − (A-grade folded picks ${wkN(d.A)} + B grade picks ${wkN(d.B)} + cut piece picks ${wkN(d.C)}) ÷ production picks ${wkN(d.P)}`, wkF(v * 100, 1), '%', v); },
+  // Round A10 (Divyam, 26 Nov 2026): each quality's own folding % (B4:q) and the check line under By quality (B4:qt)
+  'B4q': (d) => { if (!d || !(d.pf > 0) || !ok(d.s)) return null; const own = d.num / d.pf, pre = `${d.name}: its ${d.n} of ${d.m} days with a figure, each day's own folding % weighted by its loom picks that day (${wkN(d.pf)} picks)`;
+    return d.src === 'own' ? wkOut(pre, wkF(own * 100, 2), '%', own)
+      : wkOut(`${pre} = its own ${wkF(own * 100, 2)}%; it ran under ${d.min} such days, so it uses ${d.src === 'own-last' ? 'its own figure from last month' : 'the plant\'s month to date'}`, wkF(d.s * 100, 2), '%', d.s, ': '); },
+  'B4qt': (d) => { if (!d || !ok(d.readd) || !ok(d.ps)) return null; const v = 100 * (d.readd - d.ps);
+    return wkOut(`each quality's figure used × its loom picks, added up ÷ ${wkN(d.lp)} loom picks = ${wkF(d.readd * 100, 2)}%, against the plant's ${wkF(d.ps * 100, 2)}%`, `${Math.round(v * 100) < 0 ? '−' : '+'}${Math.abs(v).toFixed(2)}`, 'points', v, ': '); },
+  // Round A10: the Quality bar's pooling (C6) and its week line (C7)
+  C6: (d) => { if (!d || !(d.run > 0)) return null; const v = d.picks / d.run;
+    return wkOut(`${d.hg}, ${d.w} cm: ${wkN(d.picks)} picks ÷ ${wkN(d.run)} minutes run over ${d.ld} loom-day${d.ld === 1 ? '' : 's'} of 60 minutes or more (Looms ran: ${d.ld})`, f0(v), 'RPM', v); },
+  C7: (d) => { if (!d || !ok(d.now) || !(d.ref > 0)) return null; const v = (d.now - d.ref) / d.ref * 100;
+    return wkOut(`this week, ${d.n} loom-day${d.n === 1 ? '' : 's'}: ${wkF(d.now, 1)} effective RPM against the ${d.nm} ${wkF(d.ref, 1)} (each loom-day's weighted by its minutes): (${wkF(d.now, 1)} − ${wkF(d.ref, 1)}) ÷ ${wkF(d.ref, 1)} × 100`, wkS(v, 1), '%', v); },
   B6: (d) => { if (!d) return null; const parts = [];
     if (ok(d.rsPicks)) parts.push(`lost picks ${wkN(d.picks)} × ${wkF(d.pp, 2)} paise ${d.by === 'realisation' ? 'of realisation per pick (the owner\'s valuation, in place of the cost per pick)' : 'of cost per pick (the lines paid whether or not the loom weaves)'} = ${wkR(d.rsPicks)}`);
     if (ok(d.rsAir) && d.ft3 > 0) parts.push(`extra air ${wkN(d.ft3)} ft³ × ₹${wkF(d.rsFt3 * 1000, 2)} per 1,000 ft³ = ${wkR(d.rsAir)}`);

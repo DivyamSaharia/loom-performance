@@ -1006,7 +1006,7 @@ function erDevCard() {
   const lc = allC.find((r) => r.d === last.d), lp = allP.find((r) => r.d === last.d), r2 = (r) => r && r.f.used !== 'none' && ok(r.f.r2) ? f2(r.f.r2) : '—';
   const both = el('p', {class: 'note'}, el('b', {text: `R² on ${dfmt(last.d)}: Current fit ${r2(lc)} · Air + floor pressure ${r2(lp)}`}), ` (1.00 = every day on the line). The energy rate for the CFM saving uses the Current fit.${lp && lp.f.used === 'slope' ? ` The air + floor pressure fit: ${erHowP(lp.f)}; its p is ${f0(lp.f.p)} kWh per kgf/cm² of floor pressure, ${lp.x.fit > 0 ? f1(100 * lp.f.p / lp.x.fit) : '—'}% of the day's fitted kWh, beside the ${f1(POWER_PCT)}% rule the pressure saving uses.` : lp ? ` The air + floor pressure fit: ${erHowP(lp.f)}.` : ''}`);
   return card(ER_CARD, sub, fsw, lastLine, bar, chart, both,
-    el('p', {class: 'note', text: `${outs.length ? `${outs.length} outlier${outs.length === 1 ? '' : 's'} in this period (${outs.map((r) => dfmt(r.d)).join(', ')}): a day more than ${ER_OUT} robust standard deviations from its fit. Check that day's reading in the power register.` : `No outlier in this period (more than ${ER_OUT} robust standard deviations from the fit).`} Each day is set against the fit used for that day, over its own last 30 days, so a past day does not move. The first days have few days to set against, so they sit near 0; outliers are labelled from the ${ER_MIN}th day.`}),
+    el('p', {class: 'note', text: `${outs.length ? `${outs.length} outlier${outs.length === 1 ? '' : 's'} in this period (${outs.map((r) => dfmt(r.d)).join(', ')}): a day more than ${ER_OUT} robust standard deviations from its fit. Check that day's compressor kWh: the power register's WEAVING COMPRESSOR up to 19 Nov 2026, the costing sheet's Power (Compressor) kWh from 20 Nov.` : `No outlier in this period (more than ${ER_OUT} robust standard deviations from the fit).`} Each day is set against the fit used for that day, over its own last 30 days, so a past day does not move. The first days have few days to set against, so they sit near 0; outliers are labelled from the ${ER_MIN}th day.`}),
     !fr ? null : el('p', {class: 'note', text: `On ${dfmt(fr.d)} the energy rate is ${erHow(f)}.${f.useC ? ` The set point term c is ${f0(f.c)} kWh per kgf/cm², ${f.a + f.b * fr.x.air / 1000 + f.c * fr.x.sp > 0 ? f1(100 * f.c / (f.a + f.b * fr.x.air / 1000 + f.c * fr.x.sp)) : '—'}% of the day's fitted kWh: a measured check beside the Pressure tab's ${f1(POWER_PCT)}% rule, which the pressure saving still uses.` : ` The set point term c needs two set points with ${ER_SPDAYS} days or more each in the window (now: ${(f.sps || []).map((e) => `${f2(e[0])} kgf/cm² on ${e[1]} day${e[1] === 1 ? '' : 's'}`).join(', ') || 'no set point history'}), so it is not fitted yet; the pressure saving uses the ${f1(POWER_PCT)}% rule.`}`}));
 }
 // A share of the compressor's energy, in rupees a day on the day shown, with its paise per pick under it (Round F: one
@@ -1216,7 +1216,41 @@ function tcFoldCard() {
     last ? el('p', {class: 'note', text: `${dfmt(last.date)}: month to date ${pc(last.mtdDays ? last.mtd : null)} over ${last.mtdDays} day${last.mtdDays === 1 ? '' : 's'}${ok(last.s) ? `, the day's own ${pc(last.s)}` : ` (the day itself is left out: ${last.why})`}. The month to date line is the tile; it starts again on the 1st.`}) : null,
     bar, chart, tb,
     miss.length ? el('p', {class: 'note', text: `${miss.length} day${miss.length === 1 ? '' : 's'} left out (a figure missing; never counted as 0). Next: ${tcNext()}.`}) : null,
+    ...tcFoldByQ(),
     el('p', {class: 'note', text: 'B grade picks = each register entry\'s metres × its quality\'s picks per metre; cut piece picks = cut metres × the floor\'s average picks per metre that day. The day\'s own figure jumps more than the month to date, because folding lags the looms: a taka woven one day can be folded the next.'}));
+}
+// Round A10 (Divyam, 26 Nov 2026, D0–D3; design 2026-11-27_folding-shortage-design.md section 3): By quality, under Folding
+// shortage by day, for the date chip's day (month to date as at it). One row per quality across both widths (its head group's
+// Style-map name, D2), with the widths it ran on: its days with a figure (n of m), its own %, the % used and where it comes
+// from (its own once it ran 7 of those days, else its own last month's, else the plant's: D1), its loom picks. Most picks
+// first. Then the check line: the figures used, re-added by their loom picks, against the plant's (D3: named, never forced).
+// No money (loom picks and %), so it shows wherever this view shows.
+function tcFoldByQ() {
+  const Q = typeof fxSQDay === 'function' ? fxSQDay(D.latest) : null, h = el('h3', {style: 'margin-top:14px', text: 'By quality'});
+  if (!Q) return [];
+  const R = Object.entries(Q.by).filter(([, e]) => e.picks > 0).map(([q, e]) => ({q, e})).sort((a, b) => b.e.picks - a.e.picks);
+  const intro = el('p', {class: 'note', text: `${dfmt(D.latest)}, month to date: each quality's own folding % = each day's own figure weighted by the quality's loom picks that day. It is used once the quality has run on ${Q.min} costing days with a figure (a day on either width counts once); before that, its own figure from last month, then the plant's.`});
+  if (!R.length) return [h, intro, el('p', {class: 'empty', text: `No quality wove on a costing day of this month with a figure up to ${dfmt(D.latest)} yet. Next: ${tcNext()}.`})];
+  const pc2 = (v) => ok(v) ? (100 * v).toFixed(2) + '%' : '—', lk = (p) => pn(p / 1e5, 2);
+  const mo = (m) => new Date(m + '-01T00:00:00Z').toLocaleString('en-IN', {month: 'short', timeZone: 'UTC'});
+  const src = (e) => e.src === 'own' ? 'its own figure' : e.src === 'own-last' ? `its own ${mo(e.from)} figure` : e.src === 'plant' ? `the plant's (ran under ${Q.min} days)`
+    : e.src === 'plant-earlier' ? `the plant's of ${dfmt(e.at)} (ran under ${Q.min} days)` : `none yet. Next: ${tcNext()}`;
+  const name = (q, e) => `${(e.names.length ? e.names : [q]).join(' / ')} · ${e.ws.join(' and ')} cm`;
+  const tb = actTable('foldq', ['Quality', ['Days with a figure', `of ${Q.mdays}`], ['Its own', '% month to date'], ['Figure used', '%'], ['From', 'which'], ['Loom picks', 'lakh']],
+    R.map(({q, e}) => [[name(q, e), `${e.n} of ${Q.mdays}`, pc2(e.own), el('b', {text: pc2(e.s)}), src(e), lk(e.picks)], [name(q, e), e.n, e.own, e.s, src(e), e.picks]]), [1, 2, 3, 5]);
+  if (typeof wkPut === 'function') {   // the Working: the first quality on its own figure, else the first row; and the check line
+    const t = R.find((x) => x.e.src === 'own') || R[0];
+    wkPut('B4:q', {name: name(t.q, t.e), num: t.e.num, pf: t.e.pf, n: t.e.n, m: Q.mdays, s: t.e.s, own: t.e.own, src: t.e.src, min: Q.min});
+    wkPut('B4:qt', ok(Q.readd) ? {readd: Q.readd, ps: Q.ps, lp: Q.lp} : null);
+  }
+  const pl = Q.back.filter((x) => x.src !== 'own-last'), la = Q.back.filter((x) => x.src === 'own-last'), sgn = (v) => (Math.round(v * 100) < 0 ? '−' : '+') + Math.abs(v).toFixed(2);   // the sign of the figure as shown, as the Working's line
+  const why = [pl.length ? `${pl.length} quality${pl.length === 1 ? '' : ' qualities'} on the plant's figure (${lk(pl.reduce((a, x) => a + x.pf, 0))} lakh picks)` : null,
+    la.length ? `${la.length} on its own last month's figure` : null,
+    Q.lp > 0 && Math.abs(Q.cp / Q.lp - 1) >= 0.00005 ? `costing picks are ${Math.abs(100 * (Q.cp / Q.lp - 1)).toFixed(2)}% ${Q.cp >= Q.lp ? 'above' : 'below'} loom picks` : null,
+    Q.unas > 0 ? `${lk(Q.unas)} lakh picks with no head group at the plant's figure` : null].filter(Boolean);
+  const chk = ok(Q.readd) ? `Check: the figures used, re-added by their loom picks, give ${pc2(Q.readd)} against the plant's ${pc2(Q.ps)} (${sgn(100 * Q.diff)} points)${why.length ? ': ' + why.join(', ') : ''}. A check, not a gap: nothing is forced to tie.`
+    : `Check: not worked out yet (no costing day this month has a figure). Next: ${tcNext()}.`;
+  return [h, intro, tb, el('p', {class: 'note', text: chk})];
 }
 // ================================================================ END COSTING TAB
 // COSTING-TAB>>
