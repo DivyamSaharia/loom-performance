@@ -417,9 +417,9 @@ function pageCosting() {
   if (b) {
     // folded
     const fb = b.folded;
-    if (fb && typeof wkPut === 'function') wkPut('J8', {prev: fb.prev, folding: fb.folding, opex: fb.opex, cut: fb.cut, prevDate: dfmt(b.prev_date), date: dfmt(cur.date)});   // Round J
-    if (fb) s.append(card('Folded cost per pick', 'Cost of A-grade folded picks: OPEX plus cut-piece loss, over picks folded',
-      el('div', {class: 'nosort'}, table(['Step', ['Effect', 'paise per pick']], [[dfmt(b.prev_date), pn(fb.prev, 2)], ['Picks folded (timing of folding)', sg(fb.folding)], ['OPEX', sg(fb.opex)], ['Cut-piece loss', sg(fb.cut)], [dfmt(cur.date), el('b', {text: pn(fb.now, 2)})]], [1])),   // a bridge from one day to the next: its steps are not a list to sort
+    if (fb && typeof wkPut === 'function') wkPut('J8', {prev: fb.prev, folding: fb.folding, opex: fb.opex, bgrade: fb.bgrade, cut: fb.cut, prevDate: dfmt(b.prev_date), date: dfmt(cur.date)});   // Round J
+    if (fb) s.append(card('Folded cost per pick', 'Cost of A-grade folded picks: OPEX, net B grade and cut-piece loss, over picks folded',
+      el('div', {class: 'nosort'}, table(['Step', ['Effect', 'paise per pick']], [[dfmt(b.prev_date), pn(fb.prev, 2)], ['Picks folded (timing of folding)', sg(fb.folding)], ['OPEX', sg(fb.opex)], ['Net B grade', ok(fb.bgrade) ? sg(fb.bgrade) : el('span', {class: 'note', text: 'bgrade' in fb ? '— the costing file has no B grade loss or revenue on one of the two days, so this card leaves it out. Next: ' + (isAdmin() ? 'see Files per day on Data health' : 'tell the owner') : '— until the next daily run (it runs every hour, 10:40 to 16:40 IST)'})], ['Cut-piece loss', sg(fb.cut)], [dfmt(cur.date), el('b', {text: pn(fb.now, 2)})]], [1])),   // a bridge from one day to the next: its steps are not a list to sort
       el('p', {class: 'note', text: `${f0(fb.folded_m)} m were folded against ${f0(fb.produced_m)} m produced, so folded cost per pick can move the other way from cost per pick on a day when folding runs ahead of or behind production.`})));
   }
 

@@ -233,7 +233,7 @@ function fcAnalyse(inp) {
   for (const x of days) {
     const P = (x.fpicks || 0) / FC_PICKS_PER_INCH;
     const r = {date: x.date, loom: x.loom, width: String(x.width), hg: x.hg, hg0: x.hg0 || x.hg, styles: x.styles || [], picks: P, metres: null, fabric: null, basis: null,
-               sale: null, real: null, cost: null, bcharge: null, profit: null, gap: null};
+               sale: null, real: null, bcharge: null, costed: false, gap: null};
     rows.push(r);
     if (!P) { r.gap = 'no picks'; continue; }
     // the loom-day's head group -> its fabric for this basis (Divyam, 10 Nov 2026: a head group is the quality, so one link
@@ -272,18 +272,19 @@ function fcAnalyse(inp) {
     if (snull) { r.gap = 'no folding shortage yet'; r.sale0 = r.real0 = null; continue; }
     r.sale = r.sale0 * (1 - S); r.real = r.real0 * (1 - S); r.fmetres = r.metres * (1 - S); r.s = S;
   }
-  // cost per pick and B grade on every row of a costed day (gap rows too, so the day reconciles; only priced rows show profit)
+  // B grade on every row of a costed day (gap rows too, so the day reconciles). Round A9 (Divyam, 26 Nov 2026, point 10): the
+  // old per pick basis's cost and profit are gone (no screen used them since Round A4); `costed` says a priced row is on a
+  // costed day, which the loom cost basis and Coverage's "priced and costed" need.
   for (const r of rows) {
     const c = cost.get(r.date), b = bday.get(r.date);
     if (!c || !b || !r.picks) continue;
     const k = r.date + '|' + r.loom;
     const share = picksOf.get(k) ? r.picks / picksOf.get(k) : 1;
     r.bm = (bReg.get(k) || 0) * share;
-    r.cost = r.picks * c.base;
     r.bcharge = r.bm * b.rate + r.picks * b.spread;
     r.bnote = !b.reg ? 'no B grade register for the day: its B grade is spread over all picks' : null;
-    if (r.gap) { r.cost_gap = r.cost; r.cost = null; r.bcharge_gap = r.bcharge; r.bcharge = null; continue; }
-    r.profit = r.real - r.cost - r.bcharge;
+    if (r.gap) { r.bcharge_gap = r.bcharge; r.bcharge = null; continue; }
+    r.costed = true;
   }
   rows.bday = bday;
   rows.lday = inp.running ? fcLoomCost(rows, cost, inp.running, picksOf, inp) : null;
@@ -336,7 +337,6 @@ function fcRowAtS(r, s) {
   r.afold = r.afB != null ? r.picks * (1 - s) - r.afB - r.afC : null;
   if (r.real0 == null) return r;
   r.s = s; r.sale = r.sale0 * (1 - s); r.real = r.real0 * (1 - s); r.fmetres = r.metres * (1 - s);
-  if (r.profit != null) r.profit = r.real - r.cost - r.bcharge;
   if (r.profit_lc != null) r.profit_lc = r.real - r.lcost - r.bcharge;
   return r;
 }
@@ -435,7 +435,7 @@ function fcLoomCost(rows, cost, running, picksOf, inp) {
       if (!rs.length) {   // ran in the loom data, no fabric record (D2): its whole loom cost is unrecovered
         const lp = x.picks || 0, lc = L.per + cpart + lp * L.pp;
         rows.push({date: d, loom: x.loom, width: String(x.width ?? ''), hg: x.hg || 'Unassigned', hg0: x.hg0 || x.hg || 'Unassigned', styles: [], picks: 0, lpicks: lp, metres: null, fabric: null, basis: null,
-                   sale: null, real: null, cost: null, bcharge: null, profit: null, gap: lp > 0 ? 'no fabric record' : 'no picks woven', lcost_gap: lc, lc: {loom: L.per, comp: cpart, pick: lp * L.pp}, lrun: true, synth: true, noair: noAir});
+                   sale: null, real: null, bcharge: null, costed: false, gap: lp > 0 ? 'no fabric record' : 'no picks woven', lcost_gap: lc, lc: {loom: L.per, comp: cpart, pick: lp * L.pp}, lrun: true, synth: true, noair: noAir});
         u = lc;
         if (!(lp > 0)) L.nopick_ld++;
       } else {
@@ -443,8 +443,8 @@ function fcLoomCost(rows, cost, running, picksOf, inp) {
           const share = P > 0 ? r.picks / P : (i === 0 ? 1 : 0);   // no picks at all: the whole loom part on its first record
           const parts = {loom: L.per * share, comp: cpart * share, pick: (r.picks || 0) * L.pp}, lc = parts.loom + parts.comp + parts.pick;
           r.lrun = true; r.lc = parts; if (noAir) r.noair = true;   // Round A3: its compressor part is unknown (fcFoldByQuality makes its quality a gap)
-          if (!r.gap && r.profit != null && noAir) { r.lc_gap = 'no CFM reading for the loom'; r.lc_noair = lc; }
-          else if (!r.gap && r.profit != null) { r.lcost = lc; r.profit_lc = r.real - lc - r.bcharge; }
+          if (!r.gap && r.costed && noAir) { r.lc_gap = 'no CFM reading for the loom'; r.lc_noair = lc; }
+          else if (!r.gap && r.costed) { r.lcost = lc; r.profit_lc = r.real - lc - r.bcharge; }
           else { r.lcost_gap = lc; u += lc; }
         });
         if (!(P > 0) && u > 0) L.nopick_ld++;
@@ -458,12 +458,12 @@ function fcLoomCost(rows, cost, running, picksOf, inp) {
       if (r.date !== d || ran.has(String(r.loom)) || r.synth) continue;
       const lc = (r.picks || 0) * L.pp;
       r.lc = {loom: 0, comp: 0, pick: lc};
-      if (!r.gap && r.profit != null) { r.lcost = lc; r.profit_lc = r.real - lc - r.bcharge; r.lc_norun = true; }
+      if (!r.gap && r.costed) { r.lcost = lc; r.profit_lc = r.real - lc - r.bcharge; r.lc_norun = true; }
       else if (lc > 0) { r.lcost_gap = lc; L.unrec += lc; nu.add(String(r.loom)); }
     }
     L.unrec_ld += nu.size;
   }
-  for (const r of rows) if (!r.gap && r.profit != null && r.profit_lc == null && !r.lc_gap) r.lc_gap = (lday[r.date] && lday[r.date].why) || 'no loom data for the day';
+  for (const r of rows) if (!r.gap && r.costed && r.profit_lc == null && !r.lc_gap) r.lc_gap = (lday[r.date] && lday[r.date].why) || 'no loom data for the day';
   return lday;
 }
 // ---- Round A3, item 8 (Divyam, 24 Nov 2026): the folded cost per pick of each quality (head group × width), on the loom
@@ -639,7 +639,7 @@ function fcRealLessFold(real, fold) {
 // ties to the plant's figure on every day with loom data (lc_days); lc_nodays counts costed days without it.
 function fcReconcile(rows, costing) {
   const days = new Set(rows.map((r) => r.date));
-  let charged = 0, plant = 0, bnet = 0, nodays = 0, noreg = 0, charged_lc = 0, plant_lc = 0, lc_days = 0, lc_nodays = 0;
+  let plant = 0, bnet = 0, nodays = 0, noreg = 0, charged_lc = 0, plant_lc = 0, lc_days = 0, lc_nodays = 0;
   const lday = rows.lday || null;
   for (const c of costing || []) {
     if (!days.has(c.date)) continue;
@@ -648,11 +648,10 @@ function fcReconcile(rows, costing) {
     if (lday) { const L = lday[c.date]; if (L && L.per != null) { lc_days++; plant_lc += k.fold * c.afold * 1e5; } else lc_nodays++; }   // Round A5 (25 Nov 2026): the plant's folded total as it is, no 2 paise a pick
   }
   for (const r of rows) {
-    charged += (r.cost ?? r.cost_gap ?? 0) + (r.bcharge ?? r.bcharge_gap ?? 0);
     if (lday && lday[r.date] && lday[r.date].per != null) charged_lc += (r.lcost ?? r.lcost_gap ?? r.lc_noair ?? 0) + (r.bcharge ?? r.bcharge_gap ?? 0);   // Round A3: a loom with no CFM reading is charged too (its profit is the gap)
   }
   for (const [, b] of rows.bday || []) if (!b.reg) noreg++;
-  return {charged, plant, diff: charged - plant, days: nodays, bnet, noreg, uncosted: [...days].filter((d) => !(costing || []).some((c) => c.date === d && fcCostDay(c))).length,
+  return {plant, days: nodays, bnet, noreg, uncosted: [...days].filter((d) => !(costing || []).some((c) => c.date === d && fcCostDay(c))).length,
           charged_lc: lday ? charged_lc : null, plant_lc: lday ? plant_lc : null, diff_lc: lday ? charged_lc - plant_lc : null, lc_days, lc_nodays};
 }
 // Totals of a set of rows: picks (all and priced), coverage, rupees and paise per pick, loom-days.
@@ -660,7 +659,7 @@ function fcReconcile(rows, costing) {
 // their running loom-days that are not priced (unrec) is taken off profit_lc, and ₹ a loom a day divides by every running
 // loom-day with a loom cost (D3). withU false (By loom, By head group): priced rows only, never U.
 function fcSum(rows, withU = true) {
-  const t = {picks: 0, priced: 0, costed: 0, metres: 0, sale: 0, real: 0, profit: 0, cost: 0, bcharge: 0, loomdays: 0, priced_ld: 0, costed_ld: 0, gaps: {},
+  const t = {picks: 0, priced: 0, costed: 0, metres: 0, sale: 0, real: 0, bcharge: 0, loomdays: 0, priced_ld: 0, costed_ld: 0, gaps: {},
              lc_priced: 0, lcost: 0, lc_costed: 0, lc_bcharge: 0, unrec: 0, unrec_ld: 0, lc_ld: 0, lc_gaps: {}, norun_ld: 0, nopick_ld: 0, lc_metres: 0, fmetres: 0};
   const ld = new Set(), pld = new Set(), cld = new Set(), lld = new Set(), uld = new Set(), rld = new Set(), nld = new Set(), npld = new Set();
   // Round A7: the folded basis. fp: priced rows with A-grade folded picks; fl: of those, the rows with a loom cost profit (the
@@ -675,7 +674,7 @@ function fcSum(rows, withU = true) {
     if (r.lcost_gap != null) { t.unrec += r.lcost_gap; if (r.lcost_gap > 0) { uld.add(k); if (r.gap === 'no picks' || r.gap === 'no picks woven') npld.add(k); } if (r.lrun) rld.add(k); }   // Round A3: picks with no run minutes are not a loom-day running
     if (r.gap) { t.gaps[r.gap] = (t.gaps[r.gap] || 0) + r.picks; continue; }
     t.priced += r.picks; t.metres += r.metres; t.fmetres += r.fmetres ?? r.metres; t.sale += r.sale; t.real += r.real; pld.add(k);   // Round A7: fmetres = folded metres (sale value is on them)
-    if (r.profit != null) { t.costed += r.picks; t.profit += r.profit; t.cost += r.cost; t.bcharge += r.bcharge; cld.add(k); }
+    if (r.costed) { t.costed += r.picks; t.bcharge += r.bcharge; cld.add(k); }
     if (r.profit_lc != null) { t.lc_costed += r.picks; t.lc_priced += r.profit_lc; t.lcost += r.lcost; t.lc_bcharge += r.bcharge; lld.add(k); if (r.lrun) rld.add(k); if (r.lc_norun) nld.add(k); }
     else if (r.lc_gap) t.lc_gaps[r.lc_gap] = (t.lc_gaps[r.lc_gap] || 0) + r.picks;
   }
@@ -683,9 +682,9 @@ function fcSum(rows, withU = true) {
   t.coverage = t.picks ? t.priced / t.picks : null;
   t.cost_coverage = t.picks ? t.costed / t.picks : null;
   const pp = (rs, p) => p ? rs / p * 100 : null;
-  t.sale_pp = pp(t.sale, t.priced); t.real_pp = pp(t.real, t.priced); t.profit_pp = pp(t.profit, t.costed);
+  t.sale_pp = pp(t.sale, t.priced); t.real_pp = pp(t.real, t.priced);
   // rupees per loom per day (Divyam, 10 Nov 2026): the period's rupees ÷ the loom-days they came from
-  t.sale_ld = t.priced_ld ? t.sale / t.priced_ld : null; t.real_ld = t.priced_ld ? t.real / t.priced_ld : null; t.profit_ld = t.costed_ld ? t.profit / t.costed_ld : null;
+  t.sale_ld = t.priced_ld ? t.sale / t.priced_ld : null; t.real_ld = t.priced_ld ? t.real / t.priced_ld : null;
   // the loom cost basis (Round Y): nothing priced with a loom cost = a gap (null), never ₹0
   t.lc_ld = lld.size; t.unrec_ld = uld.size; t.norun_ld = nld.size;
   t.nopick_ld = npld.size;   // Round A3 (risk D): the unpriced loom-days that ran but wove no picks, named apart from those not priced
@@ -710,13 +709,13 @@ function fcSum(rows, withU = true) {
   t.unrec_only = !t.lc_ld && t.unrec > 0;
   return t;
 }
-// One analysis row re-worked at f times its picks (the Benchmark / Best / Target views): metres, sale value, realisation,
-// the per pick basis's cost, B grade and profit scale with the picks; on the loom cost basis the loom-day's loom cost stays
+// One analysis row re-worked at f times its picks (the Benchmark / Best / Target views): metres, sale value, realisation
+// and B grade scale with the picks; on the loom cost basis the loom-day's loom cost stays
 // as it was (Round Y, decision 4: a loom costs the same for the day however fast it runs) and only B grade scales.
 function fcScaleRow(r, f) {
   const sc = (v) => typeof v === 'number' && isFinite(v) ? v * f : v;
   // Round A7: A-grade folded picks scale with the picks (its B grade and cut piece picks scale too, as Folded cost by quality's reference)
-  const o = Object.assign({}, r, {picks: sc(r.picks), metres: sc(r.metres), sale: sc(r.sale), real: sc(r.real), sale0: sc(r.sale0), real0: sc(r.real0), fmetres: sc(r.fmetres), cost: sc(r.cost), bcharge: sc(r.bcharge), profit: sc(r.profit),
+  const o = Object.assign({}, r, {picks: sc(r.picks), metres: sc(r.metres), sale: sc(r.sale), real: sc(r.real), sale0: sc(r.sale0), real0: sc(r.real0), fmetres: sc(r.fmetres), bcharge: sc(r.bcharge),
     afold: sc(r.afold), afB: sc(r.afB), afC: sc(r.afC)});
   if (r.profit_lc != null) o.profit_lc = o.real - r.lcost - o.bcharge;
   return o;
@@ -756,19 +755,18 @@ function fcCoverage(rows) {
 // the loom cost not recovered (U, on the days that have A-grade folded picks) as its own step: Sale value → Yarn →
 // Realisation → Loom cost → B grade → Loom cost not recovered → Profit. null when no row has both.
 function fcWaterfall(rows, basis, withU = true) {
-  const lc = basis === 'lc';
-  const R = rows.filter((r) => (lc ? r.profit_lc : r.profit) != null && r.picks > 0 && (!lc || r.afold != null));
+  if (basis !== 'lc') return null;   // Round A9 (point 10): the old per pick basis is gone; the loom cost basis is the only one
+  const R = rows.filter((r) => r.profit_lc != null && r.picks > 0 && r.afold != null);
   if (!R.length) return null;
-  const s = {basis: lc ? 'lc' : 'pp', picks: 0, woven: 0, sale: 0, yarn: 0, real: 0, conv: 0, bgrade: 0, unrec: 0, unrec_ld: 0, profit: 0, loomdays: new Set(R.map((r) => r.date + '|' + r.loom)).size,
-             nofold_ld: lc ? new Set(rows.filter((r) => r.profit_lc != null && r.afold == null).map((r) => r.date + '|' + r.loom)).size : 0};
-  for (const r of R) { s.picks += lc ? r.afold : r.picks; s.woven += r.picks; s.sale += r.sale; s.yarn += r.sale - r.real; s.real += r.real; s.conv += lc ? r.lcost : r.cost; s.bgrade += r.bcharge; s.profit += lc ? r.profit_lc : r.profit; }
+  const s = {basis: 'lc', picks: 0, woven: 0, sale: 0, yarn: 0, real: 0, conv: 0, bgrade: 0, unrec: 0, unrec_ld: 0, profit: 0, loomdays: new Set(R.map((r) => r.date + '|' + r.loom)).size,
+             nofold_ld: new Set(rows.filter((r) => r.profit_lc != null && r.afold == null).map((r) => r.date + '|' + r.loom)).size};
+  for (const r of R) { s.picks += r.afold; s.woven += r.picks; s.sale += r.sale; s.yarn += r.sale - r.real; s.real += r.real; s.conv += r.lcost; s.bgrade += r.bcharge; s.profit += r.profit_lc; }
   // numbers review (Round A7): U on every day with A-grade folded picks, as fcSum takes it
-  if (lc && withU) { const days = new Set(rows.filter((r) => r.afold != null).map((r) => r.date)), u = new Set(); for (const r of rows) if (r.lcost_gap > 0 && days.has(r.date)) { s.unrec += r.lcost_gap; u.add(r.date + '|' + r.loom); } s.unrec_ld = u.size; s.profit -= s.unrec; }
+  if (withU) { const days = new Set(rows.filter((r) => r.afold != null).map((r) => r.date)), u = new Set(); for (const r of rows) if (r.lcost_gap > 0 && days.has(r.date)) { s.unrec += r.lcost_gap; u.add(r.date + '|' + r.loom); } s.unrec_ld = u.size; s.profit -= s.unrec; }
   if (!(s.picks > 0)) return null;
   const pp = (v) => v / s.picks * 100;
   s.pp = {sale: pp(s.sale), yarn: pp(s.yarn), real: pp(s.real), conv: pp(s.conv), bgrade: pp(s.bgrade), unrec: pp(s.unrec), profit: pp(s.profit)};
-  s.steps = lc ? [{label: 'Sale value', v: s.pp.sale, total: true}, {label: 'Yarn', v: -s.pp.yarn}, {label: 'Realisation', v: s.pp.real, total: true}, {label: 'Loom cost', v: -s.pp.conv}, {label: 'B grade', v: -s.pp.bgrade}, {label: 'Loom cost not recovered', v: -s.pp.unrec}, {label: 'Profit', v: s.pp.profit, total: true}]
-    : [{label: 'Sale value', v: s.pp.sale, total: true}, {label: 'Yarn', v: -s.pp.yarn}, {label: 'Conversion', v: -s.pp.conv}, {label: 'B grade', v: -s.pp.bgrade}, {label: 'Profit', v: s.pp.profit, total: true}];
+  s.steps = [{label: 'Sale value', v: s.pp.sale, total: true}, {label: 'Yarn', v: -s.pp.yarn}, {label: 'Realisation', v: s.pp.real, total: true}, {label: 'Loom cost', v: -s.pp.conv}, {label: 'B grade', v: -s.pp.bgrade}, {label: 'Loom cost not recovered', v: -s.pp.unrec}, {label: 'Profit', v: s.pp.profit, total: true}];
   return s;
 }
 // Products (or head groups) ranked by profit a loom a day on the loom cost basis (Round A4, Divyam, 24 Nov 2026; realisation
@@ -934,12 +932,12 @@ function fcImpact(inp, edit) {
     const per = new Map();
     for (let i = 0; i < a.length; i++) {
       const x = a[i], y = b[i];
-      const dr = (y.real ?? 0) - (x.real ?? 0), ds = (y.sale ?? 0) - (x.sale ?? 0), dp = (y.profit ?? 0) - (x.profit ?? 0);
+      const dr = (y.real ?? 0) - (x.real ?? 0), ds = (y.sale ?? 0) - (x.sale ?? 0);   // Round A9 (point 10): no profit change (d_profit): the preview shows realisation
       const moved = Math.abs(dr) > 1e-9 || Math.abs(ds) > 1e-9 || (x.gap || '') !== (y.gap || '');
       if (!moved) continue;
       const u = y.fabric ?? x.fabric;
-      const o = per.get(u) || {uid: u, loomdays: 0, d_sale: 0, d_real: 0, d_profit: 0, newly_priced: 0, newly_gap: 0};
-      o.loomdays++; o.d_sale += ds; o.d_real += dr; o.d_profit += dp;
+      const o = per.get(u) || {uid: u, loomdays: 0, d_sale: 0, d_real: 0, newly_priced: 0, newly_gap: 0};
+      o.loomdays++; o.d_sale += ds; o.d_real += dr;
       if (x.gap && !y.gap) o.newly_priced++;
       if (!x.gap && y.gap) o.newly_gap++;
       per.set(u, o);

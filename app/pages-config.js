@@ -97,6 +97,7 @@ function pageData() {
   s.append(el('div', {},
     el('p', {class: 'lead', text: 'Every file the daily run looked at, which days are complete, and the checks behind the numbers.'})));
   s.append(dataHealthVisuals());
+  s.append(prodCheckCard(), missedCard(), ovrCard());   // Round A9 (Divyam, 26 Nov 2026)
   s.append(backupCard());
   if (typeof reloadBox === 'function' && canEdit()) s.append(card('Reload data', 'Start the daily run now instead of waiting for the next one', reloadBox()));
   s.append(card('Days', null, table(['Date', 'Status'], (D.days || []).slice().reverse().slice(0, 30).map((d) => [dfmt(d.date), el('span', {class: 'pill ' + (d.status === 'complete' ? 'good' : 'bad'), text: d.status})]))));
@@ -113,6 +114,125 @@ function pageData() {
       ['Long power-down (this page)', OFF_LONG / 60 + ' h'], ['Consistently low efficiency', `below ${f0(EFF_BAD())}% on ${LOW_EFF_DAYS} of last ${LOW_EFF_WINDOW} running days`]])));
   s.append(el('p', {class: 'note', text: `Data generated ${D.generated_at} IST. Head groups, machine master and thresholds are edited in the W2 Loom Performance Config sheet; targets on the Targets tab.`}));
   return s;
+}
+
+// ---------------------------------------------------------------- Round A9 (Divyam, 26 Nov 2026): loom readings vs the costing file
+// The production check (app/calc.js prodCheck), the missed loom readings (the daily run's `missed`) and the loom overrides
+// (migration 0019). Metres and picks only, no money: every role sees them (the plant view on Actions; Data health is not its).
+let PCHK = {pct: 2, m: 100, by: '', at: '', err: ''}, OVR_MSG = '';
+const PC_TITLE = 'Production check: loom readings vs the costing file';
+let PC_NAMES = null, PC_NAMES_OF = null;
+function pcNames() { if (PC_NAMES_OF !== D) { PC_NAMES = prodNames(D.loomdays || []); PC_NAMES_OF = D; } return PC_NAMES; }
+const pcNext = () => isAdmin() ? 'see Files per day on Data health' : 'tell the owner';
+// One day's check, or why there is none (never a check of 0 against a missing side).
+function pcDay(d) {
+  const C = typeof COST !== 'undefined' && COST ? COST : null;
+  if (!C) return {why: 'the costing data has not loaded. Next: press Refresh (the round-arrow icon)'};
+  const cd = (C.days || []).find((x) => x.date === d);
+  if (!cd) return {why: `no costing file read for ${dfmt(d)}. Next: ${pcNext()}`};
+  if (!Array.isArray(cd.prod)) return {why: 'the costing file was read before this check existed. Next: nothing to do, it fills in at the next daily run (every hour, 10:40 to 16:40 IST)'};
+  const L = (D.loomdays || []).filter((x) => x.date === d);
+  if (!L.length) return {why: `no loom readings for ${dfmt(d)}. Next: ${pcNext()}`};
+  return {chk: prodCheck(L, cd.prod, pcNames(), PCHK)};
+}
+const pcM = (x) => ok(x) ? f0(x) : '—';
+const pcSg = (x, n = 0) => !ok(x) ? '—' : (x > 0 ? '+' : x < 0 ? '−' : '±') + (n ? Math.abs(x).toFixed(n) : Math.round(Math.abs(x)).toLocaleString('en-IN'));
+function pcRow(r, d) {
+  const gap = r.gapM != null ? pcSg(r.gapM) : el('span', {class: 'note', text: r.why || '—'});
+  const looms = !r.looms.length ? '' : 'looms ' + (r.looms.length > 6 ? `${r.looms.slice(0, 6).join(', ')} +${r.looms.length - 6} more` : r.looms.join(', '));
+  const head = el('span', {}, r.name, looms ? el('div', {class: 'note', text: looms}) : null, r.qs && r.qs.length ? el('div', {class: 'note', text: 'file: ' + [...new Set(r.qs)].join(', ')}) : null);
+  return [d ? dfmt(d) : null, head, r.width === 'both' ? 'both' : r.width ? r.width + ' cm' : '—', pcM(r.loomM), pcM(r.xlM),
+    el('span', {class: r.flag ? 'pill bad' : null}, gap), r.pct != null ? pcSg(r.pct, 1) + '%' : '—'].filter((c, i) => d || i);
+}
+const pcLevels = () => `flagged over ${PCHK.pct}% and ${f0(PCHK.m)} m`;
+const PC_HEAD = ['Quality', 'Width', ['Loom', 'm'], ['File', 'm'], ['Gap', 'm'], 'Gap %'];
+const pcFoot = () => el('p', {class: 'note', text: 'Loom = the loom readings: each loom-day\'s picks ÷ the costing file\'s picks per inch for its quality. File = the costing file\'s production table, Day + Night metres. Gap = loom − file: + means the loom readings are higher, − the costing file is higher. The file has no width column, so its lines are matched to a width by loom speed (RPM); "both" = compared across both widths. A row on one side only is named, never 0.'});
+// Actions: the day's flagged rows and its missed readings (the date chip's day)
+function prodCheckActions() {
+  const d = D.latest, x = pcDay(d), M = (D.missed || []).filter((m) => m.date === d);
+  const body = [];
+  if (!x.chk) body.push(el('p', {class: 'note', text: 'Production check: ' + x.why + '.'}));
+  else {
+    const F = x.chk.rows.filter((r) => r.flag);
+    body.push(F.length ? table(PC_HEAD, F.map((r) => pcRow(r)), [2, 3, 4, 5])
+      : el('p', {class: 'note', text: `No quality × width differs by more than ${PCHK.pct}% and ${f0(PCHK.m)} m on ${dfmt(d)}.`}));
+  }
+  const sh = M.filter((m) => m.kind === 'shift'), st = M.filter((m) => m.kind === 'short');
+  const lk = x.chk ? st.filter((m) => missedLikely(m, x.chk)).length : 0;
+  body.push(el('p', {class: 'note'}, M.length ? `Missed loom readings: ${sh.length ? `${sh.length} loom-shift${sh.length === 1 ? '' : 's'} missing from a shift file (looms ${[...new Set(sh.map((m) => m.loom))].join(', ')})` : 'no shift file short of looms'}; ${st.length} loom-day${st.length === 1 ? '' : 's'} under ${f0((D.settings || {}).missed_reading_min || 1380)} minutes run + stopped${lk ? `, ${lk} likely missed (its quality reads below the costing file)` : ''}.` : 'Missed loom readings: none on this day.',
+    M.length ? (isPlant() ? ' Next: tell the owner.' : ' Next: ask the plant for the missing readings.') : '',
+    !isPlant() ? ' ' : null, !isPlant() ? el('button', {class: 'link', type: 'button', text: 'Open Data health ›', onclick: () => setTab('data')}) : null));
+  return card(PC_TITLE, `${dfmt(d)} · by quality and loom width · ${pcLevels()}`, ...body, pcFoot());
+}
+// Data health: the last 14 days, flagged rows (with the looms behind each) and the days with no check; the levels
+function prodCheckCard() {
+  const days = (D.complete_days || []).slice(-14).reverse(), rows = [], none = [];
+  for (const d of days) { const x = pcDay(d); if (!x.chk) none.push(`${dfmt(d)}: ${x.why}`); else for (const r of x.chk.rows) if (r.flag) rows.push(pcRow(r, d)); }
+  const lv = el('div', {class: 'meta'}, `Levels: a row is flagged when it differs by more than ${PCHK.pct}% and more than ${f0(PCHK.m)} m.`,
+    PCHK.by ? ` Set by ${PCHK.by}${PCHK.at ? ' on ' + new Date(PCHK.at).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata'}) + ' IST' : ''}.` : '',
+    PCHK.err ? ` (${PCHK.err}; press Refresh, the round-arrow icon)` : '');
+  const edit = isAdmin() ? (() => {
+    const p = el('input', {type: 'number', min: '0.1', max: '50', step: '0.1', value: String(PCHK.pct), 'aria-label': 'Flag level, percent', style: 'width:6em'});
+    const m = el('input', {type: 'number', min: '0', max: '5000', step: '10', value: String(PCHK.m), 'aria-label': 'Flag level, metres', style: 'width:6em'});
+    const msg = el('span', {class: 'note'});
+    const b = el('button', {class: 'ghost', type: 'button', text: 'Save', onclick: async () => {
+      const a = +p.value, c = +m.value;
+      if (!(a > 0 && a <= 50) || !(c >= 0 && c <= 5000)) { msg.textContent = ' The percentage must be above 0 and at most 50, the metres 0 to 5,000.'; return; }
+      b.disabled = true; msg.textContent = ' Saving…';
+      try { await saveChkSet(a, c); await loadChkSet(); render(); }
+      catch (e) { msg.textContent = ' Not saved: ' + sbErr(e) + ' Check its role on Access.'; b.disabled = false; }
+    }});
+    return el('div', {class: 'pcset'}, el('label', {}, 'Flag over ', p, ' %'), ' and ', el('label', {}, m, ' m'), ' ', b, msg);
+  })() : el('p', {class: 'note', text: 'The levels are set here by the owner or an admin.'});
+  return card(PC_TITLE, `last ${days.length} days · by quality and loom width · ${pcLevels()}`, lv, edit,
+    rows.length ? table(['Day', ...PC_HEAD], rows, [3, 4, 5, 6])
+      : el('p', {class: 'note', text: 'No flagged row in these days.'}),
+    none.length ? el('ul', {class: 'note'}, none.map((t) => el('li', {text: t}))) : null, pcFoot());
+}
+function missedCard() {
+  const M = (D.missed || []).slice().sort((a, b) => b.date.localeCompare(a.date) || a.loom - b.loom), lim = f0((D.settings || {}).missed_reading_min || 1380);
+  const chk = {}; const ck = (d) => (chk[d] = chk[d] || pcDay(d)).chk;
+  const rows = M.map((m) => [dfmt(m.date), String(m.loom), m.width ? m.width + ' cm' : '—',
+    m.kind === 'shift' ? `shift ${m.shift} file has no reading (it lists ${m.looms} of ${m.of} looms)` : `${f0(m.min)} minutes run + stopped, under ${lim}`,
+    m.kind === 'short' ? (m.hg || m.hg0 || '—') : '—',
+    m.kind === 'short' ? (missedLikely(m, ck(m.date)) ? el('span', {class: 'pill bad', text: 'likely missed'}) : el('span', {class: 'note', text: 'missed or powered down'})) : el('span', {class: 'pill bad', text: 'missed'})]);
+  return card('Missed loom readings', `last ${((D.complete_days || []).slice(-31)).length} days · a loom missing from a shift file, or a loom-day under ${lim} minutes`,
+    rows.length ? table(['Day', 'Loom', 'Width', 'What', 'Quality', 'Reading'], rows) : el('p', {class: 'note', text: Array.isArray(D.missed) ? 'None in these days.' : 'Shows after the next daily run (every hour, 10:40 to 16:40 IST).'}),
+    el('p', {class: 'note', text: `A loom-day under ${lim} minutes is either missing part of a shift's readings or was powered down; "likely missed" when its quality reads below the costing file on the production check. The loom-day keeps the minutes and picks it has: it is never shown as 0. Next: ask the plant for the missing shift readings.`}));
+}
+function ovrCard() {
+  const P = D.loom_overrides, body = el('div', {}, el('div', {class: 'meta', text: 'Checking…'}));
+  const c = card('Loom quality overrides', 'a loom weaving another quality than its panel style says · from a date, until its style changes', body);
+  const when = (t) => t ? new Date(t).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata'}) + ' IST' : '—';
+  (async () => {
+    let rows = null, err = '';
+    try { rows = await loadOvrRows(); } catch (e) { err = sbErr(e); }
+    const byId = new Map((P || []).map((o) => [o.id, o]));
+    const L = rows || (P || []);
+    const shown = (o) => { const w = (D.machine || {})[String(o.loom)]; const n = o.root && w ? (D.loomdays || []).find((x) => x.hg0 === o.root && x.width === w.width) : null; return n ? n.hg : o.root; };
+    const tr = L.map((o) => { const s = byId.get(o.id);
+      const state = !o.root ? 'ends the earlier override' : !s ? 'applies from the next daily run' : s.ended ? `ended ${dfmt(s.ended)} (style ${s.ended_style})` : s.until ? `until ${dfmt(s.until)}` : 'in force';
+      return [String(o.loom), dfmt(String(o.eff_from).slice(0, 10)), o.root ? shown(o) : '—', (o.styles || []).join(', ') || 'any style', state, s ? f0(s.loomdays) : '—', (o.set_by || '—') + ' · ' + when(o.set_at)]; });
+    const add = isAdmin() ? (() => {
+      const sn = new Map(); for (const x of D.loomdays || []) if (x.hg0 && x.hg0 !== 'Unassigned' && !sn.has(x.hg0)) sn.set(x.hg0, x.hg);
+      const roots = [...sn.keys()].sort((a, b) => (sn.get(a) + a).localeCompare(sn.get(b) + b));
+      const loom = el('input', {type: 'number', min: '1', max: '999', 'aria-label': 'Loom', style: 'width:5em'}), from = el('input', {type: 'date', 'aria-label': 'From'});
+      const hg = el('select', {'aria-label': 'Head group'}, el('option', {value: '', text: 'none: ends the earlier override'}), roots.map((r) => el('option', {value: r, text: sn.get(r) && sn.get(r) !== r ? `${sn.get(r)} (${r})` : r})));
+      const st = el('input', {type: 'text', placeholder: 'blank = any style; comma between', 'aria-label': 'Style texts', style: 'width:16em'}), msg = el('span', {class: 'note', text: OVR_MSG}); OVR_MSG = '';
+      const b = el('button', {class: 'ghost', type: 'button', text: 'Add', onclick: async () => {
+        if (!(+loom.value >= 1) || !/^\d{4}-\d{2}-\d{2}$/.test(from.value)) { msg.textContent = ' Type the loom and the day it took effect.'; return; }
+        b.disabled = true; msg.textContent = ' Saving…';
+        try { await addOvrRow({loom: +loom.value, eff_from: from.value, root: hg.value || null, styles: st.value.split(',').map((x) => x.trim()).filter(Boolean)}); OVR_MSG = ' Saved. The next daily run works the loom\'s days again from that day.'; render(); }
+        catch (e) { msg.textContent = ' Not saved: ' + sbErr(e) + ' Check its role on Access.'; b.disabled = false; }
+      }});
+      return el('div', {class: 'pcset'}, el('label', {}, 'Loom ', loom), ' ', el('label', {}, 'from ', from), ' ', el('label', {}, 'weaves ', hg), ' ', el('label', {}, 'while the panel says ', st), ' ', b, msg);
+    })() : null;
+    body.replaceChildren(
+      tr.length ? table(['Loom', 'From', 'Quality', 'Panel style texts', 'State', 'Loom-days moved', 'Set by'], tr, [5]) : el('p', {class: 'note', text: 'No override.'}),
+      err ? el('p', {class: 'note', text: `The database list could not be read (${err}); showing the overrides the data was last worked with. Press Refresh (the round-arrow icon).`}) : null,
+      add, el('p', {class: 'note', text: 'Rows are never changed or deleted: a wrong row is put right by adding the right one for the same day. Past days are worked again by the next daily run; announced realisation days that move by ₹500 or more come up as corrections on Realisation.'}));
+  })();
+  return c;
 }
 
 // Backup age (17 Nov 2026, 0016 job_status): when the nightly database backup last succeeded. Red after 26 hours, so a backup

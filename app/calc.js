@@ -893,17 +893,8 @@ function tcGroup(parts, key) {
   }
   return [...by.values()].map((o) => ({...o, gap: o.gaps.length ? o.gaps.join('; ') : null, none: o.cfmRs == null && o.E == null}));
 }
-// Target folded cost per pick (owner, Divyam 18 Nov 2026): the folded cost per pick of the corrected costing (COST.days) with
-// the same savings, extra picks and added costs, and no B grade or cut pieces: (OPEX − savings + added costs) ÷ target
-// A-grade folded picks, where OPEX = the folded cost × A-grade folded picks − (B grade loss + cut piece loss − B grade
-// revenue) and target A-grade folded picks = target production picks × (1 − folding shortage). Paise; null when missing.
-function targetFolded(fday, tc, short) {
-  if (!fday || !ok(fday.fcpp) || !(fday.afold > 0) || !tc || !tc.ok || !ok(short)) return null;
-  const b = fday.bgrade || {}, cut = ok(fday.cut) ? fday.cut : 0;
-  const opex = fday.fcpp / 100 * fday.afold * 1e5 - ((ok(b.loss) ? b.loss : 0) + cut - (ok(b.rev) ? b.rev : 0));
-  const num = opex - (tc.Sc || 0) - (tc.Sp || 0) + tc.Add, den = (fday.picks * 1e5 + tc.E) * (1 - short);
-  return den > 0 ? 100 * num / den : null;
-}
+// Round A9 (Divyam, 26 Nov 2026, point 10): targetFolded, the per pick basis's target folded cost, is removed; Target profit
+// per pick uses fcTargetFoldLc (app/fabric_calc.js), the loom cost basis, since Round A4.
 
 // ================================================================ Round J (18 Nov 2026): the Working
 // Each "=" mark on a tile or card title opens the Working: the formula in words (app/working.js), then the same line with
@@ -1042,7 +1033,7 @@ Object.assign(WKL, {
   J1: (d) => { if (!d || !(d.picks > 0)) return null; const v = 100 * (d.total + (d.cut || 0)) / (d.picks * 1e5);
     return wkOut(`(total expenses ${wkR(d.total)} + cut piece loss ${wkR(d.cut || 0)}) ÷ ${wkN(d.picks * 1e5)} production picks × 100`, wkF(v, 2), 'paise', v); },
   // OPEX is not carried on the app's costing day: it is the corrected costing's OPEX row, recovered here from that file's own
-  // folded cost per pick (the same identity targetFolded uses), so the line shows each part of the folded cost.
+  // folded cost per pick, so the line shows each part of the folded cost.
   J2: (d) => { if (!d || !ok(d.fcpp) || !(d.afold > 0)) return null; const P = d.afold * 1e5, bl = ok(d.bl) ? d.bl : 0, br = ok(d.brev) ? d.brev : 0, cut = d.cut || 0;
     const opex = d.fcpp / 100 * P - (bl + cut - br), v = 100 * (opex + bl + cut - br) / P;
     return wkOut(`(OPEX ${wkR(opex)}, the costing sheet's operating expenses row, + B grade loss ${wkR(bl)} + cut piece loss ${wkR(cut)} − B grade revenue ${wkR(br)}) ÷ ${wkN(P)} A-grade folded picks × 100`, wkF(v, 2), 'paise', v); },
@@ -1057,8 +1048,8 @@ Object.assign(WKL, {
   J7: (d) => { if (!d || !ok(d.prev)) return null; const v = wkSum(d.parts, (p) => p.e);
     const sg = (x) => (x > 0 ? '+' : x < 0 ? '−' : '±') + Math.abs(x).toFixed(2);   // as the card's Total row
     return wkOut(`${d.ref}: ${wkF(d.prev, 2)} paise; ${d.date}: ${wkF(d.prev + v, 2)} paise. The parts, in paise: ${d.parts.map((p, i) => `${p.e < 0 ? '−' : i ? '+' : ''} ${Math.abs(p.e).toFixed(2)} (${p.n})`.trim()).join(' ')}`, sg(v), 'paise', v); },
-  J8: (d) => { if (!d || !ok(d.prev)) return null; const v = d.prev + d.folding + d.opex + d.cut;
-    return wkOut(`${d.date}: ${d.prevDate}'s ${wkF(d.prev, 2)} paise ${wkS(d.folding, 2)} (picks folded) ${wkS(d.opex, 2)} (OPEX) ${wkS(d.cut, 2)} (cut-piece loss)`, wkF(v, 2), 'paise', v); },
+  J8: (d) => { if (!d || !ok(d.prev) || !ok(d.bgrade)) return null; const v = d.prev + d.folding + d.opex + d.bgrade + d.cut;   // Round A9: the net B grade step (missing: a gap, never 0)
+    return wkOut(`${d.date}: ${d.prevDate}'s ${wkF(d.prev, 2)} paise ${wkS(d.folding, 2)} (picks folded) ${wkS(d.opex, 2)} (OPEX) ${wkS(d.bgrade, 2)} (net B grade) ${wkS(d.cut, 2)} (cut-piece loss)`, wkF(v, 2), 'paise', v); },
   J9: (d) => { if (!d || !(d.picks > 0)) return null; const P = d.picks * 1e5, v = 100 * (wkSum(d.types, (t) => t.a) + (d.cut || 0)) / P;
     return wkOut(`${d.types.map((t) => `${t.name.toLowerCase()} ${wkR(t.a)}`).join(' + ')} + cut piece loss ${wkR(d.cut || 0)}, each ÷ ${wkN(P)} picks × 100: ${d.types.map((t) => wkF(100 * t.a / P, 2)).join(' + ')} + ${wkF(100 * (d.cut || 0) / P, 2)}`, wkF(v, 2), 'paise', v); },
   J10: (d) => { if (!d || !(d.picks > 0)) return null; const v = 100 * d.fixed / (d.picks * 1e5); return wkOut(`${d.date}: fixed lines ${wkR(d.fixed)} ÷ ${wkN(d.picks * 1e5)} picks × 100`, wkF(v, 2), 'paise', v); },
@@ -1139,4 +1130,91 @@ function offLooms(util, L, hgNow) {
     return {loom: u.loom, width: String(u.width), off: u.off, run: u.run || 0, stop: u.stop || 0, hgs: h ? [...h].sort() : last ? [last] : [], last: !h && !!last};
   }).sort((a, b) => b.off - a.off || a.loom - b.loom);
   return {rows, total: rows.reduce((a, r) => a + r.off, 0)};
+}
+
+// ================================================================ Round A9 (Divyam, 26 Nov 2026): the production check
+// One day's loom readings against the costing file's production table, by quality × loom width (the Excel has no loom-wise
+// production since its READING sheet went stale on 7 Nov). L: the day's loom-days (D.loomdays of that date, both widths:
+// {loom, width, hg0, hg, fpicks, picks, run}); P: that costing day's production rows (COST.days[].prod: {q, root, looms,
+// rpm, dm, nm, tm, ppi, pp}); names: {root|width: shown name} (from every loom-day, so an Excel row finds its name on a day
+// its quality did not run); set: {pct, m}, the flag levels (app_settings, 0019; 2% and 100 m to begin with).
+// - The file has no width column: a row takes the width its quality ran on in the loom readings that day; a quality on both
+//   widths gives each row the width whose loom RPM (machine picks ÷ minutes run) is nearer the row's RPM; a quality the looms
+//   ran on both widths with fewer than two file lines (or a line with no RPM) is compared across both widths at once ('both').
+// - Rows are compared by the shown name × width, so qualities shown as one head group (Pashmina Twill and Rangila Twill as
+//   Rangila Twill 54) are compared together, as the plant books them.
+// - Loom metres = each loom-day's fabric picks ÷ 39.37 ÷ the file's picks per inch for its own quality (PROD.PICK ÷ metres of
+//   its rows, that width), else the name's; loom picks = fabric picks ÷ 39.37 (the file's PROD.PICK unit).
+// - Gap = loom − file; % of the file. Flagged when |gap| > set.m metres AND |gap %| > set.pct. A row on one side only
+//   (the file has the quality and no loom ran it, the loom readings have it and the file does not, or the file's quality name
+//   has no head group) is never 0: it is named with its reason and flagged when its own metres pass set.m (a loom-only row:
+//   its picks ÷ the file's picks per metre for the whole day, as it has no picks per inch of its own).
+function prodCheck(L, P, names, set) {
+  const key = (n, w) => n + '|' + w, nm = names || {};
+  const loom = new Map(), rootW = new Map();   // root -> {width: {picks, run}}
+  for (const x of L || []) {
+    if (!x || !(x.fpicks > 0) || !x.hg0 || x.hg0 === 'Unassigned') continue;
+    const w = String(x.width), rw = rootW.get(x.hg0) || {}; rootW.set(x.hg0, rw);
+    const t = rw[w] = rw[w] || {picks: 0, run: 0}; t.picks += x.picks || 0; t.run += x.run || 0;
+  }
+  const xl = new Map(), noHg = [], ppiOf = new Map(), xlOnly = [], both = new Set();
+  const lines = new Map(); for (const p of P || []) if (p && p.root) lines.set(p.root, (lines.get(p.root) || 0) + (ok(p.rpm) ? 1 : 1e9));
+  for (const [root, rw] of rootW) if (Object.keys(rw).length > 1 && !((lines.get(root) || 0) >= 2 && lines.get(root) < 1e9)) both.add(root);
+  for (const p of P || []) {
+    if (!p) continue;
+    const m = (p.dm || 0) + (p.nm || 0);
+    if (!p.root) { noHg.push({q: p.q, m, picks: p.pp || 0, looms: p.looms || 0}); continue; }
+    const rw = rootW.get(p.root) || {}, ws = Object.keys(rw);
+    let w = ws.length === 1 ? ws[0] : null;
+    if (both.has(p.root)) w = 'both';   // one file line (or no RPM) for a quality the looms ran on both widths: compared across both
+    else if (ws.length > 1) w = ws.map((k) => [k, rw[k].run > 0 ? rw[k].picks / rw[k].run : null]).filter((a) => a[1] != null)
+      .sort((a, b) => Math.abs(a[1] - p.rpm) - Math.abs(b[1] - p.rpm) || (a[0] < b[0] ? -1 : 1))[0]?.[0] ?? null;
+    if (!w) { xlOnly.push({q: p.q, root: p.root, m, picks: p.pp || 0, looms: p.looms || 0}); continue; }
+    const name = nm[key(p.root, w)] || nm[key(p.root, '190')] || nm[key(p.root, '280')] || p.root, k = key(name, w);
+    const g = xl.get(k) || {name, width: w, m: 0, picks: 0, looms: 0, qs: []}; xl.set(k, g);
+    g.m += m; g.picks += p.pp || 0; g.looms += p.looms || 0; g.qs.push(p.q);
+    const pk = key(p.root, w), o = ppiOf.get(pk) || {pp: 0, m: 0}; ppiOf.set(pk, o); o.pp += p.pp || 0; o.m += m;
+  }
+  const unas = {picks: 0, looms: new Set()};
+  for (const x of L || []) {
+    if (!x || !(x.fpicks > 0)) continue;
+    if (!x.hg0 || x.hg0 === 'Unassigned') { unas.picks += x.fpicks / 39.37; unas.looms.add(x.loom); continue; }
+    const w = both.has(x.hg0) ? 'both' : String(x.width), name = both.has(x.hg0) ? (nm[key(x.hg0, '190')] || x.hg || x.hg0) : (x.hg || nm[key(x.hg0, w)] || x.hg0), k = key(name, w);
+    const g = loom.get(k) || {name, width: w, picks: 0, m: 0, nom: 0, looms: new Set(), roots: new Set()}; loom.set(k, g);
+    const pk = x.fpicks / 39.37, o = ppiOf.get(key(x.hg0, w)), X = xl.get(k);
+    const ppi = o && o.m > 0 ? o.pp / o.m : X && X.m > 0 ? X.picks / X.m : null;
+    g.picks += pk; g.looms.add(x.loom); g.roots.add(x.hg0);
+    if (ppi > 0) g.m += pk / ppi; else g.nom += pk;
+  }
+  const rows = [], S = set || {}, big = (m) => Math.abs(m) > (S.m ?? 0);
+  const fpm = (() => { let a = 0, b = 0; for (const p of P || []) if (p) { a += p.pp || 0; b += (p.dm || 0) + (p.nm || 0); } return b > 0 ? a / b : null; })();
+  for (const k of new Set([...loom.keys(), ...xl.keys()])) {
+    const a = loom.get(k), b = xl.get(k);
+    const r = {name: (a || b).name, width: (a || b).width, looms: a ? [...a.looms].sort((p, q) => p - q) : [], xlLooms: b ? b.looms : null, qs: b ? b.qs : [],
+               loomM: a && !a.nom ? a.m : null, loomPicks: a ? a.picks : null, xlM: b ? b.m : null, xlPicks: b ? b.picks : null, gapM: null, gapPicks: null, pct: null, flag: false, why: null};
+    if (!a) { r.why = 'not in the loom readings'; r.flag = big(b.m); }
+    else if (!b) { r.why = 'not in the costing file\'s production table'; r.loomM = null; r.flag = fpm > 0 && big(a.picks / fpm); }   // flagged at the file's own picks per metre for the day
+    else if (a.nom) { r.why = 'no picks per inch for it in the costing file'; r.gapPicks = a.picks - b.picks; r.flag = fpm > 0 && big(r.gapPicks / fpm); }
+    else {
+      r.gapM = a.m - b.m; r.gapPicks = a.picks - b.picks; r.pct = b.m > 0 ? 100 * r.gapM / b.m : null;
+      r.flag = r.pct != null && Math.abs(r.gapM) > (S.m ?? 0) && Math.abs(r.pct) > (S.pct ?? 0);
+    }
+    rows.push(r);
+  }
+  if (unas.picks > 0) rows.push({name: 'Unassigned', width: null, looms: [...unas.looms].sort((p, q) => p - q), xlLooms: null, qs: [], loomM: null, loomPicks: unas.picks, xlM: null, xlPicks: null, gapM: null, gapPicks: null, pct: null,
+    flag: fpm > 0 && big(unas.picks / fpm), why: 'the loom\'s style has no head group (Needs a head group on Actions)'});
+  for (const n of noHg) rows.push({name: n.q, width: null, looms: [], xlLooms: n.looms, qs: [n.q], loomM: null, loomPicks: null, xlM: n.m, xlPicks: n.picks, gapM: null, gapPicks: null, pct: null, flag: big(n.m), why: 'the costing file\'s quality name has no head group'});
+  for (const n of xlOnly) rows.push({name: nm[key(n.root, '190')] || nm[key(n.root, '280')] || n.root, width: null, looms: [], xlLooms: n.looms, qs: [n.q], loomM: null, loomPicks: null, xlM: n.m, xlPicks: n.picks, gapM: null, gapPicks: null, pct: null, flag: big(n.m), why: 'not in the loom readings'});
+  rows.sort((p, q) => (q.flag - p.flag) || Math.abs(q.gapM ?? q.xlM ?? 0) - Math.abs(p.gapM ?? p.xlM ?? 0) || (p.name < q.name ? -1 : 1));
+  const T = (f) => rows.reduce((s, r) => s + (r.gapM == null ? 0 : r[f]), 0);
+  return {rows, flagged: rows.filter((r) => r.flag).length, loomM: T('loomM'), xlM: T('xlM')};
+}
+// The names each Style-map head group shows on each width, from every loom-day: {root|width: name}.
+function prodNames(L) { const o = {}; for (const x of L || []) if (x && x.hg0 && x.hg) o[x.hg0 + '|' + x.width] = x.hg; return o; }
+// A missed reading is "likely" when its loom-day's quality × width row on the day's production check has the loom readings
+// below the file by more than the flag levels (the file counted production the loom readings miss).
+function missedLikely(m, chk) {
+  if (!m || m.kind !== 'short' || !chk) return false;
+  const r = chk.rows.find((x) => x.name === m.hg && (x.width === String(m.width) || x.width === 'both'));
+  return !!(r && r.flag && r.gapM != null && r.gapM < 0);
 }

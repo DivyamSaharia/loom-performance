@@ -223,8 +223,29 @@ async function saveSpHist(from, kgf) {
   const {error} = await c.from('compsp_history').upsert({eff_from: from, kgf, set_by: ME && ME.email}, {onConflict: 'eff_from'});
   if (error) throw sbFail(error);
 }
+// Round A9 (0019): the production check's flag levels. A failed read keeps the seeded levels and says so on Data health.
+async function loadChkSet() {
+  try { const r = await sbRows('app_settings', (q) => q.select('key, num, set_by, set_at'));
+    const g = (k) => r.find((x) => x.key === k);
+    PCHK = {pct: g('prodchk_pct') ? +g('prodchk_pct').num : 2, m: g('prodchk_m') ? +g('prodchk_m').num : 100, by: (g('prodchk_pct') || {}).set_by || '', at: (g('prodchk_pct') || {}).set_at || '', err: ''}; }
+  catch (e) { PCHK = {pct: 2, m: 100, by: '', at: '', err: 'the levels could not be read, so the first ones (2% and 100 m) are used'}; }
+}
+async function saveChkSet(pct, m) {   // admin only (0019); the database stamps who and when
+  const c = await sbClient();
+  for (const [key, num] of [['prodchk_pct', pct], ['prodchk_m', m]]) {
+    const {error} = await c.from('app_settings').upsert({key, num, set_by: ME && ME.email}, {onConflict: 'key'});
+    if (error) throw sbFail(error);
+  }
+}
+// Round A9 (0019): loom overrides as the database holds them (a row added today shows before the next daily run applies it)
+async function loadOvrRows() { return sbRows('loom_overrides', (q) => q.select('id, loom, eff_from, root, styles, note, set_by, set_at').order('loom').order('eff_from').order('id')); }
+async function addOvrRow(o) {   // admin only; append-only: a wrong row is put right by a new one for the same day
+  const c = await sbClient();
+  const {error} = await c.from('loom_overrides').insert(Object.assign({}, o, {set_by: ME && ME.email}));
+  if (error) throw sbFail(error);
+}
 async function loadStateDb() {
-  const [tg, asg] = await Promise.all([sbRows('targets', (q) => q.select('id, width, hg, cfm, rpm, main, at')), sbRows('assignments', (q) => q.select('style, head_group, is_new, status, at').eq('status', 'pending')), loadSpHist()]);
+  const [tg, asg] = await Promise.all([sbRows('targets', (q) => q.select('id, width, hg, cfm, rpm, main, at')), sbRows('assignments', (q) => q.select('style, head_group, is_new, status, at').eq('status', 'pending')), loadSpHist(), loadChkSet()]);
   applyState({targets: tg.map((t) => ({id: t.id, width: String(t.width || ''), hg: String(t.hg || ''), cfm: t.cfm == null ? null : +t.cfm, rpm: t.rpm == null ? null : +t.rpm, main: t.main == null ? null : +t.main, at: t.at || ''})),
               assignments: asg});
 }

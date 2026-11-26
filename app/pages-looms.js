@@ -194,6 +194,7 @@ function pageActions() {
   if (day && typeof tcCard === 'function') { const c = tcCard(); if (c) s.append(c); }   // Round F: Where the saving is (opens from the Target cost per pick tile)
   s.append(trendCard('actions', trendSubj0()));   // Round A2 (Divyam, 24 Nov 2026): the Trend card, moved here from Quality
 
+  if (day && typeof prodCheckActions === 'function') s.append(prodCheckActions());   // Round A9 (Divyam, 26 Nov 2026): every role, metres only
   const al = (D.alerts || []).filter((a) => a.level === 'Critical');
   if (al.length) s.append(card('Data and floor flags', null, el('ul', {class: 'alerts'}, al.slice(0, 8).map((a) => el('li', {}, el('span', {class: 'pill bad', text: a.scope}), el('span', {}, linkify(a.msg)))))));
   return s;
