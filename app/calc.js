@@ -1043,7 +1043,7 @@ const WKL = {
 Object.assign(WKL, {
   J1: (d) => { if (!d || !(d.picks > 0)) return null; const v = 100 * (d.total + (d.cut || 0)) / (d.picks * 1e5);
     return wkOut(`(total expenses ${wkR(d.total)} + cut piece loss ${wkR(d.cut || 0)}) ÷ ${wkN(d.picks * 1e5)} production picks × 100`, wkF(v, 2), 'paise', v); },
-  // OPEX is not carried on the app's costing day: it is the corrected costing's OPEX row, recovered here from that file's own
+  // OPEX is not carried on the app's costing day: it is the costing's OPEX row (on either basis), recovered here from that file's own
   // folded cost per pick, so the line shows each part of the folded cost.
   J2: (d) => { if (!d || !ok(d.fcpp) || !(d.afold > 0)) return null; const P = d.afold * 1e5, bl = ok(d.bl) ? d.bl : 0, br = ok(d.brev) ? d.brev : 0, cut = d.cut || 0;
     const opex = d.fcpp / 100 * P - (bl + cut - br), v = 100 * (opex + bl + cut - br) / P;

@@ -170,7 +170,7 @@ function fcPerMetre(M, f, d) {
   return {sale, rm: yc.rm, real: sale != null && yc.rm != null ? sale - yc.rm : null, g, missing: [...new Set(missing)], yarns: yc.yarns};
 }
 
-// ---- the day's cost per pick, from the costing data (the corrected costing's days, Divyam 10 Nov 2026)
+// ---- the day's cost per pick, from the costing data (the days of the basis chosen at the top, Round B2; Actual by default)
 // The plant's folded cost per pick = (OPEX + B grade loss + cut piece loss − B grade revenue) ÷ A-grade folded picks. The
 // analysis applies it to every pick of every loom without its B grade part, and charges each loom its own B grade metres at
 // the day's net B grade loss per B grade metre, so B grade is neither shared out nor counted twice (Divyam, 10 Nov 2026).
@@ -180,8 +180,8 @@ function fcCostDay(day) {
   const bnet = (ok(b.loss) ? b.loss : 0) - (ok(b.rev) ? b.rev : 0);
   const fold = day.fcpp / 100;                       // rupees per A-grade folded pick, incl. the B grade part
   const bpart = bnet / (day.afold * 1e5);            // that B grade part, rupees per folded pick
-  // Round A3: the parts the loom cost method splits the day's cost into. pw = the POWER line (corrected costing, so with the
-  // 0.02 ₹/pick correction taken off); cut = the cut piece loss. The loom cost method's cost is the corrected costing as it
+  // Round A3: the parts the loom cost method splits the day's cost into. pw = the POWER line (on Actual with the 0.02 ₹/pick
+  // correction taken off, on Plant file as entered; Round B2); cut = the cut piece loss. The loom cost method's cost is the day as it
   // is (Round A5, 25 Nov 2026; day.pfix is not read).
   const pw = day.power && ok(day.power.amount) ? day.power.amount : null;
   return {date: day.date, fold, bpart, base: fold - bpart, bnet, bm: ok(b.m) ? b.m : null, has_rev: ok(b.rev), afold: day.afold,
@@ -494,7 +494,7 @@ function fcAfoldParts(R, reg, fold) {
   return out;
 }
 // ---- The loom cost basis. Round Y (23 Nov 2026) built it; Round A3 (Divyam, 24 Nov 2026) is its method now, the only profit:
-// each costed day's cost on the corrected costing (its pool, OPEX + cut piece loss, POWER with the 0.02 ₹/pick correction
+// each costed day's cost on the chosen basis (Round B2; its pool, OPEX + cut piece loss, POWER with the 0.02 ₹/pick correction
 // taken off, as it is since Round A5) is split in four and charged to the
 // loom-days that made it:
 //   1. the compressor (the exact day's Power (Compressor) rupees, never borrowed from another day) by air: each loom's air in
@@ -590,7 +590,7 @@ function fcLoomCost(rows, cost, running, picksOf, inp) {
   return lday;
 }
 // ---- Round A3, item 8 (Divyam, 24 Nov 2026): the folded cost per pick of each quality (head group × width), on the loom
-// cost method. Each quality carries its own loom cost (the compressor by its air, the rest of POWER (corrected) + cut piece
+// cost method. Each quality carries its own loom cost (the compressor by its air, the rest of POWER (on the chosen basis) + cut piece
 // loss per pick, other heads per loom running; fcLoomCost's parts r.lc) and its own B grade, net of B grade revenue (r.bcharge,
 // as the engine charges it). Its A-grade folded picks = its picks × (1 − its quality's own folding % (Round A10; was one s, the same for
 // every quality) − its B grade picks (its register metres × the quality's PICK; what cannot be pinned to a loom of the day,
@@ -1013,13 +1013,13 @@ function fcRealSeries(rows, dates, keep, withU = true) {
   });
 }
 // Break-even realisation per loom per day (Divyam, 12 Nov 2026): the day's cost ÷ the looms running; the cost is fcBeCost's
-// (OPEX + cut piece loss on the corrected costing + net B grade, Round Y D1 a), the looms those with any run time.
+// (OPEX + cut piece loss + net B grade on the chosen basis, Round Y D1 a; Round B2), the looms those with any run time.
 function fcBreakEven(cost, looms) { return typeof cost === 'number' && isFinite(cost) && looms > 0 ? cost / looms : null; }
 // Round Y, D1 a (Divyam, 23 Nov 2026): the break-even's cost is the loom cost basis's own: (OPEX + cut piece loss + net B
-// grade), corrected costing = the folded cost per pick × A-grade folded picks. null when the day has no such costing.
+// grade), on the day passed (Round B2: the chosen basis) = the folded cost per pick × A-grade folded picks. null when the day has no such costing.
 function fcBeCost(day) {
   const k = fcCostDay(day); if (!k) return null;
-  const total = k.fold * day.afold * 1e5;   // Round A3 (Divyam, 24 Nov 2026; Q3): the loom cost method's own total, corrected POWER
+  const total = k.fold * day.afold * 1e5;   // Round A3 (Divyam, 24 Nov 2026; Q3): the loom cost method's own total, on the day's basis
   return {total, pool: total - k.bnet, bnet: k.bnet};
 }
 // What fixing a loom is worth a day (Actions, "Work on these first"), with the quality's realisation factored in: lost picks
@@ -1133,7 +1133,7 @@ function fcTargetProfit(realPp, foldPp) {
   return n(realPp) && n(foldPp) ? realPp - foldPp : null;
 }
 // Round A4 (Divyam, 24 Nov 2026): the target folded cost per pick on the loom cost basis. The day's loom cost total on the
-// Round A3 method (L.total: corrected OPEX + cut piece loss; no B grade) less its cut piece loss, less the
+// Round A3 method (L.total: OPEX + cut piece loss on the chosen basis; no B grade) less its cut piece loss, less the
 // CFM saving (Target cost per pick step 1) and the pressure saving (step 2), plus the costs that grow with the extra metres
 // (step 4); no B grade and no cut pieces (step 5); the loom cost otherwise stays (Round Y decision 4). Shared over the target
 // A-grade folded picks = (P + E) × (1 − s), the target picks' own folding % (s_T, Round A10). Paise, or null.
@@ -1174,7 +1174,7 @@ const WKLF = {
   B5s: (d) => { if (!d || !fwOk(d.pp) || !fwOk(d.s)) return null; const T = fcTargetProfitRs(d.pp, d.P, d.E, d.s); if (!T) return null;
     return fwOut(`${fwP(d.pp)} paise × (${fwN(d.P + (d.E || 0))} target picks × (1 − ${(d.s * 100).toFixed(1)}% folding shortage) = ${fwN(T.afold)} A-grade folded picks) ÷ 100`, fwR(T.rs), 'in the day', T.rs); },
   B7: (d) => { if (!d || !fwOk(d.cost) || !(d.looms > 0)) return null; const v = d.cost / d.looms;
-    return fwOut(`(operating expenses and cut piece loss ${fwR(d.pool)}, corrected costing, + net B grade ${fwR(d.bnet)} = ${fwR(d.cost)}) ÷ ${d.looms} loom${d.looms === 1 ? '' : 's'} running`, fwR(v), 'a loom', v); },
+    return fwOut(`(operating expenses and cut piece loss ${fwR(d.pool)} + net B grade ${fwR(d.bnet)} = ${fwR(d.cost)}) ÷ ${d.looms} loom${d.looms === 1 ? '' : 's'} running`, fwR(v), 'a loom', v); },
   RLF: (d) => { if (!d) return null; const r = fcRealLessFold(d.real, d.fold); if (!r) return null;
     const sg = (x) => (x < 0 && /[1-9]/.test(Math.abs(x).toFixed(2)) ? '−' : '') + Math.abs(x).toFixed(2);   // Round A7: the folded basis, and the target diamond
     const tg = fwOk(d.tgt) ? `; target folded cost ${fwP(d.tgt)} paise (the diamond)${fwOk(d.treal) ? `, so at target ${fwP(d.treal)} realisation per target A-grade folded pick − ${fwP(d.tgt)} = ${sg(d.treal - d.tgt)} paise` : ''}` : '';

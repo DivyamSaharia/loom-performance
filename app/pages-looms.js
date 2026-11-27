@@ -432,6 +432,8 @@ function trendSubj0() {
   const g = [...by.values()].map((r) => ({w: r[0].width, hg: r[0].hg, A: agg(r)})).filter((x) => x.A).sort((a, b) => String(a.w).localeCompare(String(b.w)) || b.A.picks - a.A.picks)[0];
   return g ? {kind: 'hg', w: String(g.w), hg: g.hg} : null;
 }
+// Round B2: the Quality cards' money cells (owner) are on the costing basis chosen at the top; their subtitles name it
+const qMoneyB = () => typeof fxOn === 'function' && fxOn() && typeof bTxt === 'function' ? bTxt() : '';
 // ---- Round A8 (Divyam, 25 Nov 2026): the Quality period bar. One bar for "Gap to the reference, by head group" and "Current
 // vs reference": Last day (the default here, an exception to the app's Month to date), 7, 14, 30 days, Month to date or
 // Dates, ending on the date chip's day; kept per email (user_prefs q_period); it stays at the top while either card is on
@@ -538,7 +540,7 @@ function pageQuality() {
   MREF = null;
   const nTq = groups.filter((g) => { const x = tgt(g.w, g.hg); return x && (ok(x.rpm) || ok(x.cfm)); }).length;   // Round A2: pressure targets are not counted
   const qb = (v, text) => el('button', {type: 'button', 'aria-pressed': QREF === v ? 'true' : 'false', text, onclick: () => { QREF = v; try { localStorage.setItem('w2-q-ref', v); } catch (e) {} render(); }});
-  wrap.append(card('Current vs reference', `Against the ${HEAT_REF[QREF]} · ${P.label} · CFM references are air per 1,000 picks at the RPM actually run`,
+  wrap.append(card('Current vs reference', `Against the ${HEAT_REF[QREF]} · ${P.label}${qMoneyB()} · CFM references are air per 1,000 picks at the RPM actually run`,
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference'}, qb('bm', 'Benchmark'), qb('best', 'Best'), qb('tgt', `Target (${nTq} set)`))),
     sortSeg, el('div', {class: 'tablebox'}, t)));   // Round A2 (Divyam, 24 Nov 2026): no key note under this table
   // Round A2 (Divyam, 24 Nov 2026): the Trend card moved to Actions (trendSubj0 gives it the same first head group)
@@ -596,7 +598,7 @@ function qualityHeat(groups, P) {
   }
   const nT = groups.filter((g) => { const t = tgt(g.w, g.hg); return t && (ok(t.rpm) || ok(t.cfm)); }).length;
   const b = (v, text) => el('button', {type: 'button', 'aria-pressed': QHM === v ? 'true' : 'false', text, onclick: () => { QHM = v; try { localStorage.setItem('w2-heat-ref', v); } catch (e) {} render(); }});
-  return card('Gap to the reference, by head group', `% of the ${HEAT_REF[QHM]} · ${P.label} · ${wLabel()}`,
+  return card('Gap to the reference, by head group', `% of the ${HEAT_REF[QHM]} · ${P.label} · ${wLabel()}${qMoneyB()}`,
     el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Reference for the heat grid'}, b('bm', 'Benchmark'), b('best', 'Best'), b('tgt', `Target (${nT} set)`))),
     rows.length ? heatTable([...(money ? [{label: 'Loom realisation gap', unit: '₹ per loom per day'}, {label: 'Loom realisation gap', unit: one ? '₹ total in the day' : '₹ total in the period'}, {label: 'Folded cost per pick', unit: '% of the reference', sm: 'Folded cost'}] : []), ...HEAT_M.map(([, label, unit]) => ({label, unit}))], rows, {first: 'Head group'}) : el('div', {class: 'empty', text: one ? 'No head group ran on this width on this day.' : 'No head group ran on this width in this period. Pick a longer period or another width.'}),
     heatKey(`full colour at ${HEAT_FULL}% or more`),

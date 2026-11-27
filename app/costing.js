@@ -7,8 +7,8 @@
 // COST.days, the POWER line less COST.pfix's paise a pick; Plant file = COST.days_entered, the costing as the plant entered it.
 // Kept per email (user_prefs 'basis', like q_period); a new email, or one that never switched, opens on Actual. The plant role
 // has no switch and no basis word: its COST.days is its own costing_plant copy (the plant's figures, no days_entered).
-// Round B1 moves the cost side (Costing, the Actions cost tiles and Where the saving is); the money side (profit, loom cost,
-// break-even, folded cost by quality) stays on Actual until Round B2, and says so on Plant file (bLater).
+// Round B1 moved the cost side (Costing, the Actions cost tiles and Where the saving is); Round B2 the money side (profit, loom
+// cost, break-even, folded cost by quality, through fxInput's costing). Corrections and the hourly notification stay on Actual (Q4).
 let BASIS = 'actual';
 const cHasFix = () => !!(COST && COST.schema >= 2 && Array.isArray(COST.days_entered));
 const bSync = () => { BASIS = typeof isPlant === 'function' && !isPlant() && typeof prefGet === 'function' && prefGet('basis') === 'plant' ? 'plant' : 'actual'; return BASIS; };
@@ -21,8 +21,6 @@ const bDays = () => !COST ? [] : (!isPlant() && cHasFix() && BASIS === 'plant' ?
 const foldSrc = () => !COST ? [] : (cHasFix() ? COST.days_entered : COST.days) || [];
 const bName = () => isPlant() ? '' : bPlant() ? 'Plant file' : 'Actual';
 const bTxt = () => isPlant() ? '' : ' · ' + bName();
-// Round B1: a money figure that stays on Actual while Plant file is chosen (Round B2 moves it)
-const bLater = () => !isPlant() && cHasFix() && BASIS === 'plant' ? ' · Actual (Plant file comes with the next round)' : '';
 const cDays = () => bDays();
 // What the two choices mean, from COST.pfix (the Config sheet Settings rows); nothing here holds the rate or the dates
 function bTip() {
@@ -35,10 +33,8 @@ function basisSeg() {
   const has = cHasFix(), cur = has ? BASIS : 'plant', tip = bTip();
   const b = (v, t) => el('button', {type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', text: t, disabled: v === 'actual' && !has ? true : null,
     onclick: () => { if (cur === v) return; prefSet('basis', v); bSync(); render(); }});
-  // Round B1 (Q8): on Plant file, the money figures that stay on Actual until Round B2 are named once here, for the roles that see money
-  const later = has && BASIS === 'plant' && typeof fxOn === 'function' && fxOn() ? 'Profit, loom cost, break-even and folded cost by quality stay on Actual until the next round.' : '';
   return el('div', {class: 'basis', title: tip}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Costing basis: Plant file or Actual'}, b('plant', 'Plant file'), b('actual', 'Actual')),
-    el('span', {class: 'note onph', text: tip}), later ? el('span', {class: 'note', text: later}) : null);
+    el('span', {class: 'note onph', text: tip}));
 }
 const cDay = () => { const D0 = cDays(); return D0.find((d) => d.date === CDATE) || D0[D0.length - 1]; };
 // Period per chart group on the Costing tab ('cpp', 'trends', 'line', 'hg', 'stock', 'power', 'labour'), kept on this device.
@@ -545,7 +541,7 @@ function pageCosting() {
   // all widths together by the quality's Style-map name; Today = the day, Month to date = MTD; a name with no match "—", named
   const FQ = typeof fxCostFq === 'function' ? fxCostFq(cur.date, CHGV === 'mtd') : null, fqH = FQ ? [['Folded cost per pick', CHGV === 'mtd' ? 'paise, month to date' : 'paise, the day'], ['Target folded cost', CHGV === 'mtd' ? 'paise, month to date' : 'paise, the day']] : [];
   const fqN = (cols) => FQ ? [...cols, cols.length + 1, cols.length + 2] : cols;
-  const fqNote = () => FQ ? el('p', {class: 'note', text: `Folded cost per pick and Target folded cost (owner only${bLater() ? '; on Actual until the next round' : ''}): the Actions view Folded cost per pick by quality's All widths figures${CHGV === 'mtd' ? ', month to date' : ' for the day'}, each quality across both widths by its head group's Style-map name, in paise per A-grade folded pick (not per metre).${FQ.miss.length ? ` No match in the loom data, so "—": ${FQ.miss.join(', ')}. Next: check the name against the Style map on Head-group links.` : ''}`}) : null;
+  const fqNote = () => FQ ? el('p', {class: 'note', text: `Folded cost per pick and Target folded cost (owner only): the Actions view Folded cost per pick by quality's All widths figures${CHGV === 'mtd' ? ', month to date' : ' for the day'}, each quality across both widths by its head group's Style-map name, in paise per A-grade folded pick (not per metre).${FQ.miss.length ? ` No match in the loom data, so "—": ${FQ.miss.join(', ')}. Next: check the name against the Style map on Head-group links.` : ''}`}) : null;
   if (CHGV === 'mtd') s.append(card('Production by quality head group', `${dfmt(ym + '-01')} – ${dfmt(cur.date)} · month to date · whole plant, both widths together · sorted by metres`, hgSeg,
     table(['Head group', ['Metres', 'day / night'], ['Total', 'm'], ['Share', '% of metres'], ['Picks', 'lakh'], ['Share', '% of picks'], ['Average looms', 'a day'], ['Metres per loom-day', 'm'], ...fqH],
       ag.map((g) => [el('span', {}, el('b', {text: g.hg}), el('div', {class: 'note', text: [...g.names].join(', ')})), `${f0(g.dm)} / ${f0(g.nm)}`, f0(g.tm), pc(g.tm / totM), pn(g.pp, 2), pc(totP ? g.pp / totP : null), pn(g.loomdays / (cur.mtd.days || 1), 1), f0(g.tm / (g.loomdays || 1)), ...(FQ ? FQ.cells(g.hg) : [])]), fqN([1, 2, 3, 4, 5, 6, 7])), fqNote(),
@@ -1255,7 +1251,8 @@ function tcFoldCard() {
 // No money (loom picks and %), so it shows wherever this view shows.
 function tcFoldByQ() {
   const Q = typeof fxSQDay === 'function' ? fxSQDay(D.latest) : null, h = el('h3', {style: 'margin-top:14px', text: 'By quality'});
-  if (!Q) return [];
+  // Round B2 (A10 backlog): while the costing or the loom data loads, say so rather than leave the table out with no word
+  if (!Q) return [h, el('p', {class: 'note', text: 'Loading the costing and the loom data… If this stays, press Refresh (the round arrow).'})];
   const R = Object.entries(Q.by).filter(([, e]) => e.picks > 0).map(([q, e]) => ({q, e})).sort((a, b) => b.e.picks - a.e.picks);
   const intro = el('p', {class: 'note', text: `${dfmt(D.latest)}, month to date: each quality's own folding % = each day's own figure weighted by the quality's loom picks that day. It is used once the quality has run on ${Q.min} costing days with a figure (a day on either width counts once); before that, its own figure from last month, then the plant's.`});
   if (!R.length) return [h, intro, el('p', {class: 'empty', text: `No quality wove on a costing day of this month with a figure up to ${dfmt(D.latest)} yet. Next: ${tcNext()}.`})];
