@@ -286,9 +286,13 @@ td.d{white-space:nowrap}
 .qrow .qv{margin-left:auto;text-align:right;font-size:12.5px;color:var(--muted);white-space:nowrap}
 .qdot{width:10px;height:10px;border-radius:3px;flex:none}
 /* trends */
-:root{--series:#2f5fc4;--warn-dot:#d98a00}
-:root[data-theme="dark"]{--series:#7ea6ff;--warn-dot:#ffb547}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--series:#7ea6ff;--warn-dot:#ffb547}}
+/* Round C1 (Divyam, 28 Nov 2026, audit #1): one chart palette, six slots, validated in both themes (the dataviz validator:
+   adjacent colour-blind ΔE 11.8 light / 11.1 dark, normal vision 20.5 / 20.1). Series take a slot in fixed order (CC); a metric
+   keeps its slot on every chart. Green and red stay for profit and loss, better and worse; lime (--bar) for "now"; grey for
+   Others and totals. --series (utilisation's run) is slot 1, --warn-dot (stopped) slot 2. */
+:root{--c1:#257de0;--c2:#f47230;--c3:#00b894;--c4:#f2a600;--c5:#ee7fac;--c6:#6a4ce2;--series:var(--c1);--warn-dot:var(--c2)}
+:root[data-theme="dark"]{--c1:#338ced;--c2:#e76624;--c3:#00a888;--c4:#d28e05;--c5:#e24d8b;--c6:#9887ef}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--c1:#338ced;--c2:#e76624;--c3:#00a888;--c4:#d28e05;--c5:#e24d8b;--c6:#9887ef}}
 .trendcard .toolbar{margin-bottom:8px}
 .trsearch{position:relative;display:flex;align-items:center;gap:6px;height:32px;background:var(--fill);border-radius:9px;padding:0 10px;min-width:min(100%,260px);color:var(--muted)}
 .trsearch .ic{display:inline-flex}
@@ -409,6 +413,7 @@ table.heat td.hc.none{background:var(--soft);color:var(--muted);font-weight:400;
 .hcb:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .heatkey i{display:inline-block;width:14px;height:10px;border-radius:2px;margin-right:1px}
 .heatkey i.hnone{background:var(--soft);outline:1px solid var(--line)}
+.heatkey .hbands{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}
 .spark{display:block;width:100%;height:28px;margin-top:8px}
 .spark.flat{height:0;margin:0}
 .kpi .spk{font-size:10.5px;color:var(--muted);margin-top:2px;display:flex;justify-content:space-between}
@@ -459,6 +464,18 @@ ol.prio p{margin:3px 0 0;line-height:1.45}
 .hlbox[data-hl="7"] [data-layer]:not([data-layer="7"]){opacity:.14}
 .hlbox[data-hl="8"] [data-layer]:not([data-layer="8"]){opacity:.14}
 .hlbox[data-hl="9"] [data-layer]:not([data-layer="9"]){opacity:.14}
+/* Round C1 (audit #26): segment values only for the picked layer */
+.hlbox .sbval{display:none}
+.hlbox[data-hl="0"] .sbval[data-layer="0"]{display:inline}
+.hlbox[data-hl="1"] .sbval[data-layer="1"]{display:inline}
+.hlbox[data-hl="2"] .sbval[data-layer="2"]{display:inline}
+.hlbox[data-hl="3"] .sbval[data-layer="3"]{display:inline}
+.hlbox[data-hl="4"] .sbval[data-layer="4"]{display:inline}
+.hlbox[data-hl="5"] .sbval[data-layer="5"]{display:inline}
+.hlbox[data-hl="6"] .sbval[data-layer="6"]{display:inline}
+.hlbox[data-hl="7"] .sbval[data-layer="7"]{display:inline}
+.hlbox[data-hl="8"] .sbval[data-layer="8"]{display:inline}
+.hlbox[data-hl="9"] .sbval[data-layer="9"]{display:inline}
 #bg-loomwise{scroll-margin-top:110px}
 /* Sticky period switches (10 Nov 2026): a period bar stays in view, under the section bar, while you scroll through the
    cards it governs (its parent: a card, or a stack of cards). --stick-top = the section bar's height, set after each render. */
@@ -625,6 +642,8 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
 .kpi .taphint{display:none;margin-top:4px;color:var(--accent, #4a7)}
 @media (hover:none){.kpi.tap[data-tip]:hover::after{display:none}.kpi .taphint{display:block}}
 .kpis.act .actbe{grid-column:1/-1}
+/* Round C1 (audit #18): the full-width Break-even tile keeps the other tiles' sparkline shape */
+.kpis.act .actbe .spark,.kpis.act .actbe .spk{max-width:280px}
 .actview{scroll-margin-top:70px}.actview .cardhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}.actview .actclose{margin-left:auto}
 .prio-co{margin:2px 0 4px}
 .actblk{padding:8px 0;border-top:1px solid var(--line)}.actblk.tot{font-weight:600}.actblk-h{margin-bottom:2px}
@@ -639,7 +658,15 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
 .pcset input,.pcset select{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);max-width:100%}
 /* Round B1 (27 Nov 2026): the app-wide costing basis switch, beside the date chip (on Costing, beside the Day list); its
    meaning shows on pointing, and under it on a phone (.onph) */
-.basis{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;max-width:100%}
+.basis{display:inline-flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:2px 6px;max-width:100%}
+/* Round C1 (audit #20): on a phone the ⓘ opens the switch's meaning under the row (.basnote takes the whole line) */
+.basis .basnote{flex-basis:100%}
+.basis .basi{display:none;min-width:36px;min-height:36px;border:0;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;border-radius:8px;padding:0}
+/* on a phone the switch's parts join the date chip's (or the Day list's) row itself, so the note opens under that row and the
+   switch stays put */
+@media (max-width:560px){.basis .basi{display:inline-flex;align-items:center;justify-content:center}
+  #basis,.basis{display:contents}.basis .basnote{order:1}
+  .cdayrow{gap:6px}.cdayrow>.pill,.cdayrow>.ghost{order:2}.cdayrow>select{flex:1 1 0;min-width:0;max-width:200px}}
 .basis .note{font-size:12px}
 /* Round B3: the realisation share pie (Realisation per pick by quality on Actions) */
 .piebox{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;margin-top:8px}

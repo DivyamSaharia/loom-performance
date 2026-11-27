@@ -413,7 +413,15 @@ const NA = 'Not available';
 const monthName = (d) => new Date(d.slice(0, 7) + '-01T00:00:00Z').toLocaleDateString('en-GB', {month: 'long', timeZone: 'UTC'});
 // Toggle boxes for line charts: one Set of switched-on series keys per chart id, kept while the page is open.
 const TOGS = {};
-const CC = ['var(--accent)', 'var(--info)', 'var(--warn)', 'var(--bad)', 'var(--muted)', '#8e6bbf', '#c77d1a'];
+// Round C1 (Divyam, 28 Nov 2026, audit #1): the one chart palette (style.css --c1…--c6, validated in both themes). Series take
+// slots in this fixed order; a seventh or later series is grey (ccAt), never a colour used again. CSL: the slot each metric
+// keeps on every chart (B grade and cut pieces the same slot wherever they are drawn).
+const CC = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)'];
+const ccAt = (i) => i < CC.length ? CC[i] : 'var(--muted-2)';
+// The slots were picked with the validator so the lines that share a chart are told apart by every pair (blue–violet,
+// orange–yellow, orange–magenta and aqua–magenta are too close, so never put together undashed): realisation 1 · cost 2 ·
+// profit 3 on one chart; realisation 1 · profit 3 · sale 2 (dashed) on the other; B grade 4 (dashed there) and cut pieces 5.
+const CSL = {real: 'var(--c1)', cost: 'var(--c2)', cpp: 'var(--c1)', fcpp: 'var(--c2)', mtdf: 'var(--c3)', ly: 'var(--c4)', cut: 'var(--c5)', bgrade: 'var(--c4)', sale: 'var(--c2)', profit: 'var(--c3)'};
 const rs = (x) => !ok(x) ? '—' : (x < 0 ? '−₹' : '₹') + Math.round(Math.abs(x)).toLocaleString('en-IN');
 const pn = (x, n = 1) => !ok(x) ? '—' : x.toFixed(n);
 const sg = (x, n = 2) => !ok(x) ? '—' : (x > 0 ? '+' : x < 0 ? '−' : '±') + Math.abs(x).toFixed(n);

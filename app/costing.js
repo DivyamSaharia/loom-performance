@@ -28,13 +28,19 @@ function bTip() {
   const f = COST.pfix || {};
   return `Actual: POWER less ${ok(f.paise) ? pn(f.paise, 0) : 'the correction\'s'} paise a pick${f.from ? ` from ${dfmt(f.from)}${f.to ? ` to ${dfmt(f.to)}` : ''}` : ' every day'} (Config sheet Settings). Plant file: the costing as the plant entered it.`;
 }
+let BASINFO = false;   // Round C1: the ⓘ note under the switch on a phone, open or shut while the page is open
 function basisSeg() {
   if (isPlant() || !COST) return null;   // plant view: its own figures only, no switch (R3)
   const has = cHasFix(), cur = has ? BASIS : 'plant', tip = bTip();
   const b = (v, t) => el('button', {type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', text: t, disabled: v === 'actual' && !has ? true : null,
     onclick: () => { if (cur === v) return; prefSet('basis', v); bSync(); render(); }});
-  return el('div', {class: 'basis', title: tip}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Costing basis: Plant file or Actual'}, b('plant', 'Plant file'), b('actual', 'Actual')),
-    el('span', {class: 'note onph', text: tip}));
+  // Round C1 (Divyam, 28 Nov 2026, audit #20): on a phone the date chip and the switch share one row; the switch's meaning
+  // sits behind an ⓘ button (shown on a phone only) and opens under the row on a tap. On a laptop it shows on pointing.
+  const note = el('span', {class: 'note onph basnote', id: 'basnote', text: tip, hidden: BASINFO ? null : true});
+  const info = el('button', {type: 'button', class: 'basi onph', text: 'ⓘ', 'aria-expanded': BASINFO ? 'true' : 'false', 'aria-controls': 'basnote',
+    'aria-label': 'What Plant file and Actual mean', title: 'What Plant file and Actual mean',
+    onclick: (e) => { BASINFO = !BASINFO; note.hidden = !BASINFO; e.currentTarget.setAttribute('aria-expanded', BASINFO ? 'true' : 'false'); }});
+  return el('div', {class: 'basis', title: tip}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Costing basis: Plant file or Actual'}, b('plant', 'Plant file'), b('actual', 'Actual')), info, note);
 }
 const cDay = () => { const D0 = cDays(); return D0.find((d) => d.date === CDATE) || D0[D0.length - 1]; };
 // Period per chart group on the Costing tab ('cpp', 'trends', 'line', 'hg', 'stock', 'power', 'labour'), kept on this device.
@@ -128,7 +134,7 @@ function aggDays(L, s, rolling) {
 // dash, off, avg (offer a 7-day average; default on for a one-line chart)}. defaults: boxes on when the page opens.
 function dayChart(g, P, pre, o, specs, defaults) {
   const wk = cWeekly(g, P.length), long = P.length > LONGP;
-  specs = specs.map((s, i) => ({...s, key: s.key || 's' + i, color: s.color || CC[i % CC.length]}));
+  specs = specs.map((s, i) => ({...s, key: s.key || 's' + i, color: s.color || ccAt(i)}));
   if (wk) {
     const Bk = weekBuckets(P);
     const tips = Bk.map((L) => `${shortRange(L[0].date, L[L.length - 1].date)}${L.length < 7 ? ` (${L.length} day${L.length === 1 ? '' : 's'})` : ''}`);
@@ -213,7 +219,8 @@ function moveCard(cur) {
 }
 // Cost per pick split by cost type, day by day (weekly on request): fixed per day, follows attendance, follows output, lumpy,
 // and the cut-piece loss, as stacked bars that add up to the headline cost per pick (the dashed mark). Legend highlights a type.
-const CT_COLS = {fixed: '#8e6bbf', attendance: 'var(--info)', output: 'var(--accent)', lumpy: 'var(--warn)', cut: 'var(--bad)'};
+// Round C1 (audit #1): the chart palette's slots (style.css --c1…--c6); cut-piece loss is the cut pieces' slot on every chart
+const CT_COLS = {fixed: 'var(--c1)', attendance: 'var(--c2)', output: 'var(--c3)', lumpy: 'var(--c4)', cut: CSL.cut};   // cut pieces: magenta, never a green-looking slot (a loss)
 function costTypeCard() {
   const P = cPeriod('types'), wk = cWeekly('types', P.length);
   const Bk = wk ? weekBuckets(P) : P.map((d) => [d]);
@@ -289,14 +296,14 @@ function bgradeSection(cur) {
   const bWk = cWeekly('bq', PB.length);
   out.append(el('div', {class: 'trgrid'},
     card('Quality loss per good pick', bWk ? 'paise, week by week' : 'paise, day by day', dayChart('bq', PB, bqPre, {id: 'bq-p', aria: 'Quality loss per good pick', fmt: (v) => pn(v, 2), onPick: pickDay}, [
-      {key: 'b', name: 'B grade', ...bs('bp'), color: CC[0], avg: true}, {key: 'c', name: 'Cut pieces', ...bs('cpp'), color: CC[2], avg: true}, {key: 't', name: 'Together', ...bs('tp'), color: 'var(--muted)', dash: true, avg: true}], ['b', 'c'])),
+      {key: 'b', name: 'B grade', ...bs('bp'), color: CSL.bgrade, avg: true}, {key: 'c', name: 'Cut pieces', ...bs('cpp'), color: CSL.cut, avg: true}, {key: 't', name: 'Together', ...bs('tp'), color: 'var(--muted)', dash: true, avg: true}], ['b', 'c'])),
     card('Quality loss and volume', bWk ? 'week by week · ₹ figures are an average a day' : 'day by day', dayChart('bq', PB, bqPre, {id: 'bq-v', aria: 'Quality loss and volume', fmt: (v) => pn(v, 2), onPick: pickDay}, [
-      {key: 'pf', name: 'B grade, % of folded', ...bs('pctF'), color: CC[0]},
-      {key: 'cpf', name: 'Cut pieces, % of folded', ...bs('cpf'), color: CC[3]},
-      {key: 'tpf', name: 'B grade + cut pieces, % of folded', ...bs('tpf'), color: '#8e6bbf', dash: true},
-      {key: 'bl', name: 'B grade loss (₹ thousand)', ...bs('bl', 1000), color: CC[1], avg: true},
-      {key: 'cl', name: 'Cut-piece loss (₹ thousand)', ...bs('cl', 1000), color: CC[2], avg: true},
-      {key: 'tl', name: 'B grade + cut-piece loss (₹ thousand)', ...bs('tl', 1000), color: 'var(--muted)', dash: true}], ['bl', 'cl']))));
+      {key: 'pf', name: 'B grade, % of folded', ...bs('pctF'), color: CSL.bgrade, dash: true},
+      {key: 'cpf', name: 'Cut pieces, % of folded', ...bs('cpf'), color: CSL.cut, dash: true},
+      {key: 'tpf', name: 'B grade + cut pieces, % of folded', ...bs('tpf'), color: 'var(--muted)', dash: true},
+      {key: 'bl', name: 'B grade loss (₹ thousand)', ...bs('bl', 1000), color: CSL.bgrade, avg: true},
+      {key: 'cl', name: 'Cut-piece loss (₹ thousand)', ...bs('cl', 1000), color: CSL.cut, avg: true},
+      {key: 'tl', name: 'B grade + cut-piece loss (₹ thousand)', ...bs('tl', 1000), color: 'var(--muted)'}], ['bl', 'cl']))));
 
   // 3. B grade by head group, ranked (denominator: that head group's produced metres on register days)
   const regNote = noReg.length ? `B-grade register ${NA.toLowerCase()} for ${noReg.join(', ')}; those days are left out below.` : null;
@@ -398,7 +405,7 @@ function pageCosting() {
   sel.addEventListener('change', () => { CDATE = sel.value === last.date ? '' : sel.value; render(); });
   s.append(el('div', {}, el('h2', {text: `Costing, ${dfmt(cur.date)}${bTxt()}`}),   // Round B1: the heading names the basis for the tiles under it
     el('p', {class: 'lead', text: isPlant() ? 'Why cost per pick moved, what the plant produced by quality head group, and the lines that drive cost, from the plant\'s costing file. Click any point on a chart to open that day.' : `Why cost per pick moved, what the plant produced by quality head group, and the lines that drive cost. Built from Unit 2\'s costing on the basis chosen at the top (Actual or Plant file). It runs on its own and is not reconciled with the loom tabs: metres, picks and looms running can differ, because this tab uses the plant\'s production block and the loom tabs use the Toyota reports. Click any point on a chart to open that day.`})));
-  s.append(el('div', {class: 'toolbar'}, el('label', {for: 'cday', text: 'Day'}), sel,
+  s.append(el('div', {class: 'toolbar cdayrow'}, el('label', {for: 'cday', text: 'Day'}), sel,   // Round C1 (#20): on a phone the Day list and the switch share the first row
     el('span', {class: 'pill lime', text: `Costing: up to ${dfmt(last.date)}`}), D && !isPlant() ? el('span', {class: 'pill muted', text: `Looms: up to ${dfmt(D.latest)}`}) : null,
     cur.date !== last.date ? el('button', {class: 'ghost', type: 'button', text: 'Back to latest', onclick: () => { CDATE = ''; render(); }}) : null, basisSeg()));
   // Round B1: no Power units switch here any more; the app-wide basis switch sits in the Day row above
@@ -467,11 +474,11 @@ function pageCosting() {
   const lyOff = M.some((d) => d.ly && ok(d.ly.cpp)) ? null : (M.every((d) => d.date.slice(0, 7) === first.slice(0, 7)) ? `no data until ${lyFrom}, because this tab holds data from ${monthName(first)} onward.` : 'not available for this period.');
   s.append(card('Cost per pick', `paise, incl. cut piece loss${bTxt()}`, perBar('cpp'),
     dayChart('cpp', M, mPre, {id: 'cpp', w: Math.round(Math.max(340, Math.min(1000, (document.documentElement.clientWidth || 1000) - (document.documentElement.clientWidth >= 1024 ? 300 : 64)))), h: (document.documentElement.clientWidth || 1000) < 700 ? 260 : 280, aria: 'Cost per pick', fmt: (v) => pn(v, 1), onPick}, [
-      {key: 'cpp', name: 'Cost per pick', get: (d) => d.cpp, agg: 'w', w: wPk, color: CC[0], avg: true},
-      {key: 'fcpp', name: 'Folded', get: (d) => d.fcpp, agg: 'w', w: wFpk, color: CC[1], dash: true, avg: true},
+      {key: 'cpp', name: 'Cost per pick', get: (d) => d.cpp, agg: 'w', w: wPk, color: CSL.cpp, avg: true},
+      {key: 'fcpp', name: 'Folded', get: (d) => d.fcpp, agg: 'w', w: wFpk, color: CSL.fcpp, dash: true, avg: true},
       {key: 'mtd', name: 'Month-to-date cost per pick', get: (d) => d.mtd.cpp, agg: 'last', color: 'var(--muted)', dash: true, avg: false},
-      {key: 'mtdf', name: 'Month-to-date folded', get: (d) => d.mtd.fcpp, agg: 'last', color: '#8e6bbf', dash: true, avg: false},
-      {key: 'ly', name: 'Same day last month', get: (d) => d.ly ? d.ly.cpp : null, agg: 'w', w: (d) => d.ly ? d.ly.picks : null, color: 'var(--warn)', off: lyOff, avg: false}], ['cpp', 'fcpp'])));
+      {key: 'mtdf', name: 'Month-to-date folded', get: (d) => d.mtd.fcpp, agg: 'last', color: CSL.mtdf, dash: true, avg: false},
+      {key: 'ly', name: 'Same day last month', get: (d) => d.ly ? d.ly.cpp : null, agg: 'w', w: (d) => d.ly ? d.ly.picks : null, color: CSL.ly, off: lyOff, avg: false}], ['cpp', 'fcpp'])));
   if (typeof fxCostChart === 'function') { const fc = fxCostChart(M, mPre); if (fc) s.append(fc); }   // R2: realisation against cost per pick (owner, analysis on)
   s.append(costTypeCard());
   { const {P, pre} = per('trends'), wkNote = cWeekly('trends', P.length) ? ', weekly: average a day' : '';

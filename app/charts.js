@@ -45,7 +45,7 @@ const ptLabel = (o, i) => o.tips ? o.tips[i] : dfmt(o.dates[i]);
 const ptPick = (o, i) => (o.pickDates || o.dates)[i];
 function lineChart(o) {
   if (!o.plain && o.series.length > 1) {
-    const ser = o.series.map((x, i) => ({...x, key: x.key || String(i), color: x.color || CC[i % CC.length]}));
+    const ser = o.series.map((x, i) => ({...x, key: x.key || String(i), color: x.color || ccAt(i)}));
     return toggleChart(o.id || 'lc:' + (o.aria || ''), {...o, series: ser}, o.defaults || ser.filter((x) => !x.avgOf).map((x) => x.key));
   }
   const n = o.dates.length, vals = o.series.flatMap((s) => s.vals).filter(ok).concat((o.refs || []).map((r) => r.v).filter(ok));
@@ -55,6 +55,7 @@ function lineChart(o) {
   for (const r of o.refs || []) if (ok(r.v)) {
     svg.append(svgEl('line', {x1: f.L, x2: f.W - f.R, y1: Y(r.v), y2: Y(r.v), style: 'stroke:var(--muted);stroke-width:1.2;stroke-dasharray:5 4'}));
     const t = svgEl('text', {x: f.W - f.R, y: Y(r.v) - 4, 'text-anchor': 'end', style: 'fill:var(--muted);font-size:11px'}); t.textContent = r.label; svg.append(t);
+    refLab(svg, t, f.W - f.R, Y(r.v) - 4, r.label, f.L + 4);
   }
   plotMarks(svg, o, X, f.T, f.H - f.B, f.W);
   plotSeries(svg, o, X, Y, light, f.W);
@@ -63,12 +64,21 @@ function lineChart(o) {
   svg.__w0 = o.w0 || f.W; svg.__w = f.W; svg.__redraw = (W) => { const nb = lineChart({...o, plain: true, w: W, w0: svg.__w0}), ns = nb.querySelector('svg'); const ro = box.querySelector('.readout'), nr = nb.querySelector('.readout'); if (ro && nr) ro.replaceWith(nr); else if (ro) ro.replaceChildren(); return ns; };
   return box;
 }
-// Lines, dots and value labels for one chart. light: no dots and labels only on the last, highest and lowest point.
+// Round C1 (audit #15): value labels never print over each other. Each label's box is kept on the chart (svg.__lab); a label
+// within 12 px of one already drawn is left out (its value stays in the hover text and the details bar). The last, highest and
+// lowest point of each series are drawn first and always kept; a reference line's label that one of them would cover moves
+// to the left end of its line.
+const LAB_GAP = 12;
+const labBox = (x, y, text, anchor) => { const w = String(text).length * 6.2 + 4, x0 = anchor === 'end' ? x - w : anchor === 'middle' ? x - w / 2 : x; return {x0, x1: x0 + w, y0: y - 11, y1: y + 2}; };
+const labHit = (a, b) => a.x0 < b.x1 + LAB_GAP && b.x0 < a.x1 + LAB_GAP && a.y0 < b.y1 + LAB_GAP && b.y0 < a.y1 + LAB_GAP;
+const labHitX = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 + LAB_GAP && b.y0 < a.y1 + LAB_GAP;
+function refLab(svg, t, x, y, text, xLeft) { (svg.__lab = svg.__lab || []).push({...labBox(x, y, text, 'end'), ref: t, xLeft, y, text}); }
 function plotSeries(svg, o, X, Y, light, wMax) {
   const faded = new Set(o.series.filter((s) => s.avgOf).map((s) => s.avgOf));
   const strong = o.series.filter((s) => !faded.has(s.key));
+  const drawn = svg.__lab = svg.__lab || [], cand = [];
   o.series.forEach((s, si) => {
-    const col = s.color || CC[si % CC.length], pts = s.vals.map((v, i) => ok(v) ? [X(i), Y(v), v, i] : null).filter(Boolean), fade = faded.has(s.key);
+    const col = s.color || ccAt(si), pts = s.vals.map((v, i) => ok(v) ? [X(i), Y(v), v, i] : null).filter(Boolean), fade = faded.has(s.key);
     if (pts.length > 1) svg.append(svgEl('polyline', {points: pts.map((p) => p[0] + ',' + p[1]).join(' '), fill: 'none', style: `stroke:${col};stroke-width:${s.avgOf ? 2.8 : 2};${s.dash ? 'stroke-dasharray:5 4;' : ''}${fade ? 'opacity:.35;' : ''}`}));
     const lab = !fade && strong.length <= 2, k = Math.max(1, Math.ceil(pts.length / 12));
     let mark = null;
@@ -83,29 +93,48 @@ function plotSeries(svg, o, X, Y, light, wMax) {
       }
       if (lab && (light ? mark.has(p[3]) : (j % k === 0 || j === pts.length - 1))) {
         const x0 = X(0), edge = p[0] - x0 < 18 && p[0] < 80 ? 'start' : wMax && p[0] > wMax - 30 ? 'end' : 'middle';  // keep edge labels inside the chart
-        const t = svgEl('text', {x: edge === 'start' ? Math.max(1, p[0] - 2) : edge === 'end' ? p[0] + 4 : p[0], y: p[1] - 8, 'text-anchor': edge, style: `fill:${col};font-size:10.5px;font-weight:600`}); t.textContent = (o.fmt || pn)(p[2]); svg.append(t);
+        const lx = edge === 'start' ? Math.max(1, p[0] - 2) : edge === 'end' ? p[0] + 4 : p[0], txt = (o.fmt || pn)(p[2]);
+        const keep = j === pts.length - 1 || (light ? true : (mark0(pts, j)));
+        cand.push({keep, si, x: lx, y: p[1] - 8, edge, col, txt});
       }
     });
   });
+  // the kept labels first (last, highest, lowest of each series), then the rest in order; a label too close to one drawn is skipped
+  cand.sort((a, b) => (b.keep - a.keep));
+  for (const c of cand) {
+    const bx = labBox(c.x, c.y, c.txt, c.edge);
+    if (!c.keep && drawn.some((d) => labHit(bx, d))) continue;
+    if (c.keep) for (const d of drawn) if (d.ref && labHitX(bx, d)) {   // a reference label under a kept value label moves left
+      d.ref.setAttribute('x', d.xLeft); d.ref.setAttribute('text-anchor', 'start'); Object.assign(d, labBox(d.xLeft, d.y, d.text, 'start'));
+    }
+    const t = svgEl('text', {x: c.x, y: c.y, 'text-anchor': c.edge, style: `fill:${c.col};font-size:10.5px;font-weight:600`}); t.textContent = c.txt; svg.append(t);
+    drawn.push(bx);
+  }
 }
+// a series' highest or lowest point among pts (for the kept labels on a chart that is not light)
+function mark0(pts, j) { let hi = 0, lo = 0; pts.forEach((p, i) => { if (p[2] > pts[hi][2]) hi = i; if (p[2] < pts[lo][2]) lo = i; }); return j === hi || j === lo; }
 // Dashed vertical markers (o.marks: [{date, text}], e.g. the days a money approval took effect, R1 11 Nov 2026). A mark
 // lands on its date, or on the week that holds it when the chart is weekly (o.pickDates = each bucket's last day).
 function markIdx(o, d) {
   if (o.pickDates) return o.dates.findIndex((s, i) => s <= d && d <= o.pickDates[i]);
   return o.dates.indexOf(d);
 }
+// Round C1 (audit #16): each mark is a short tick under the top of the plot; its full-height dashed line shows only while
+// that day is the one being read in the details bar (markShow).
 function plotMarks(svg, o, X, top, bottom, wMax) {
   let last = -1e9;
   for (const m of o.marks || []) {
     const i = markIdx(o, m.date); if (i < 0) continue;
     const x = X(i);
-    svg.append(svgEl('line', {x1: x, x2: x, y1: top - 4, y2: bottom, style: 'stroke:var(--info);stroke-width:1.2;stroke-dasharray:4 4'}));
+    svg.append(svgEl('line', {x1: x, x2: x, y1: top - 4, y2: top + 6, class: 'mktick', style: 'stroke:var(--muted);stroke-width:1.6'}));
+    svg.append(svgEl('line', {x1: x, x2: x, y1: top - 4, y2: bottom, class: 'mkline', 'data-i': i, style: 'stroke:var(--muted);stroke-width:1.2;stroke-dasharray:4 4;display:none'}));
     const tt = svgEl('title'); tt.textContent = `${dfmt(m.date)}: ${m.text}`;
-    const t = svgEl('text', {x: x > (wMax || 680) - 60 ? x - 3 : x + 3, y: top - 6, 'text-anchor': x > (wMax || 680) - 60 ? 'end' : 'start', style: 'fill:var(--info);font-size:10px;font-weight:600'});
+    const t = svgEl('text', {x: x > (wMax || 680) - 60 ? x - 3 : x + 3, y: top - 6, 'text-anchor': x > (wMax || 680) - 60 ? 'end' : 'start', style: 'fill:var(--muted);font-size:10px;font-weight:600'});
     t.textContent = x - last < 40 ? '' : (m.short || '▾'); t.append(tt); svg.append(t);   // the label stays out of the way; hover reads the approval
     last = x;
   }
 }
+const markShow = (svg, i) => { for (const l of svg.querySelectorAll('.mkline')) l.style.display = +l.dataset.i === i ? '' : 'none'; };
 // Hover or tap a light chart: a guide line on that day and its values under the chart, with a button to open the day.
 // The details bar under every line chart (12 Nov 2026: on every line chart, not only long ones): hover or tap a point for
 // that day's figures, then "Open this day" (the chart's own onPick, else openDayAny).
@@ -117,7 +146,7 @@ function readoutBar(o) {
     const prev = (s) => { for (let j = i - 1; j >= 0; j--) if (ok(s.vals[j])) return s.vals[j]; return null; };
     const parts = o.series.filter((s) => ok(s.vals[i])).map((s, j) => {
       const p = prev(s), d = ok(p) ? s.vals[i] - p : null;
-      return el('span', {class: 'ro'}, el('i', {style: `background:${s.color || CC[j % CC.length]}`}), `${s.name} `, el('b', {text: (o.fmt || pn)(s.vals[i])}),
+      return el('span', {class: 'ro'}, el('i', {style: `background:${s.color || ccAt(j)}`}), `${s.name} `, el('b', {text: (o.fmt || pn)(s.vals[i])}),
         ok(d) && Math.abs(d) > 1e-9 ? el('span', {class: 'note', text: ` (${d > 0 ? '+' : '−'}${(o.fmt || pn)(Math.abs(d))} vs previous)`}) : null);
     });
     const refs = (o.refs || []).filter((r) => ok(r.v)).map((r) => el('span', {class: 'note', text: `${r.label} ${(o.fmt || pn)(r.v)}`}));
@@ -140,7 +169,7 @@ function readout(svg, box, o, X, f) {
     const x = (e.clientX - r.left) * (f.W / r.width), step = n > 1 ? (f.W - f.L - f.R) / (n - 1) : 1;
     return Math.max(0, Math.min(n - 1, Math.round((x - f.L) / step)));
   };
-  const show = (i) => { if (i < 0) return; guide.setAttribute('x1', X(i)); guide.setAttribute('x2', X(i)); guide.style.display = ''; R.show(i); };
+  const show = (i) => { if (i < 0) return; guide.setAttribute('x1', X(i)); guide.setAttribute('x2', X(i)); guide.style.display = ''; markShow(svg, i); R.show(i); };
   hit.addEventListener('pointermove', (e) => show(at(e)));
   hit.addEventListener('click', (e) => show(at(e)));
   box.append(R.out);
@@ -185,6 +214,7 @@ function panChart(o) {
     for (const r of o.refs || []) if (ok(r.v)) {
       svg.append(svgEl('line', {x1: 0, x2: PW, y1: Y(r.v), y2: Y(r.v), style: 'stroke:var(--muted);stroke-width:1.2;stroke-dasharray:5 4'}));
       const t = svgEl('text', {x: PW - R, y: Y(r.v) - 4, 'text-anchor': 'end', style: 'fill:var(--muted);font-size:11px'}); t.textContent = r.label; svg.append(t);
+      refLab(svg, t, PW - R, Y(r.v) - 4, r.label, PADL + 4);
     }
     plotMarks(svg, o, X, T, H - B, PW);
     plotSeries(svg, o, X, Y, false, PW);
@@ -192,7 +222,7 @@ function panChart(o) {
       const guide = svgEl('line', {y1: T, y2: H - B, style: 'stroke:var(--muted);stroke-width:1;stroke-dasharray:2 3;display:none'});
       const hit = svgEl('rect', {x: 0, y: T, width: PW, height: Math.max(1, H - T - B), style: 'fill:transparent;cursor:crosshair'});
       const at = (e) => { const r = svg.getBoundingClientRect(); return r.width ? Math.max(0, Math.min(n - 1, Math.round(((e.clientX - r.left) * PW / r.width - PADL) / step))) : -1; };
-      const sh = (e) => { if (dragged) return; const i = at(e); if (i < 0) return; guide.setAttribute('x1', X(i)); guide.setAttribute('x2', X(i)); guide.style.display = ''; RO.show(i); };
+      const sh = (e) => { if (dragged) return; const i = at(e); if (i < 0) return; guide.setAttribute('x1', X(i)); guide.setAttribute('x2', X(i)); guide.style.display = ''; markShow(svg, i); RO.show(i); };
       hit.addEventListener('pointermove', sh); hit.addEventListener('click', sh);
       svg.append(guide, hit);
     }
@@ -232,7 +262,7 @@ function panChart(o) {
 function toggleChart(id, o, defaults) {
   if (!TOGS[id]) TOGS[id] = new Set(defaults);
   const on = TOGS[id], cols = {};
-  o.series.forEach((s, i) => { cols[s.key] = s.color || CC[i % CC.length]; });
+  o.series.forEach((s, i) => { cols[s.key] = s.color || ccAt(i); });
   const avail = (s) => !s.off && s.vals.some(ok);
   const boxes = el('div', {class: 'togs', role: 'group', 'aria-label': 'Series shown'}, o.series.map((s) => {
     const can = avail(s), pressed = can && on.has(s.key);
@@ -249,7 +279,7 @@ function toggleChart(id, o, defaults) {
 }
 function legend(series) {
   if (series.length < 2) return null;
-  return el('div', {class: 'legend'}, series.map((s, i) => el('span', {class: 'lg'}, el('i', {style: `display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:${s.color || CC[i % CC.length]}`}), s.name)));
+  return el('div', {class: 'legend'}, series.map((s, i) => el('span', {class: 'lg'}, el('i', {style: `display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:${s.color || ccAt(i)}`}), s.name)));
 }
 // o (optional): {unit (in the hover text, default paise), dec (decimals on the bars)}
 function waterfall(items, aria, Wd, o = {}) {
@@ -276,6 +306,8 @@ function waterfall(items, aria, Wd, o = {}) {
     if (i < bars.length - 1) { const lv = b.total ? b.v : b.b, nx = L + slot * (i + 1) + slot / 2; svg.append(svgEl('line', {x1: cx + bw / 2, x2: nx - bw / 2, y1: Y(lv), y2: Y(lv), style: 'stroke:var(--muted);stroke-width:1;stroke-dasharray:3 2'})); }
     const r = svgEl('rect', {x: cx - bw / 2, y: b.total ? Y(b.v) : y1, width: bw, height: Math.max(2, b.total ? Y(a0) - Y(b.v) : y2 - y1), style: `fill:${col};opacity:${b.total ? 0.75 : 1}`});
     const tt = svgEl('title'); tt.textContent = b.tip || `${b.label}: ${b.total ? pn(b.v, 2).replace(/^-(?=.*[1-9])/, '−').replace(/^-/, '') : sg(b.v)} ${unit}`; r.append(tt); svg.append(r);
+    // Round C1 (audit #25): a total bar on an axis that does not start at 0 is cut; two short slashes near its foot say so
+    if (b.total && a0 > 0 && b.v > a0) { const yb = Y(a0) - 7; for (const dx of [-4, 3]) svg.append(svgEl('line', {x1: cx + dx - 3, x2: cx + dx + 3, y1: yb + 4, y2: yb - 4, class: 'wfcut', style: 'stroke:var(--panel);stroke-width:2.4'})); }
     const t = svgEl('text', {x: cx, y: (b.total ? Y(b.v) : y1) - 5, 'text-anchor': 'middle', style: 'fill:var(--ink);font-size:11px;font-weight:600'}); t.textContent = b.total ? pn(b.v, dec).replace(/^-(?=.*[1-9])/, '−').replace(/^-/, '') : sg(b.v); svg.append(t);   // Round Y: a negative total with a proper minus, as every figure
     const words = b.label.length > 11 && b.label.includes(' ') ? [b.label.slice(0, b.label.lastIndexOf(' ', 11) > 0 ? b.label.lastIndexOf(' ', 11) : b.label.indexOf(' ')), b.label.slice((b.label.lastIndexOf(' ', 11) > 0 ? b.label.lastIndexOf(' ', 11) : b.label.indexOf(' ')) + 1)] : [b.label];
     words.forEach((w, k) => { const lt = svgEl('text', {x: cx, y: H - B + 16 + k * 13, 'text-anchor': 'middle', style: 'fill:var(--muted);font-size:10.5px'}); lt.textContent = w.length > 14 ? w.slice(0, 13) + '…' : w; svg.append(lt); });
@@ -285,13 +317,24 @@ function waterfall(items, aria, Wd, o = {}) {
 // Round B3 (Divyam, 27 Nov 2026): a share pie (a ring), for a share of a total only (section 5). slices: [{key, label, pct,
 // color, sel}], each a part of 1. Each slice and its legend row is a button (tap, Enter, Space) that calls onPick(key); the
 // picked slice stands out. The centre carries o.mid (two short lines). Built for one card: Realisation per pick by quality.
-// mid tones that read on the light and the dark panel; neighbours differ in hue
-const PIE_C = ['#3f8f2f', '#d9822b', '#4f7fc9', '#c95c8a', '#2fa595', '#e0b43c', '#9bc43a', '#8b79c9', '#c9573d'];
+// Round C1 (audit #1, #2): slice colours come from the chart palette (CC), set by the caller per quality; a slice's hatch (1 =
+// 45° stripes, 2 = crossed) tells apart a seventh or later quality that shares a colour, on the ring and in the list.
+let PIEN = 0;
+const pieHatchCss = (c, h) => h === 2 ? `repeating-linear-gradient(45deg,transparent 0 3px,var(--panel) 3px 4.5px),repeating-linear-gradient(135deg,${c} 0 3px,var(--panel) 3px 4.5px)` : `repeating-linear-gradient(45deg,${c} 0 3px,var(--panel) 3px 4.5px)`;
 function pieChart(slices, o = {}) {
   const S = 220, c = S / 2, R = 100, r = 58, svg = svgEl('svg', {viewBox: `0 0 ${S} ${S}`, width: S, height: S, role: 'group', 'aria-label': o.aria || 'Share', class: 'pie', style: 'display:block;max-width:100%;height:auto'});
+  const defs = svgEl('defs'), pid = 'pieh' + (++PIEN);
+  const fillOf = (s, j) => {
+    if (!s.hatch) return s.color;
+    const id = `${pid}-${j}`, pat = svgEl('pattern', {id, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)'});
+    pat.append(svgEl('rect', {width: 6, height: 6, style: `fill:${s.color}`}), svgEl('line', {x1: 0, y1: 0, x2: 0, y2: 6, style: 'stroke:var(--panel);stroke-width:2'}));
+    if (s.hatch === 2) pat.append(svgEl('line', {x1: 0, y1: 3, x2: 6, y2: 3, style: 'stroke:var(--panel);stroke-width:2'}));
+    defs.append(pat); return `url(#${id})`;
+  };
+  svg.append(defs);
   const pt = (a, rad) => [c + rad * Math.sin(a), c - rad * Math.cos(a)], f = (v) => v.toFixed(2);
   const key = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
-  let a0 = 0;
+  let a0 = 0, j = 0;
   for (const s of slices) {
     const a1 = a0 + s.pct * 2 * Math.PI, big = a1 - a0 > Math.PI ? 1 : 0, Ro = s.sel ? R + 6 : R, pick = () => o.onPick && o.onPick(s.key);
     let d;
@@ -299,7 +342,7 @@ function pieChart(slices, o = {}) {
     else { const [x0, y0] = pt(a0, Ro), [x1, y1] = pt(a1, Ro), [x2, y2] = pt(a1, r), [x3, y3] = pt(a0, r);
       d = `M${f(x0)},${f(y0)}A${Ro},${Ro} 0 ${big} 1 ${f(x1)},${f(y1)}L${f(x2)},${f(y2)}A${r},${r} 0 ${big} 0 ${f(x3)},${f(y3)}Z`; }
     const p = svgEl('path', {d, tabindex: '0', role: 'button', 'aria-pressed': s.sel ? 'true' : 'false', 'aria-label': `${s.label}: ${(s.pct * 100).toFixed(1)}%`,
-      style: `fill:${s.color};stroke:var(--panel);stroke-width:1.5;cursor:pointer;opacity:${slices.some((x) => x.sel) && !s.sel ? 0.55 : 1}`});
+      style: `fill:${fillOf(s, j++)};stroke:var(--panel);stroke-width:1.5;cursor:pointer;opacity:${slices.some((x) => x.sel) && !s.sel ? 0.55 : 1}`});
     const tt = svgEl('title'); tt.textContent = `${s.label}: ${(s.pct * 100).toFixed(1)}%`; p.append(tt);
     p.addEventListener('click', pick); p.addEventListener('keydown', key(pick));
     svg.append(p); a0 = a1;
@@ -307,6 +350,6 @@ function pieChart(slices, o = {}) {
   (o.mid || []).forEach((t, i) => svg.append(svgText({x: c, y: c + (i ? 14 : -4), 'text-anchor': 'middle', style: `fill:var(${i ? '--muted' : '--ink'});font-size:${i ? 11 : 15}px;font-weight:${i ? 400 : 600}`}, t)));
   const lg = el('div', {class: 'pielg'}, slices.map((s) => { const pick = () => o.onPick && o.onPick(s.key);
     return el('button', {type: 'button', class: 'pierow', 'aria-pressed': s.sel ? 'true' : 'false', onclick: pick},
-      el('span', {class: 'sq', style: `background:${s.color}`}), el('span', {class: 'pn', text: s.label}), el('span', {class: 'pv', text: `${(s.pct * 100).toFixed(1)}%`})); }));
+      el('span', {class: 'sq', style: `background:${s.hatch ? pieHatchCss(s.color, s.hatch) : s.color}`}), el('span', {class: 'pn', text: s.label}), el('span', {class: 'pv', text: `${(s.pct * 100).toFixed(1)}%`})); }));
   return el('div', {class: 'piebox'}, svg, lg);
 }

@@ -221,6 +221,8 @@ const fxInput = () => ({M: FX.M, loomdays: FX.loomdays, costing: fxCost(), reg: 
 const fxName = (uid) => uid == null ? '—' : fcFabricName(FX.M, uid);
 const fxYarnName = (uid) => { const Y = FX.M.yarn[uid]; return Y ? (fcVal(Y, 'name', '9999-12-31') || 'Yarn ' + uid) : 'Yarn ' + uid; };
 const fxMoney = (x) => !ok(x) ? '—' : (x < 0 ? '−₹' : '₹') + Math.round(Math.abs(x)).toLocaleString('en-IN');
+// Round C1 (audit #7): the Realisation tiles' amount and its unit (fabric_calc.js fcLk, fcLkU)
+const fxLk = (x) => fcLk(x), fxLkU = (x) => fcLkU(x);
 const fxPaise = (x) => !ok(x) ? '—' : x.toFixed(2);
 const fxShow = (v) => v == null || v === '' ? 'blank' : Array.isArray(v) ? v.map((l) => `${l.side} ${l.yarn_src || l.yarn}${l.ends ? ' × ' + l.ends : ''}${l.parts ? ' (' + l.parts + ' parts)' : ''}`).join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
 const fxLoading = () => el('div', {class: 'loading', text: 'Loading…'});
@@ -837,18 +839,21 @@ function drawRealisation0(box, pend) {
   const hasOf = (t, costed) => costed === 'lc' ? t.lc_ld : costed ? t.costed_ld : t.priced_ld;
   const dayVal = (d, k, costed) => { const t = sumDays([d]); return hasOf(t, costed) ? t[k] : null; };
   const avgPrior = (k, costed) => { const v = prior.map((d) => dayVal(d, k, costed)).filter(ok); return v.length ? v.reduce((a, x) => a + x, 0) / v.length : null; };
-  const lk = (x) => !ok(x) ? '—' : (x < 0 ? '−₹' : '₹') + (Math.abs(x) / 1e5).toFixed(2);
-  const spk = (vals, label) => last7.length > 1 ? el('div', {}, spark(vals, {aria: `${label}, last ${last7.length} days`, title: `${label}: ` + last7.map((d, i) => `${dfmt(d)} ${ok(vals[i]) ? lk(vals[i]) + ' lakh' : '—'}`).join(' · ')}),
-    el('div', {class: 'spk'}, el('span', {text: dfmt(last7[0])}), el('span', {}, `${last7.length} days`, el('br'), '₹ lakh'), el('span', {text: dfmt(last7.at(-1))}))) : null;
+  // Round C1 (audit #7): under ₹1 lakh the tiles show rupees (−₹321), not "−₹0.00 lakh"; a figure that rounds to zero has no
+  // minus sign. lkU gives the unit beside it ("lakh", or none for rupees).
+  const lk = (x) => fxLk(x), lkU = (x) => fxLkU(x);
+  const spk = (vals, label) => last7.length > 1 ? el('div', {}, spark(vals, {aria: `${label}, last ${last7.length} days`, title: `${label}: ` + last7.map((d, i) => `${dfmt(d)} ${ok(vals[i]) ? lk(vals[i]) + (lkU(vals[i]) ? ' ' + lkU(vals[i]) : '') : '—'}`).join(' · ')}),
+    el('div', {class: 'spk'}, el('span', {text: dfmt(last7[0])}), el('span', {}, `${last7.length} days`, el('br'), '₹'), el('span', {text: dfmt(last7.at(-1))}))) : null;
   const tile = (label, t, k, ppk, ldk, costed, d, sp, sub) => {
     const has = costed ? t.costed_ld : t.priced_ld;   // nothing priced: a gap, never ₹0
     // 18 Nov 2026: fxkpi = a column with the line pinned to the foot, so the four lines and their dates sit level
     return el('div', {class: 'card kpi fxkpi', style: t.coverage == null || t.coverage < FX_COVER_MIN ? 'opacity:.55' : null}, el('div', {class: 'label', text: label}),
-      el('div', {class: 'val'}, has ? lk(t[k]) : '—', has ? el('small', {text: 'lakh'}) : null),
+      el('div', {class: 'val'}, has ? lk(t[k]) : '—', has && lkU(t[k]) ? el('small', {text: lkU(t[k])}) : null),
       el('div', {class: 'note', text: has ? `${ok(t[ppk]) ? fxPaise(t[ppk]) + ' paise per folded pick' : 'per folded pick: costing not in yet'} · ${fxMoney(t[ldk])} per loom per day${sub ? ' · ' + sub : ''}` : (costed && t.priced_ld ? `no costing for ${dfmt(asOf)} yet: profit shows once that day's costing file is read${sp ? '. The line shows the days that have it' : ''}` : 'nothing priced')}), d,
       sp ? el('div', {class: 'kfoot'}, sp) : null);
   };
-  const dl = (k, costed) => { const c = dayVal(asOf, k, costed); return ok(c) ? delta(c, avgPrior(k, costed), true, (x) => '₹' + (x / 1e5).toFixed(2), ' lakh') : null; };
+  const dl = (k, costed) => { const c = dayVal(asOf, k, costed), p = avgPrior(k, costed), big = ok(p) && fcLkBig(c - p);   // Round C1: a change under ₹1 lakh in rupees
+    return ok(c) ? delta(c, p, true, (x) => big ? '₹' + (x / 1e5).toFixed(2) : '₹' + Math.round(x).toLocaleString('en-IN'), big ? ' lakh' : '') : null; };
   const spv = (k, costed) => spk(last7.map((d) => dayVal(d, k, costed)), k === 'sale' ? 'Sale value' : k === 'real' ? 'Realisation' : 'Profit (loom cost basis)');
   // Round Y (design item 1): Profit on the loom cost basis as the headline (₹ lakh, paise/pick, ₹ per loom per day over the
   // loom-days running, and the loom cost not recovered it includes, which opens Coverage).
@@ -866,7 +871,7 @@ function drawRealisation0(box, pend) {
       : `no loom data for ${dfmt(asOf)}: the loom cost basis needs the looms that ran that day. Next: see Files per day on Data health`;
     return el('div', {class: 'card kpi fxkpi fxprof' + (mtd ? ' fxpmtd' : ''), style: T.coverage == null || T.coverage < FX_COVER_MIN ? 'opacity:.55' : null},
       el('div', {class: 'label', 'data-sm': sm, text: label}),
-      el('div', {class: 'val'}, has ? lk(T.profit_lc) : '—', has ? el('small', {text: 'lakh'}) : null),
+      el('div', {class: 'val'}, has ? lk(T.profit_lc) : '—', has && lkU(T.profit_lc) ? el('small', {text: lkU(T.profit_lc)}) : null),
       el('div', {class: 'note'}, has ? [ok(T.profit_lc_pp) ? fxPaise(T.profit_lc_pp) + ' paise per folded pick' : fxGapTip('per folded pick: costing not in yet'), ` · ${fxMoney(T.profit_lc_ld)} per loom per day`] : gap),
       has && T.unrec > 0 ? el('button', {type: 'button', class: 'link fxunrec', title: mtd ? `Open Coverage on this tab: ${T.unrec_ld} loom-day${T.unrec_ld === 1 ? '' : 's'}${T.nopick_ld ? `, ${T.unrec_ld - T.nopick_ld} not priced, ${T.nopick_ld} with no picks woven` : ' not priced'}` : 'Open Coverage on this tab', onclick: () => navGoCard('realisation', 'Coverage'),
         text: `incl. ${fxMoney(T.unrec)} loom cost not recovered (${uTxt(T)}) ›`}) : null,   // Round A10 (advisory (d)): the month to date names its loom-days too
@@ -877,7 +882,7 @@ function drawRealisation0(box, pend) {
   const stile = () => {
     const T = DT, has = T.priced_ld > 0 && T.fmetres > 0;   // Round A7: the average sale rate a metre is per folded metre (it does not change)
     return el('div', {class: 'card kpi fxkpi', style: T.coverage == null || T.coverage < FX_COVER_MIN ? 'opacity:.55' : null}, el('div', {class: 'label', text: 'Sale value at prevailing rate'}),
-      el('div', {class: 'val'}, has ? lk(T.sale) : '—', has ? el('small', {text: 'lakh'}) : null),
+      el('div', {class: 'val'}, has ? lk(T.sale) : '—', has && lkU(T.sale) ? el('small', {text: lkU(T.sale)}) : null),
       el('div', {class: 'note', text: has ? `₹${f2(T.sale / T.fmetres)} a metre on average (${f0(T.fmetres)} folded m priced) · covers ${fxPct(DT.coverage)} of picks` : 'nothing priced. Next: see Coverage on this tab'}),
       dl('sale'), last7.length > 1 ? el('div', {class: 'kfoot'}, spv('sale')) : null);
   };
@@ -912,12 +917,12 @@ function drawRealisation0(box, pend) {
   // Round A7: a week's profit per folded pick is weighted by its days' A-grade folded picks
   const lcWeek = (L) => { const c = L.reduce((a, d) => a + (d.lc_ld && ok(d.profit_lc_pp) ? d.afold_lc : 0), 0); return c > 0 ? 100 * L.reduce((a, d) => a + (d.lc_ld ? d.profit_lc : d.unrec_only ? -d.unrec : 0), 0) / c : null; };
   const trend = anyVal ? dayChart('fx', daily, [], {id: 'fx-trend', aria: 'Realisation, profit (loom cost basis) and sale value per folded pick', fmt: f2, marks, onPick: (d) => fxDaysPanel(dfmt(d), `every loom on ${dfmt(d)} · As sold`, rows.filter((r) => r.date === d), true)}, [
-      {key: 'real', name: 'Realisation', get: (d) => d.real_fp, agg: 'w', w: (d) => d.afold, color: CC[0], avg: false},
-      {key: 'lc', name: 'Profit (loom cost)', get: (d) => d.lc_ld ? d.profit_lc_pp : null, wk: lcWeek, color: CC[1], avg: false},
-      {key: 'sale', name: 'Sale value', get: (d) => d.sale_fp, agg: 'w', w: (d) => d.afold, color: CC[2], dash: true, avg: false}], ['real', 'lc'])
+      {key: 'real', name: 'Realisation', get: (d) => d.real_fp, agg: 'w', w: (d) => d.afold, color: CSL.real, avg: false},
+      {key: 'lc', name: 'Profit (loom cost)', get: (d) => d.lc_ld ? d.profit_lc_pp : null, wk: lcWeek, color: CSL.profit, avg: false},
+      {key: 'sale', name: 'Sale value', get: (d) => d.sale_fp, agg: 'w', w: (d) => d.afold, color: CSL.sale, dash: true, avg: false}], ['real', 'lc'])
     : el('div', {class: 'empty'}, `Nothing priced in this period${tcov.reasons.length ? ': ' + tcov.reasons[0].reason + ` (${fxPct(tcov.reasons[0].share)} of picks)` : ''}. `, tcov.reasons.length && tcov.reasons[0].go ? el('a', {href: FX_GO[tcov.reasons[0].go][1], text: `Fix on ${FX_GO[tcov.reasons[0].go][0]} ›`}) : null);
   const trendCard = card('Trend', `Paise per A-grade folded pick each day${cWeekly('fx', daily.length) ? ', week by week (weighted by A-grade folded picks)' : ''} · ${fxSTxt(rows.S, true)}${fxBTxt()}`, fxPerBar('trend', redraw, viewSeg('fx', daily.length), fxWk('real', end)), trend,
-    marks.length ? el('p', {class: 'note', text: `Dashed markers: days a money approval took effect (${marks.map((m) => dfmt(m.date)).join(', ')}); hover one to read it.`}) : null,
+    marks.length ? el('p', {class: 'note', text: `Short ticks at the top of the chart: days a money approval took effect (${marks.map((m) => dfmt(m.date)).join(', ')}). Point at a tick to read it; point at or tap that day on the chart and its dashed line shows.`}) : null,
     el('p', {class: 'note', text: 'Point at or tap a day for its figures, then Open this day for its loom-days. Realisation = sale value less yarn. Profit (loom cost), solid = realisation less each loom\'s loom cost, its own B grade and the loom cost not recovered; a day with nothing priced is a gap in the line, and week by week its loom cost not recovered is still taken off. Sale value is dashed.'}));
   // 12 Nov 2026 (Divyam): the ranking card is gone; By loom / By head group (with its Profit / Realisation / per pick switch)
   // sits right after Trend.
@@ -1431,7 +1436,11 @@ function fxRealPie(rows, P, F) {
   const seg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Pie at'}, ['run', 'best', 'tg'].map((v) => el('button', {type: 'button', 'aria-pressed': m === v ? 'true' : 'false', text: Nm[v],
     onclick: () => { FXPIEM = v; lsSet('w2-act-pie-mode', v); render(); }})));
   const pick = (k) => { FXPIESEL = FXPIESEL === k ? null : k; render(); };
-  const col = (i, s) => s.others ? 'var(--muted-2)' : PIE_C[i % PIE_C.length];
+  // Round C1 (audit #2): each quality's colour is its slot by the month's realisation (fcPieSlots), the same in every mode and
+  // on every day of the month: slots 1–6 the chart palette, 7–12 the same colours hatched, past 12 cross-hatched
+  const A0 = fxAll(), mo = D.latest.slice(0, 7);   // both widths, so a quality's colour holds when the width row changes too
+  const SL = fcPieSlots(A0 ? fcGroup(A0.rows.filter((r) => r.date.slice(0, 7) === mo), (r) => r.hg + '|' + r.width).map((g) => ({key: g.key, real: g.priced > 0 ? g.real : null})) : []);
+  const col = (i, s) => s.others ? {color: 'var(--muted-2)'} : (() => { const k = SL.has(s.key) ? SL.get(s.key) : SL.size + i; return {color: CC[k % CC.length], hatch: Math.min(2, Math.floor(k / CC.length))}; })();
   const sel = Sh.slices.find((s) => s.key === FXPIESEL);
   const pv = (v) => ok(v) ? `${fxPaise(v)} paise` : '—', sg = (v) => ok(v) ? `${v >= 0 ? '+' : '−'}${fxPaise(Math.abs(v))} paise` : '—';
   const bn = fxBName() ? ` · ${fxBName()}` : '', fcL = `${m === 'tg' ? 'Target folded cost' : 'Folded cost per pick'}${bn}`, ifm = m === 'run' ? 'the day' : `if every loom ran at ${Nm[m].toLowerCase()}`;
@@ -1445,7 +1454,7 @@ function fxRealPie(rows, P, F) {
   const det = !Sh.slices.length ? null : !sel ? el('p', {class: 'note', text: 'Tap a name in the list (or a slice) for its figures.'})
     : el('div', {class: 'piedet', 'aria-live': 'polite'}, el('b', {text: sel.others ? `Others (${sel.items.length} qualities, the smaller shares)` : sel.label}),
       sel.others ? el('div', {}, sel.items.map(brief)) : one(sel));
-  const ring = Sh.slices.length ? pieChart(Sh.slices.map((s, i) => ({key: s.key, label: s.others ? `Others (${s.items.length})` : s.label, pct: s.pct, color: col(i, s), sel: s.key === FXPIESEL})),
+  const ring = Sh.slices.length ? pieChart(Sh.slices.map((s, i) => ({key: s.key, label: s.others ? `Others (${s.items.length})` : s.label, pct: s.pct, ...col(i, s), sel: s.key === FXPIESEL})),
     {aria: `Share of the day's realisation by quality, ${Nm[m]}`, onPick: pick, mid: [fxMoney(Sh.total), m === 'run' ? 'realisation, the day' : `at ${Nm[m].toLowerCase()} RPM`]})
     : el('p', {class: 'empty', text: m === 'run' ? 'No quality has a realisation above ₹0 on this day. Next: pick another day with the date chip, or see Coverage on the Realisation tab.' : `No quality has a ${Nm[m].toLowerCase()} effective RPM with a realisation above ₹0 on this day. Next: ${m === 'tg' ? 'set target RPMs on Targets' : 'see the quality on Benchmarks'}, or pick Current.`});
   // the detail sits above the list, so a tap shows it at once on a phone
@@ -1797,11 +1806,11 @@ function fxCostChart(P, pre) {
   const bp = (d) => { const x = bqOf.get(d.date); return x && ok(x.bgrade_loss) && x.afold ? 100 * x.bgrade_loss / x.afold : null; };
   const body = !A ? el('p', {class: 'note', text: 'Loading the fabric masters…'}) : !P.some((d) => { const t = day(d); return t && t.priced; }) ? el('div', {class: 'empty', text: 'No priced loom-day in this period: see Coverage on the Realisation tab.'})
     : dayChart('cpp', P, pre, {id: 'fx-cost', aria: 'Realisation, cost and profit per folded pick by day', fmt: (v) => pn(v, 2), onPick: pickDay}, [
-      {key: 'real', name: 'Realisation per folded pick', get: fl('real_fp_lc'), agg: 'w', w: fw, wk: wkOf('real_fp_lc'), color: CC[0], avg: false},
-      {key: 'cpp', name: 'Cost per folded pick (loom cost)', get: fl('cost_fp_u'), agg: 'w', w: fw, wk: wkOf('cost_fp_u'), color: CC[3], avg: false},
-      {key: 'bg', name: 'B grade loss per good pick', get: bp, agg: 'w', w: (d) => d.afold, color: CC[2], avg: false},
+      {key: 'real', name: 'Realisation per folded pick', get: fl('real_fp_lc'), agg: 'w', w: fw, wk: wkOf('real_fp_lc'), color: CSL.real, avg: false},
+      {key: 'cpp', name: 'Cost per folded pick (loom cost)', get: fl('cost_fp_u'), agg: 'w', w: fw, wk: wkOf('cost_fp_u'), color: CSL.cost, avg: false},
+      {key: 'bg', name: 'B grade loss per good pick', get: bp, agg: 'w', w: (d) => d.afold, color: CSL.bgrade, dash: true, avg: false},
       {key: 'profit', name: 'Profit per folded pick', get: fl('profit_fp'), agg: 'w', w: fw,
-        wk: wkOf('profit_fp'), color: CC[1], dash: true, avg: false}], ['real', 'cpp', 'profit']);   // a week or rolling 7 days: the days' rows added up, so a day with nothing priced still takes off its loom cost (risk C)
+        wk: wkOf('profit_fp'), color: CSL.profit, dash: true, avg: false}], ['real', 'cpp', 'profit']);   // a week or rolling 7 days: the days' rows added up, so a day with nothing priced still takes off its loom cost (risk C)
   const last = A ? [...P].reverse().map(day).find((t) => t && t.priced) : null;
   if (typeof wkPut === 'function') { const d0 = A ? [...P].reverse().find((d) => { const t = day(d); return t && t.priced; }) : null;   // Round J
     const t0 = d0 ? day(d0) : null; wkPut('J22', t0 && t0.lc_ld && ok(t0.profit_fp) ? {date: dfmt(d0.date), real: t0.real_fp_lc * t0.afold_lc / 100, cost: t0.cost_fp_u * t0.afold_lc / 100, picks: t0.afold_lc} : null); }   // Round A7

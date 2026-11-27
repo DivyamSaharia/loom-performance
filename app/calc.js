@@ -11,9 +11,12 @@ function gapPct(now, ref, hi) {
   const p = (now - ref) / Math.abs(ref) * 100;
   return {p, worse: Math.abs(p) < 1e-9 ? false : hi ? p < 0 : p > 0};
 }
-// Colour strength of a gap, 0 to 1: full at HEAT_FULL % or more.
-const HEAT_FULL = 10;
-const heatLevel = (p) => !ok(p) ? 0 : Math.min(1, Math.abs(p) / HEAT_FULL);
+// Round C1 (Divyam, 28 Nov 2026, audit #5): the colour strength of a gap, 0 to 1, in five fixed bands of the gap's size (under
+// 2%, 2–5%, 5–10%, 10–25%, 25% or more), so a colour means the same from day to day and period to period.
+const HEAT_BANDS = [2, 5, 10, 25], HEAT_LV = [0.1, 0.3, 0.55, 0.8, 1];
+const HEAT_BAND_TXT = ['under 2%', '2–5%', '5–10%', '10–25%', '25% or more'];
+const heatBand = (p) => { if (!ok(p)) return null; const a = Math.abs(p); let i = 0; while (i < HEAT_BANDS.length && a >= HEAT_BANDS[i]) i++; return i; };
+const heatLevel = (p) => !ok(p) ? 0 : HEAT_LV[heatBand(p)];
 
 // ---- Pressure: the floor ladder. looms: [{loom, hg, width, main, ref}], every loom on the compressor. At each step the
 // loom setting the floor is brought down to its reference (lowest loom number first on a tie) and the floor is worked out

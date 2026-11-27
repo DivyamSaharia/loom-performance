@@ -1179,7 +1179,7 @@ function fcTargetProfitRs(pp, P, E, s) {
 const fwN = (x, d = 0) => { if (!(typeof x === 'number' && isFinite(x))) return '—'; const s = Math.abs(x).toLocaleString('en-IN', {minimumFractionDigits: d, maximumFractionDigits: d}); return (x < 0 && /[1-9]/.test(s) ? '−' : '') + s; };
 const fwR = (x) => !(typeof x === 'number' && isFinite(x)) ? '—' : (x < 0 && Math.round(Math.abs(x)) > 0 ? '−₹' : '₹') + Math.round(Math.abs(x)).toLocaleString('en-IN');
 const fwP = (x) => !(typeof x === 'number' && isFinite(x)) ? '—' : x.toFixed(2);
-const fwL = (x) => !(typeof x === 'number' && isFinite(x)) ? '—' : (x < 0 ? '−₹' : '₹') + (Math.abs(x) / 1e5).toFixed(2);   // ₹ lakh, as the Realisation tiles
+// the Realisation tiles' amount: fcLk / fcLkU (Round C1: rupees under ₹1 lakh), defined at the end of this file
 const fwOk = (x) => typeof x === 'number' && isFinite(x);
 const fwOut = (pre, res, unit, v, sep = ' = ') => ({line: pre + sep + (unit ? `${res} ${unit}` : res), res, unit: unit || '', v});
 const WKLF = {
@@ -1239,13 +1239,13 @@ const WKLF = {
     const comp = d.nocomp ? 'the compressor could not be split by air that day (no reading, more than the POWER line, or no loom with a CFM reading), so all of POWER is in the per pick part' : `compressor ${fwR(d.comp)} ÷ ${fwN(d.air)} ft³ × the loom's ${fwN(d.lair)} ft³${sh ? ` × ${fwN(d.picks)} of its ${fwN(d.lpicks)} picks that day` : ''} = ${fwR(d.cpart)}`;
     return fwOut(`Loom ${d.loom}: realisation ${fwR(d.real)} − its loom cost ${fwR(d.lcost)} (other heads ${fwR(d.other)} ÷ ${d.n} loom${d.n === 1 ? '' : 's'} running = ${fwR(d.per)}${sh ? ` × ${fwN(d.picks)} of the loom's ${fwN(d.lpicks)} picks that day` : ''}; ${comp}; per pick ${fwR(d.pick)} ÷ ${fwN(d.P)} picks = ${fwP(100 * d.pp)} paise × ${fwN(d.picks)} picks = ${fwR(d.ppart)}) − its own B grade ${fwR(d.bcharge || 0)}`, fwR(v), '', v); },
   K7L: (d) => { if (!d || !fwOk(d.v) || !(d.ld > 0)) return null;
-    return fwOut(`Profit (loom cost basis): ${d.unrec > 0 ? `the priced loom-days' ${fwR(d.v + d.unrec)} − ${fwR(d.unrec)} loom cost not recovered (${d.uld} loom-day${d.uld === 1 ? '' : 's'} not priced) = ${fwR(d.v)}` : fwR(d.v)}${d.picks > 0 ? `; ÷ ${fwN(d.picks)} A-grade folded picks × 100 = ${fwP(100 * d.v / d.picks)} paise per folded pick` : ''}; ÷ ${fwN(d.ld)} loom-days running = ${fwR(d.v / d.ld)} a loom a day; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000`, fwL(d.v), 'lakh', d.v); },
+    return fwOut(`Profit (loom cost basis): ${d.unrec > 0 ? `the priced loom-days' ${fwR(d.v + d.unrec)} − ${fwR(d.unrec)} loom cost not recovered (${d.uld} loom-day${d.uld === 1 ? '' : 's'} not priced) = ${fwR(d.v)}` : fwR(d.v)}${d.picks > 0 ? `; ÷ ${fwN(d.picks)} A-grade folded picks × 100 = ${fwP(100 * d.v / d.picks)} paise per folded pick` : ''}; ÷ ${fwN(d.ld)} loom-days running = ${fwR(d.v / d.ld)} a loom a day${fcLkBig(d.v) ? `; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000` : ''}`, fcLk(d.v), fcLkU(d.v), d.v); },
   K7U: (d) => { if (!d || !fwOk(d.unrec) || !(d.uld > 0)) return null;
     return fwOut(`${d.date}, loom cost of the running loom-days not priced (each: other heads ${fwR(d.per)} a loom + its air and its picks): ${d.items.slice(0, 3).map((x) => `loom ${x.loom} (${x.why}) ${fwR(x.rs)}`).join(' + ')}${d.items.length > 3 ? ` + ${d.items.length - 3} more` : ''}`, fwR(d.unrec), 'not recovered', d.unrec); },
   K7: (d) => { if (!d || !fwOk(d.v) || !(d.ld > 0)) return null;
-    return fwOut(`${d.what}: ${fwR(d.v)} over ${fwN(d.ld)} ${d.costed ? 'costed' : 'priced'} loom-days${d.picks > 0 ? `; ÷ ${fwN(d.picks)} A-grade folded picks × 100 = ${fwP(100 * d.v / d.picks)} paise per folded pick` : ''}; ÷ ${fwN(d.ld)} loom-days = ${fwR(d.v / d.ld)} a loom a day; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000`, fwL(d.v), 'lakh', d.v); },
+    return fwOut(`${d.what}: ${fwR(d.v)} over ${fwN(d.ld)} ${d.costed ? 'costed' : 'priced'} loom-days${d.picks > 0 ? `; ÷ ${fwN(d.picks)} A-grade folded picks × 100 = ${fwP(100 * d.v / d.picks)} paise per folded pick` : ''}; ÷ ${fwN(d.ld)} loom-days = ${fwR(d.v / d.ld)} a loom a day${fcLkBig(d.v) ? `; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000` : ''}`, fcLk(d.v), fcLkU(d.v), d.v); },
   K7S: (d) => { if (!d || !fwOk(d.v) || !(d.m > 0)) return null;
-    return fwOut(`Sale value ${fwR(d.v)} over ${fwN(d.ld)} priced loom-days; ÷ ${fwN(d.m)} m priced = ₹${(d.v / d.m).toFixed(2)} a metre on average; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000`, fwL(d.v), 'lakh', d.v); },
+    return fwOut(`Sale value ${fwR(d.v)} over ${fwN(d.ld)} priced loom-days; ÷ ${fwN(d.m)} m priced = ₹${(d.v / d.m).toFixed(2)} a metre on average${fcLkBig(d.v) ? `; on the tile in lakh, ${fwR(d.v)} ÷ 1,00,000` : ''}`, fcLk(d.v), fcLkU(d.v), d.v); },
   K8: (d) => { if (!d || !(d.picks > 0)) return null; const v = d.priced / d.picks;
     return fwOut(`${fwN(d.priced / 1e5, 2)} lakh priced picks ÷ ${fwN(d.picks / 1e5, 2)} lakh picks × 100`, (v * 100).toFixed(0) + '%', '', v); },
   K9: (d) => { if (!d || !fwOk(d.sale) || !(d.picks > 0)) return null; const u = d.unrec || 0, v = d.sale - d.yarn - d.conv - d.bgrade - u, pp = (x) => fwP(100 * x / d.picks), r = 100 * v / d.picks;
@@ -1263,3 +1263,24 @@ const WKLF = {
   K14: (d) => { if (!d || !fwOk(d.now) || !fwOk(d.tgt)) return null; const v = d.now - d.tgt;
     return fwOut(`${d.hg}: now ${fwR(d.real)} ÷ ${d.ld} priced loom-days = ${fwR(d.now)}; target ${fwR(d.tgt)} (each loom-day at 93% of the target RPM, averaged); now − target, ${fwR(d.now)} − ${fwR(d.tgt)}`, fwR(v), 'a loom per day', v); },
 };
+
+// Round C1 (Divyam, 28 Nov 2026, audit #7): an amount on the Realisation tiles. From ₹1 lakh up: ₹ lakh to 2 decimals
+// ("₹1.25", unit "lakh"); under it: whole rupees with Indian grouping ("−₹321", no unit), so a small loss never reads
+// "−₹0.00 lakh". A figure that shows as zero has no minus sign. No figure: "—".
+const fcLkBig = (x) => Math.abs(x) >= 99999.5;
+function fcLk(x) {
+  if (x == null || typeof x !== 'number' || !isFinite(x)) return '—';
+  const t = fcLkBig(x) ? (Math.abs(x) / 1e5).toFixed(2) : Math.round(Math.abs(x)).toLocaleString('en-IN');
+  return (x < 0 && /[1-9]/.test(t) ? '−₹' : '₹') + t;
+}
+const fcLkU = (x) => typeof x === 'number' && isFinite(x) && fcLkBig(x) ? 'lakh' : '';
+
+// Round C1 (Divyam, 28 Nov 2026, audit #2): the pie colours a quality by its own fixed slot, not by its rank on the ring, so
+// it keeps its colour across Current · Best · Target and from day to day in a month. items: [{key, real}], each quality's
+// realisation ₹ over the whole month (the month of the date chip's day). Slot 0 = the highest; a quality with no figure or
+// ₹0 or less comes after every one with a figure; ties go by name. Returns a Map key → slot.
+function fcPieSlots(items) {
+  const n = (v) => typeof v === 'number' && isFinite(v) && v > 0;
+  const L = items.slice().sort((a, b) => (n(b.real) - n(a.real)) || (n(a.real) && n(b.real) ? b.real - a.real : 0) || String(a.key).localeCompare(String(b.key)));
+  return new Map(L.map((x, i) => [x.key, i]));
+}

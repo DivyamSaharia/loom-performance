@@ -16,7 +16,14 @@ const svgRoot = (W, H, aria) => svgEl('svg', {width: W, height: H, viewBox: `0 0
 const tx = (attrs, text, style) => { const t = svgEl('text', {...attrs, style: style || 'fill:var(--muted);font-size:11px'}); t.textContent = text; return t; };
 const tip = (node, text) => { const t = svgEl('title'); t.textContent = text; node.append(t); return node; };
 // Clip a label to about n characters so it never runs into the plot.
-const clip = (s, n) => { s = String(s); return s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s; };
+// Round C1 (audit #6): a label that ends in its loom width (" · 190", " · 280 cm") keeps it and cuts the name instead, so two
+// widths of one quality stay apart on a phone.
+const clip = (s, n) => {
+  s = String(s); if (s.length <= n) return s;
+  const m = s.match(/ · (190|280)( cm)?$/);
+  if (m && n - m[0].length >= 4) return s.slice(0, n - m[0].length - 1).trimEnd() + '…' + m[0];
+  return s.slice(0, Math.max(1, n - 1)) + '…';
+};
 
 // ---------------------------------------------------------------- heat grid (HTML)
 // cols: [{label, unit}]; rows: [{label (node), hg, cells: [{text, level 0–1, tone 'bad'|'good', none (why grey), title, onClick}]}]
@@ -61,21 +68,29 @@ document.addEventListener('focusout', htipHide);
 window.addEventListener('scroll', htipHide, {passive: true});
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') htipHide(); });
 // The colour key under a heat grid.
-function heatKey(text, seq, noneText) {
+// Round C1 (audit #5): bands = true lists the five fixed steps of the gap's size (calc.js HEAT_BANDS), each in red and green.
+function heatKey(text, seq, noneText, bands) {
   const sw = (col, a) => el('i', {style: `background:color-mix(in srgb, ${col} ${a}%, transparent)`});
+  const al = (lv) => Math.round(10 + 50 * lv);   // the same strength heatTable draws
   return el('div', {class: 'legend heatkey'},
     seq ? el('span', {class: 'lg'}, sw('var(--bad)', 10), sw('var(--bad)', 35), sw('var(--bad)', 60), 'higher share, stronger red')
       : [el('span', {class: 'lg'}, sw('var(--good)', 60), sw('var(--good)', 25), 'better than the reference'), el('span', {class: 'lg'}, sw('var(--bad)', 25), sw('var(--bad)', 60), 'worse')],
-    el('span', {class: 'lg'}, el('i', {class: 'hnone'}), noneText || 'grey: no reference'), text ? el('span', {text}) : null);
+    el('span', {class: 'lg'}, el('i', {class: 'hnone'}), noneText || 'grey: no reference'), text ? el('span', {text}) : null,
+    bands ? el('div', {class: 'hbands'}, el('span', {text: 'Colour steps by the gap\'s size:'}),
+      HEAT_BAND_TXT.map((t, i) => el('span', {class: 'lg'}, sw('var(--good)', al(HEAT_LV[i])), sw('var(--bad)', al(HEAT_LV[i])), t))) : null);
 }
 
 // ---------------------------------------------------------------- sparkline (no text; scales with its box)
 // vals in day order; the last point is marked. title: the hover text (the days and values).
+const SPARK_MIN = 0.03;
 function spark(vals, o = {}) {
   const v = vals.map((x) => ok(x) ? x : null), pts = v.map((x, i) => x == null ? null : [i, x]).filter(Boolean);
   const s = svgEl('svg', {class: 'spark', viewBox: '0 0 100 28', preserveAspectRatio: 'none', role: 'img', 'aria-label': o.aria || '7-day trend'});
   if (pts.length < 2) { s.classList.add('flat'); return s; }
-  const lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1])), n = v.length;
+  // Round C1 (audit #18): the line's range is at least ±3% of its middle value, so a flat week draws flat, not as a cliff
+  let lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
+  const mid = (hi + lo) / 2, half = Math.max((hi - lo) / 2, SPARK_MIN * Math.abs(mid)), n = v.length;
+  if (half > 0) { lo = mid - half; hi = mid + half; }
   const X = (i) => 3 + 94 * i / Math.max(1, n - 1), Y = (x) => hi - lo < 1e-12 ? 14 : 24 - 20 * (x - lo) / (hi - lo);
   s.append(svgEl('polyline', {points: pts.map((p) => X(p[0]).toFixed(2) + ',' + Y(p[1]).toFixed(2)).join(' '), fill: 'none', 'vector-effect': 'non-scaling-stroke', style: 'stroke:var(--muted);stroke-width:1.6;stroke-linejoin:round'}));
   const L = pts[pts.length - 1];
@@ -197,7 +212,7 @@ function stackBars(o) {
         const h = Math.max(0.5, Y(run) - Y(run + v));
         const r = svgEl('rect', {x: cx - bw / 2, y: Y(run + v), width: bw, height: h, class: 'sbseg', 'data-layer': k, style: `fill:${l.color};${l.fade ? 'opacity:.45' : ''}${o.onPick ? ';cursor:pointer' : ''}`});
         tip(r, `${when} · ${l.name}: ${fmt(v)}${tot[i] > 0 ? ` (${pn(100 * v / tot[i], 0)}% of the bar)` : ''} · total ${fmt(tot[i])}`); if (pick(i)) r.addEventListener('click', pick(i)); svg.append(r);
-        if (h >= 15 && bw >= 30) { const t = tx({x: cx, y: Y(run + v / 2) + 4, 'text-anchor': 'middle', 'data-layer': k, 'pointer-events': 'none'}, fmt(v), `fill:${inkOn(l.color)};font-size:10px;font-weight:600`); svg.append(t); }
+        if (h >= 15 && bw >= 30) { const t = tx({x: cx, y: Y(run + v / 2) + 4, 'text-anchor': 'middle', 'data-layer': k, class: 'sbval', 'pointer-events': 'none'}, fmt(v), `fill:${inkOn(l.color)};font-size:10px;font-weight:600`); svg.append(t); }
         run += v;
       });
       if (o.total !== false && (slot >= 30 || i === n - 1)) svg.append(tx({x: cx, y: Y(Math.max(run, o.line && ok(o.line.vals[i]) ? o.line.vals[i] : 0)) - 5, 'text-anchor': cx > W - 20 ? 'end' : 'middle', 'pointer-events': 'none'}, fmt(o.line && ok(o.line.vals[i]) ? o.line.vals[i] : run), 'fill:var(--ink);font-size:10.5px;font-weight:600'));
@@ -218,10 +233,12 @@ function inkOn(color) {
 const stackKey = (layers) => el('div', {class: 'legend'}, layers.map((l) => el('span', {class: 'lg'}, el('span', {class: 'sq', style: `background:${l.color};${l.fade ? 'opacity:.45' : ''}`}), l.name)));
 // Stacked bars with a legend that highlights one layer: click a layer to bring it forward and fade the rest; click it again
 // (or another) to change. Remembered per chart (key) while the app is open. extra: nodes appended to the legend.
+// Round C1 (audit #26): inside it, the segments carry their value only for the layer picked in the legend (style.css .sbval);
+// with none picked, only the bars' totals; every value stays in the hover text.
 const HL = {};
 function hlStack(o, key, extra) {
   const box = el('div', {class: 'hlbox'}), set = (k) => { HL[key] = k; if (k == null) box.removeAttribute('data-hl'); else box.setAttribute('data-hl', k); for (const b of box.querySelectorAll('.lg[data-k]')) b.setAttribute('aria-pressed', String(b.dataset.k) === String(k) ? 'true' : 'false'); };
-  const leg = el('div', {class: 'legend hl-legend'}, o.layers.map((l, k) => el('button', {type: 'button', class: 'lg', 'data-k': k, 'aria-pressed': 'false', title: `Highlight ${l.name}`, onclick: () => set(HL[key] === k ? null : k)},
+  const leg = el('div', {class: 'legend hl-legend'}, o.layers.map((l, k) => el('button', {type: 'button', class: 'lg', 'data-k': k, 'aria-pressed': 'false', title: `Highlight ${l.name} and show its values on the bars`, onclick: () => set(HL[key] === k ? null : k)},
     el('span', {class: 'sq', style: `background:${l.color}`}), l.name)), ...(extra || []));
   box.append(stackBars(o), leg);
   if (HL[key] != null && HL[key] < o.layers.length) set(HL[key]);
