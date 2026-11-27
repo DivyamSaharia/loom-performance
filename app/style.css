@@ -638,3 +638,17 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
    meaning shows on pointing, and under it on a phone (.onph) */
 .basis{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;max-width:100%}
 .basis .note{font-size:12px}
+/* Round B3: the realisation share pie (Realisation per pick by quality on Actions) */
+.piebox{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;margin-top:8px}
+.piebox .pie path:focus-visible{outline:none;stroke:var(--ink);stroke-width:3}
+.pielg{display:flex;flex-direction:column;gap:2px;flex:1 1 220px;max-width:380px;min-width:0}
+.pierow{display:flex;align-items:center;gap:8px;border:0;background:none;padding:5px 6px;border-radius:7px;font:inherit;font-size:13px;color:var(--ink);cursor:pointer;text-align:left;min-height:32px}
+.pierow[aria-pressed="true"]{background:var(--accent-soft)}
+.pierow .sq{width:10px;height:10px;border-radius:2px;flex:none}
+.pierow .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pierow .pv{font-variant-numeric:tabular-nums;color:var(--muted)}
+.piedet{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--soft);font-size:13px}
+.piedet dl{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin:6px 0 0}
+.piedet .pieo{margin-top:6px;line-height:1.4}
+.piedet dt{color:var(--muted)} .piedet dd{margin:0;font-variant-numeric:tabular-nums}
+@media (max-width:560px){.piebox{justify-content:center}.piebox .pie{width:190px;height:190px}}

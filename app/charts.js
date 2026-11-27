@@ -282,3 +282,31 @@ function waterfall(items, aria, Wd, o = {}) {
   });
   return el('div', {class: 'tablebox'}, svg);
 }
+// Round B3 (Divyam, 27 Nov 2026): a share pie (a ring), for a share of a total only (section 5). slices: [{key, label, pct,
+// color, sel}], each a part of 1. Each slice and its legend row is a button (tap, Enter, Space) that calls onPick(key); the
+// picked slice stands out. The centre carries o.mid (two short lines). Built for one card: Realisation per pick by quality.
+// mid tones that read on the light and the dark panel; neighbours differ in hue
+const PIE_C = ['#3f8f2f', '#d9822b', '#4f7fc9', '#c95c8a', '#2fa595', '#e0b43c', '#9bc43a', '#8b79c9', '#c9573d'];
+function pieChart(slices, o = {}) {
+  const S = 220, c = S / 2, R = 100, r = 58, svg = svgEl('svg', {viewBox: `0 0 ${S} ${S}`, width: S, height: S, role: 'group', 'aria-label': o.aria || 'Share', class: 'pie', style: 'display:block;max-width:100%;height:auto'});
+  const pt = (a, rad) => [c + rad * Math.sin(a), c - rad * Math.cos(a)], f = (v) => v.toFixed(2);
+  const key = (fn) => (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } };
+  let a0 = 0;
+  for (const s of slices) {
+    const a1 = a0 + s.pct * 2 * Math.PI, big = a1 - a0 > Math.PI ? 1 : 0, Ro = s.sel ? R + 6 : R, pick = () => o.onPick && o.onPick(s.key);
+    let d;
+    if (s.pct >= 0.9999) d = `M${c},${c - Ro}A${Ro},${Ro} 0 1 1 ${c - 0.01},${c - Ro}L${c - 0.01},${c - r}A${r},${r} 0 1 0 ${c},${c - r}Z`;
+    else { const [x0, y0] = pt(a0, Ro), [x1, y1] = pt(a1, Ro), [x2, y2] = pt(a1, r), [x3, y3] = pt(a0, r);
+      d = `M${f(x0)},${f(y0)}A${Ro},${Ro} 0 ${big} 1 ${f(x1)},${f(y1)}L${f(x2)},${f(y2)}A${r},${r} 0 ${big} 0 ${f(x3)},${f(y3)}Z`; }
+    const p = svgEl('path', {d, tabindex: '0', role: 'button', 'aria-pressed': s.sel ? 'true' : 'false', 'aria-label': `${s.label}: ${(s.pct * 100).toFixed(1)}%`,
+      style: `fill:${s.color};stroke:var(--panel);stroke-width:1.5;cursor:pointer;opacity:${slices.some((x) => x.sel) && !s.sel ? 0.55 : 1}`});
+    const tt = svgEl('title'); tt.textContent = `${s.label}: ${(s.pct * 100).toFixed(1)}%`; p.append(tt);
+    p.addEventListener('click', pick); p.addEventListener('keydown', key(pick));
+    svg.append(p); a0 = a1;
+  }
+  (o.mid || []).forEach((t, i) => svg.append(svgText({x: c, y: c + (i ? 14 : -4), 'text-anchor': 'middle', style: `fill:var(${i ? '--muted' : '--ink'});font-size:${i ? 11 : 15}px;font-weight:${i ? 400 : 600}`}, t)));
+  const lg = el('div', {class: 'pielg'}, slices.map((s) => { const pick = () => o.onPick && o.onPick(s.key);
+    return el('button', {type: 'button', class: 'pierow', 'aria-pressed': s.sel ? 'true' : 'false', onclick: pick},
+      el('span', {class: 'sq', style: `background:${s.color}`}), el('span', {class: 'pn', text: s.label}), el('span', {class: 'pv', text: `${(s.pct * 100).toFixed(1)}%`})); }));
+  return el('div', {class: 'piebox'}, svg, lg);
+}

@@ -1404,6 +1404,59 @@ function fxRealTgt(date) {
 }
 // Round A10: each row ÷ its own picks × (1 − its quality's folding %), so a width's mix keeps each quality's own figure
 const fxTgtReal = (rows) => { let r = 0, p = 0; for (const x of rows) if (!x.gap && x.real != null && x.picks > 0 && ok(x.s) && x.s < 1) { r += x.real; p += x.picks * (1 - x.s); } return p > 0 ? 100 * r / p : null; };
+// Round B3 (Divyam, 27 Nov 2026): a Bars · Pie switch on Realisation per pick by quality, and on Pie one ring of each
+// quality's share of the day's realisation ₹ with a Current · Best · Target switch (fcShare). Choices kept on the device.
+let FXRQV = 'bars', FXPIEM = 'run', FXPIESEL = null;
+try { const v = JSON.parse(localStorage.getItem('w2-act-real-view') || 'null'); if (['bars', 'pie'].includes(v)) FXRQV = v; } catch (e) {}   // a choice only (no masters on the device)
+try { const v = JSON.parse(localStorage.getItem('w2-act-pie-mode') || 'null'); if (['run', 'best', 'tg'].includes(v)) FXPIEM = v; } catch (e) {}
+// The pie for the day's priced qualities P (fcGroup by hg|width). Current: each quality's realisation ₹ and its per folded
+// pick figures as the bars show them (F.now). Best and Target: every loom-day of the day re-worked at its quality's best or
+// target effective RPM × its own run + stop minutes (fxRefRows, the By head group card's Best and Target: realisation and
+// B grade scale with the picks, the loom cost held), so the ₹ and the shares move with the picks. Best's per pick figures
+// are the re-worked rows' (fcSum); Target's are the table's at-target columns (F.tgt: the realisation per target A-grade
+// folded pick, the target folded cost (the diamond) and the profit at target). A quality with no such effective RPM is named, never 0.
+function fxRealPie(rows, P, F) {
+  const m = FXPIEM, nm = (g) => `${g.hg} · ${g.width}`, RR = m === 'run' ? null : fxRefRows(rows, m);
+  const G2 = RR ? new Map(fcGroup(RR.rows, (r) => r.hg + '|' + r.width).map((g) => [g.key, g])) : null;
+  const lds = (g) => new Set(g.rows.filter((r) => !r.gap).map((r) => r.date + '|' + r.loom)).size;
+  const items = [], noref = [], part = [];
+  for (const g of P) {
+    const g2 = G2 ? G2.get(g.key) : g;
+    if (!g2 || !(g2.priced > 0)) { noref.push(nm(g)); continue; }
+    if (G2 && lds(g2) < lds(g)) part.push(`${nm(g)} (${lds(g) - lds(g2)} of ${lds(g)} loom-days)`);
+    const pp = m === 'tg' ? F.tgt(g) : F.now(g2);
+    items.push({key: g.key, label: nm(g), real: g2.real, ...pp});
+  }
+  const Sh = fcShare(items), Nm = {run: 'Current', best: 'Best', tg: 'Target'};
+  const seg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Pie at'}, ['run', 'best', 'tg'].map((v) => el('button', {type: 'button', 'aria-pressed': m === v ? 'true' : 'false', text: Nm[v],
+    onclick: () => { FXPIEM = v; lsSet('w2-act-pie-mode', v); render(); }})));
+  const pick = (k) => { FXPIESEL = FXPIESEL === k ? null : k; render(); };
+  const col = (i, s) => s.others ? 'var(--muted-2)' : PIE_C[i % PIE_C.length];
+  const sel = Sh.slices.find((s) => s.key === FXPIESEL);
+  const pv = (v) => ok(v) ? `${fxPaise(v)} paise` : '—', sg = (v) => ok(v) ? `${v >= 0 ? '+' : '−'}${fxPaise(Math.abs(v))} paise` : '—';
+  const bn = fxBName() ? ` · ${fxBName()}` : '', fcL = `${m === 'tg' ? 'Target folded cost' : 'Folded cost per pick'}${bn}`, ifm = m === 'run' ? 'the day' : `if every loom ran at ${Nm[m].toLowerCase()}`;
+  const pct = (v) => ok(v) ? `${(v * 100).toFixed(1)}%` : '—';
+  const one = (x) => el('dl', {}, el('dt', {text: 'Realisation per pick'}), el('dd', {text: `${pv(x.rp)} per ${m === 'tg' ? 'target A-grade' : ''} folded pick${ok(x.rp) ? '' : x.rwhy ? ` (${x.rwhy})` : ''}`.replace('per  folded', 'per folded')}),
+    el('dt', {text: fcL}), el('dd', {text: ok(x.fc) ? pv(x.fc) : `— (${x.fwhy || 'not known'})`}),
+    el('dt', {text: `Profit per folded pick${bn}`}), el('dd', {text: sg(x.pf)}),
+    el('dt', {text: 'Realisation'}), el('dd', {text: `${fxMoney(x.real)}, ${ifm}`}),
+    el('dt', {text: 'Share of realisation'}), el('dd', {text: `${pct(x.pct)} of the pie's ${fxMoney(Sh.total)}`}));
+  const brief = (x) => el('div', {class: 'pieo'}, el('b', {text: x.label}), ` ${pct(x.pct)} · ${fxMoney(x.real)} · ${pv(x.rp)} per folded pick · folded cost ${ok(x.fc) ? pv(x.fc) : '—'} · profit ${sg(x.pf)}`);
+  const det = !Sh.slices.length ? null : !sel ? el('p', {class: 'note', text: 'Tap a name in the list (or a slice) for its figures.'})
+    : el('div', {class: 'piedet', 'aria-live': 'polite'}, el('b', {text: sel.others ? `Others (${sel.items.length} qualities, the smaller shares)` : sel.label}),
+      sel.others ? el('div', {}, sel.items.map(brief)) : one(sel));
+  const ring = Sh.slices.length ? pieChart(Sh.slices.map((s, i) => ({key: s.key, label: s.others ? `Others (${s.items.length})` : s.label, pct: s.pct, color: col(i, s), sel: s.key === FXPIESEL})),
+    {aria: `Share of the day's realisation by quality, ${Nm[m]}`, onPick: pick, mid: [fxMoney(Sh.total), m === 'run' ? 'realisation, the day' : `at ${Nm[m].toLowerCase()} RPM`]})
+    : el('p', {class: 'empty', text: m === 'run' ? 'No quality has a realisation above ₹0 on this day. Next: pick another day with the date chip, or see Coverage on the Realisation tab.' : `No quality has a ${Nm[m].toLowerCase()} effective RPM with a realisation above ₹0 on this day. Next: ${m === 'tg' ? 'set target RPMs on Targets' : 'see the quality on Benchmarks'}, or pick Current.`});
+  // the detail sits above the list, so a tap shows it at once on a phone
+  return [el('div', {class: 'toolbar'}, seg), det, ring,
+    Sh.gap.length ? el('p', {class: 'note', text: `No realisation figure (left out of the pie, never 0): ${Sh.gap.map((x) => x.label).join('; ')}. Next: see Coverage on the Realisation tab.`}) : null,
+    Sh.neg.length ? el('p', {class: 'note', text: `Realisation at or below ₹0 (not a slice): ${Sh.neg.map((x) => `${x.label} ${fxMoney(x.real)}`).join('; ')}.`}) : null,
+    noref.length ? el('p', {class: 'note', text: `No ${Nm[m].toLowerCase()} effective RPM (left out of the pie, never 0): ${noref.join('; ')}. Next: ${m === 'tg' ? 'set its target RPM on Targets' : 'see the quality on Benchmarks'}.`}) : null,
+    part.length ? el('p', {class: 'note', text: `Loom-days with no ${Nm[m].toLowerCase()} effective RPM or no run minutes, left out: ${part.join('; ')}. Next: open the quality (its name in the table) for its looms.`}) : null,
+    ...notePh(`Each slice is the quality's realisation ₹ ÷ the pie's total (the qualities with a realisation above ₹0), so the slices add to 100%; qualities under 3% share one Others slice. ${m === 'run' ? 'Current: the day as the looms ran.' : `${Nm[m]}: every loom-day at its quality's ${Nm[m].toLowerCase()} effective RPM × its own run + stop minutes, at its own realisation per woven pick, so the shares move towards the qualities with the most room to speed up (the loom cost held at the day's, B grade scaled with the picks; a loom already above it is worked at it, so slower).`}${m === 'tg' ? ' The per pick figures at Target are the table\'s: realisation per target A-grade folded pick, the target folded cost (the diamond) and the profit at target.' : ''} Realisation does not move with the Plant file · Actual switch; the folded cost and profit do.`,
+      `Slice = the quality's realisation ₹ ÷ the pie's total; under 3% go into Others. ${m === 'run' ? 'Current: as the looms ran.' : `${Nm[m]}: each loom-day at its quality's ${Nm[m].toLowerCase()} effective RPM, so shares shift to the qualities with the most room to speed up.`} More in the Guide, under Actions.`)];
+}
 function fxRealQCard() {
   if (!fxOn()) return null;
   const title = ACTV.real[0], A = fxAll(), sub = `${dfmt(D.latest)} · ${wLabel()} · As sold`;
@@ -1431,7 +1484,13 @@ function fxRealQCard() {
   const TT = Q.T ? (W === 'all' ? Q.T.all : Q.T.widths.find((x) => x.width === W)) : null, ttp = TT && ok(TT.pp) ? TT.pp : null, ttr = fxTgtReal(rows), ttprof = ok(ttr) && ok(ttp) ? ttr - ttp : null;
   const top = bars.find((g) => ok(lf(g)));
   if (typeof wkPut === 'function') wkPut('B2:rlf', top ? {hg: `${top.hg} · ${top.width}`, real: top.real_fp_lc, fold: fpp(top), A: top.afold_lc, tgt: tpp(top), treal: fxTgtReal(top.rows)} : null);
+  const vb = (v, t) => el('button', {type: 'button', 'aria-pressed': FXRQV === v ? 'true' : 'false', text: t, onclick: () => { FXRQV = v; lsSet('w2-act-real-view', v); render(); }});
+  const vseg = el('div', {class: 'toolbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Show as'}, vb('bars', 'Bars'), vb('pie', 'Pie')));
+  const pie = FXRQV === 'pie' ? fxRealPie(rows, P, {
+    now: (g) => ({rp: rv(g), fc: fpp(g), pf: lf(g), rwhy: ok(rv(g)) ? null : fwhy(g), fwhy: ok(fpp(g)) ? null : fwhy(g)}),
+    tgt: (g) => { const r = fxTgtReal(g.rows); return {rp: r, fc: tpp(g), pf: tprof(g), rwhy: ok(r) ? null : 'no folding figure for it', fwhy: ok(tpp(g)) ? null : twhy(g)}; }}) : null;
   return card(title, `${sub} · each quality's realisation per A-grade folded pick against the folded cost per pick of the same loom-days · ${fxSTxt(A.S, true)}${fxBTxt()}`,
+    vseg, ...(pie || [
     bars.length ? signedBars(bars.map((g) => { const s = sp(g), c = s.cost, d = lf(g), t = tpp(g);
       return {label: `${g.hg} · ${g.width}`, v: rv(g), split: s, lf: d, fc: c, dia: t, tp: tprof(g),
         text: ok(d) ? `${fxPaise(rv(g))} · ${sg(d)}` : `${fxPaise(rv(g))} · cost —`, onClick: () => openHg(g.hg, g.width, D.latest),
@@ -1442,7 +1501,7 @@ function fxRealQCard() {
     el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2);opacity:.55'}), 'folded cost the realisation covers'),
       el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--good)'}), 'profit: realisation left after the folded cost'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), 'loss: folded cost the realisation does not cover'),
       el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar);opacity:.45'}), 'folded cost not known'), el('span', {class: 'lg'}, legendShape('diamond'), 'target folded cost'), el('span', {class: 'lg'}, legendShape('dash'), 'the floor\'s realisation')),
-    actCut(bars.length, 15, 'qualities'),
+    actCut(bars.length, 15, 'qualities')]),
     actTable('real', ['Head group', ['Priced picks', 'lakh'], ['Share', 'of priced picks'], ['Realisation per pick', 'paise per folded pick'], ['Realisation', '₹, the day'], ['Folded cost per pick', 'paise'], ['Profit per folded pick', 'paise'], ['Target folded cost', 'paise'], ['Profit per folded pick at target', 'paise']],
       P.map((g) => [[actHgCell(g), fxLakh(g.priced), fxPct(T.priced ? g.priced / T.priced : null), ok(rv(g)) ? fxPaise(rv(g)) : '—', fxMoney(g.real), ok(fpp(g)) ? fxPaise(fpp(g)) : '—', sg(lf(g)), ok(tpp(g)) ? fxPaise(tpp(g)) : '—', sg(tprof(g))],
         [g.hg, g.priced, g.priced, rv(g), g.real, fpp(g), lf(g), tpp(g), tprof(g)]]), [1, 2, 3, 4, 5, 6, 7, 8],

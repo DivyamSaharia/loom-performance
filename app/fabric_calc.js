@@ -757,6 +757,24 @@ function fcRealLessFold(real, fold) {
   const diff = real - fold;
   return {diff, cover: Math.max(0, Math.min(real, fold)), over: Math.max(0, diff), short: Math.max(0, -diff)};
 }
+// Round B3 (Divyam, 27 Nov 2026): the realisation share pie of Realisation per pick by quality (Current, Best or Target).
+// items: [{key, real, ...}] with real = the quality's realisation ₹. A slice only for real > 0: its share = real ÷ the total
+// of the slices (so the pie adds to 100%). real ≤ 0 is listed apart (neg), never a slice; real not a number is a gap (gap),
+// never 0. Slices under `min` (0.03) of the total go into one Others slice (its own items kept in `items`), unless only one
+// would go there (then it stays as itself); past the maxN (9) largest, the rest always go into Others (no colour repeats). Largest first. → {total, slices: [{key, real, pct, items?}], neg, gap}.
+function fcShare(items, min = 0.03, maxN = 9) {
+  const n = (v) => typeof v === 'number' && isFinite(v);
+  const pos = items.filter((x) => n(x.real) && x.real > 0).sort((a, b) => b.real - a.real);
+  const neg = items.filter((x) => n(x.real) && x.real <= 0), gap = items.filter((x) => !n(x.real));
+  const total = pos.reduce((a, x) => a + x.real, 0);
+  if (!(total > 0)) return {total: null, slices: [], neg, gap};
+  let big = pos.filter((x) => x.real / total >= min), small = pos.filter((x) => x.real / total < min);
+  const cap = big.length > maxN;
+  if (cap) { small = big.slice(maxN).concat(small); big = big.slice(0, maxN); }
+  const grp = small.length > 1 || cap, slices = (grp ? big : pos).map((x) => Object.assign({}, x, {pct: x.real / total}));
+  if (grp) { const r = small.reduce((a, x) => a + x.real, 0); slices.push({key: 'Others', others: true, real: r, pct: r / total, items: small.map((x) => Object.assign({}, x, {pct: x.real / total}))}); }
+  return {total, slices, neg, gap};
+}
 // What the analysis charged against what the plant's costing says the same days cost (review 7): the folded cost is per
 // A-grade folded pick and is applied to every woven pick, so the two differ when folding runs behind or ahead of weaving.
 // Round Y: charged_lc, the loom cost basis (each day's pool ÷ looms running, per loom-day, priced or not, plus B grade),
