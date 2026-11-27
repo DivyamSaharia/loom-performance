@@ -320,27 +320,45 @@ function navRelabel() {
   if (!NIDX || NAV_BUSY) return;
   for (const it of NIDX.items) if (it.wk && typeof wkLabel === 'function' && wkName(it.wk)) it.label = 'Working: ' + wkLabel(it.wk);
 }
+// Round Q: the words a card shows under its heading (its note and the first note in it), for the question search.
+function navCardText(h) {
+  const c = h.closest('.card'); if (!c) return '';
+  const xs = [...c.querySelectorAll(':scope>.cardhead .note, :scope>.cardhead+.note, :scope>p.note')].slice(0, 2).map((x) => x.textContent);
+  return xs.join(' ').replace(/\s+/g, ' ').trim().slice(0, 600);
+}
 function navIndex0() {
-  const items = [], saved = TAB, plant = isPlant();
+  const items = [], saved = TAB, plant = isPlant(), text = new Map();
   for (const t of navTabs()) {
     items.push({id: 't:' + t, k: 'Tab', label: TITLES[t], sub: navTabSub(t)});
-    let names = [];
+    let names = [], notes = [];
     if (NAV_STATIC[t]) names = NAV_STATIC[t].map((x) => typeof x === 'function' ? x() : x).filter(Boolean);
     else {
-      try { TAB = t; const sec = PAGES[t](); if (typeof wkScan === 'function') wkScan(sec, t, null, true); names = [...sec.querySelectorAll(NAV_HEADS.join(','))].filter((h) => !h.closest('tr.drillrow')).map((h) => navCardName(h.textContent)); }
-      catch (e) { names = []; } finally { TAB = saved; }
+      try {
+        TAB = t; const sec = PAGES[t](); if (typeof wkScan === 'function') wkScan(sec, t, null, true);
+        const hs = [...sec.querySelectorAll(NAV_HEADS.join(','))].filter((h) => !h.closest('tr.drillrow'));
+        names = hs.map((h) => navCardName(h.textContent)); notes = hs.map(navCardText);
+      }
+      catch (e) { names = []; notes = []; } finally { TAB = saved; }
     }
     const seen = new Set();
-    for (const n of names) {
+    names.forEach((n, i) => {
       const id = 'c:' + t + '|' + navNorm(n);
-      if (!n || seen.has(id) || (plant && NAV_MONEY.test(n))) continue;
+      if (!n || seen.has(id) || (plant && NAV_MONEY.test(n))) return;
       seen.add(id); items.push({id, k: 'Card', label: n, sub: TITLES[t] + ' tab', t, card: n});
-    }
+      if (notes[i]) text.set(id, notes[i]);
+    });
   }
-  for (const g of guideSections()) if (!(plant && NAV_MONEY.test(g.title))) items.push({id: 'g:' + g.id, k: 'Guide', label: g.title, sub: 'Guide · ' + g.grp, gid: g.id});
+  for (const g of guideSections()) if (!(plant && NAV_MONEY.test(g.title))) {
+    items.push({id: 'g:' + g.id, k: 'Guide', label: g.title, sub: 'Guide · ' + g.grp, gid: g.id});
+    text.set('g:' + g.id, (g.body || []).map((b) => b && b.textContent != null ? b.textContent : String(b || '')).join(' ').replace(/\s+/g, ' ').slice(0, 3000));
+  }
   // Round J: "Working: <name>" for every = mark this role can see (owner entries for the owner only; no money for the plant view)
-  if (typeof wkSearchItems === 'function') for (const w of wkSearchItems()) if (!(plant && NAV_MONEY.test(w.label))) items.push(w);
-  NIDX = {sig: navSig(), items, by: new Map(items.map((x) => [x.id, x]))};
+  if (typeof wkSearchItems === 'function') for (const w of wkSearchItems()) if (!(plant && NAV_MONEY.test(w.label))) {
+    items.push(w);
+    const e = w.wk && w.wk.ids && typeof WK === 'object' ? WK[w.wk.ids[0]] : null;   // Round Q: its "In words" for the question search
+    if (e && e.w) text.set(w.id, String(e.w));
+  }
+  NIDX = {sig: navSig(), items, by: new Map(items.map((x) => [x.id, x])), text};   // text: Round Q, kept off the items
   return items;
 }
 // Build the index when the app is idle after a redraw, so the first search answers at once.
@@ -433,6 +451,122 @@ function navPaint() {
   const sb = $('#nfav-sb'); if (sb) { const open = sb.querySelector('details[open]'); sb.replaceChildren(navSignedIn() ? navFavBox() : ''); if (open) sb.querySelector('details').open = true; }
   if (D && !navFresh()) navSoon();
 }
+// ---------------------------------------------------------------- Round Q: question search
+// A question of three words or more lists the best five places for it first (askRank in ask.js, over the names, the Guide's
+// text and the Working's words). "Understand my question" loads a small English model (all-MiniLM-L6-v2, about 39 MB with
+// its runtime) from this site's ask/ folder, once per device: the files are kept in the browser's storage (w2-ask-v1), so
+// later visits load it with no download. It then re-ranks by meaning (askBlend). Nothing typed leaves the device, and it
+// finds only what this role's search already finds (navIndex).
+const ASK_BASE = 'ask/', ASK_CACHE = 'w2-ask-v1';
+const ASK_FILES = [['ort', 'ort.wasm.bundle.min.mjs', 77024], ['wasm', 'ort-wasm-simd-threaded.wasm', 14848852], ['tok', 'tokenizer.json', 711661], ['model', 'model_quantized.onnx', 22972370]];
+const ASK_MB = Math.round(ASK_FILES.reduce((n, f) => n + f[2], 0) / 1e6);
+let ASKM = {st: 'off', got: 0, err: '', embed: null, vec: new Map(), qv: new Map(), busy: false, redraw: null};
+const askMb = (b) => (b / 1e6).toFixed(b < 1e7 ? 1 : 0);
+async function askGet(name, want, onBytes) {
+  const url = new URL(ASK_BASE + name, location.href).href, c = typeof caches === 'object' ? await caches.open(ASK_CACHE).catch(() => null) : null;
+  const hit = c && await c.match(url).catch(() => null);
+  if (hit) { const b = await hit.arrayBuffer(); onBytes(b.byteLength); return b; }
+  const r = await fetch(url, {cache: 'no-cache'});
+  if (!r.ok) throw new Error(`${name}: the site answered ${r.status}`);
+  const rd = r.body && r.body.getReader ? r.body.getReader() : null;
+  let buf;
+  if (!rd) { buf = await r.arrayBuffer(); onBytes(buf.byteLength); }
+  else {
+    const parts = []; let n = 0;
+    for (;;) { const {done, value} = await rd.read(); if (done) break; parts.push(value); n += value.length; onBytes(value.length); }
+    const u = new Uint8Array(n); let o = 0; for (const p of parts) { u.set(p, o); o += p.length; }
+    buf = u.buffer;
+  }
+  if (want && buf.byteLength !== want) throw new Error('cut');   // a download cut off part way: never kept
+  let kept = false;
+  if (c) kept = await c.put(url, new Response(buf.slice(0), {headers: {'Content-Type': r.headers.get('Content-Type') || 'application/octet-stream'}})).then(() => true, () => false);
+  if (!kept) ASKM.unsaved = true;
+  return buf;
+}
+// Is the model already on this device? Then a question loads it without asking (no download).
+let ASK_HAS = null;
+async function askHas() {
+  if (ASK_HAS != null) return ASK_HAS;
+  try { const c = await caches.open(ASK_CACHE), base = new URL(ASK_BASE, location.href).href; ASK_HAS = (await Promise.all(ASK_FILES.map((f) => c.match(base + f[1])))).every(Boolean); }
+  catch (e) { ASK_HAS = false; }
+  return ASK_HAS;
+}
+async function askLoad() {
+  if (ASKM.st === 'loading' || ASKM.st === 'ready') return;
+  ASKM.st = 'loading'; ASKM.got = 0; ASKM.err = ''; ASKM.unsaved = false; askPaint();
+  try {
+    const got = {}, tick = (n) => { ASKM.got += n; askPaint(); };
+    for (const [k, f, n] of ASK_FILES) got[k] = await askGet(f, n, tick);
+    let ort;
+    try { ort = await import(new URL(ASK_BASE + ASK_FILES[0][1], location.href).href); }
+    catch (e) { const u = URL.createObjectURL(new Blob([got.ort], {type: 'text/javascript'})); try { ort = await import(u); } finally { URL.revokeObjectURL(u); } }   // offline: the saved copy
+    ort.env.wasm.numThreads = 1; ort.env.wasm.wasmBinary = got.wasm; ort.env.wasm.proxy = false;
+    const sess = await ort.InferenceSession.create(new Uint8Array(got.model), {executionProviders: ['wasm']});
+    const vocab = JSON.parse(new TextDecoder().decode(got.tok)).model.vocab;
+    const big = (a, T) => new ort.Tensor('int64', BigInt64Array.from(a, (x) => BigInt(x)), [1, T]);
+    ASKM.embed = async (texts) => {
+      const out = [];
+      for (const t of texts) {
+        const ids = wpEncode(t, vocab), T = ids.length;
+        const r = await sess.run({input_ids: big(ids, T), attention_mask: big(ids.map(() => 1), T), token_type_ids: big(ids.map(() => 0), T)});
+        const o = r[sess.outputNames[0]]; out.push(askPool(o.data, T, o.dims[2]));
+      }
+      return out;
+    };
+    ASKM.st = 'ready'; ASK_HAS = true;
+  } catch (e) { askFail(e); }
+  askPaint();
+}
+// Why it failed, in plain words (the technical text is kept in ASKM.raw, never shown).
+function askFail(e) {
+  const m = String((e && e.message) || e || ''); ASKM.st = 'failed'; ASKM.raw = m.slice(0, 300);
+  ASKM.err = m === 'cut' ? 'the download was cut off part way' : /answered 404/.test(m) ? 'its files are missing on the site' : /answered/.test(m) ? 'the site did not send its files'
+    : /fetch|network|load failed|offline/i.test(m) ? 'no connection' : /memory|allocat|RangeError/i.test(m) ? 'not enough memory on this device' : 'it could not start on this device';
+}
+function askPaint() { if (ASKM.redraw) ASKM.redraw(); }
+// Read every place this role can find (once per index; a later index reads only what is new), then the question.
+async function askScore(q, all) {
+  if (ASKM.busy) return;
+  ASKM.busy = true;
+  try {
+    const txt = (it) => (NIDX && NIDX.text && NIDX.text.get(it.id)) || '';
+    const todo = all.filter((it) => !ASKM.vec.has(it.id + '\u0001' + askDoc(it, txt(it))));
+    for (let i = 0; i < todo.length; i += 16) {
+      const part = todo.slice(i, i + 16), vs = await ASKM.embed(part.map((it) => askDoc(it, txt(it))));
+      part.forEach((it, j) => ASKM.vec.set(it.id + '\u0001' + askDoc(it, txt(it)), vs[j]));
+      ASKM.read = Math.min(i + 16, todo.length); ASKM.toRead = todo.length; askPaint();
+    }
+    ASKM.toRead = 0;
+    if (!ASKM.qv.has(q)) ASKM.qv.set(q, (await ASKM.embed([q]))[0]);
+  } catch (e) { askFail(e); }
+  finally { ASKM.busy = false; }
+  askPaint();
+}
+// The best places for question Q among ALL: the word match, then (with the model read) the blend. {rows, by: 'words' | 'meaning'}
+function askResults(q, all) {
+  const txt = (it) => (NIDX && NIDX.text && NIDX.text.get(it.id)) || '';
+  const ranked = askRank(all, q, txt);
+  const qv = ASKM.st === 'ready' ? ASKM.qv.get(q) : null;
+  if (!qv) {
+    if (ASKM.st === 'ready') askScore(q, all);
+    else if (ASKM.st === 'off' && ASK_HAS !== false) askHas().then((h) => { if (h) askLoad(); });
+    return {rows: ranked.slice(0, ASK_TOP).map((r) => r.it), by: 'words'};
+  }
+  const cos = new Map();
+  for (const it of all) { const v = ASKM.vec.get(it.id + '\u0001' + askDoc(it, txt(it))); if (v) cos.set(it.id, askDot(qv, v)); }
+  return {rows: askBlend(ranked, all, cos).slice(0, ASK_TOP).map((r) => r.it), by: 'meaning'};
+}
+// The line under the question's results: the model's button, its progress, or why it could not load and what to do.
+function askLine() {
+  if (ASKM.st === 'ready') {
+    if (ASKM.toRead) return el('div', {class: 'none askm', text: `Reading every place in the app once, to understand questions: ${ASKM.read} of ${ASKM.toRead}…`});
+    return ASKM.unsaved ? el('div', {class: 'none askm', text: 'This device could not keep the question helper (its storage is full or private browsing is on), so it will download again next time. Next: free some space on the phone, or use a normal (not private) window.'}) : null;
+  }
+  if (ASKM.st === 'loading') return el('div', {class: 'none askm', role: 'status', text: `Downloading the question helper: ${askMb(ASKM.got)} of about ${ASK_MB} MB (only this once on this device)…`});
+  const btn = el('button', {type: 'button', class: 'link askb', onmousedown: (e) => e.preventDefault(), onclick: () => askLoad(), text: ASKM.st === 'failed' ? 'Try again' : 'Understand my question'});
+  if (ASKM.st === 'failed') return el('div', {class: 'none askm'}, `The question helper did not load: ${ASKM.err}. The matches above are by words. Next: check the connection (Wi-Fi is best) and `, btn, '.');
+  return el('div', {class: 'none askm'}, 'Matched by words. ', btn, ` adds a small helper that runs on this device and reads what you mean: a one-time download of about ${ASK_MB} MB (Wi-Fi is best). Nothing you type is sent anywhere.`);
+}
 // The results list, shared by the laptop drop-down and the phone sheet.
 function navFinder(inp, list, o) {
   let rows = [], sel = -1;
@@ -453,10 +587,19 @@ function navFinder(inp, list, o) {
       try { all = navIndex(); } catch (e) { broke = true; }
       if (broke) parts.push(el('div', {class: 'none', text: 'Cards and Guide headings could not be listed: press Refresh (the round-arrow icon). Looms and head groups are still found.'}));
       const idx = navMatch(all, q), num = /^(loom\s*)?\d+$/i.test(q), sug = suggestions(q);
-      const tc = idx.filter((x) => x.k !== 'Guide').slice(0, 10), gd = idx.filter((x) => x.k === 'Guide').slice(0, 5);
+      let tc = idx.filter((x) => x.k !== 'Guide').slice(0, 10), gd = idx.filter((x) => x.k === 'Guide').slice(0, 5);
+      if (!num && !broke && askIsQuestion(q)) {   // Round Q: a question lists its best places first
+        const a = askResults(q, all), shown = new Set(a.rows.map((x) => x.id));
+        parts.push(head(a.by === 'meaning' ? 'Best matches for your question, by meaning' : 'Best matches for your question'));
+        a.rows.forEach(add);
+        if (!a.rows.length) parts.push(el('div', {class: 'none', text: 'No place matches those words. Next: use the words on the screen (a card\'s title, a tile\'s name), or ask in fewer words.'}));
+        const ln = askLine(); if (ln) parts.push(ln);
+        tc = tc.filter((x) => !shown.has(x.id)); gd = gd.filter((x) => !shown.has(x.id));
+        if (tc.length || gd.length) parts.push(head('Names that match'));
+      }
       (num ? [...sug, ...tc, ...gd] : [...tc, ...sug.slice(0, 12), ...gd]).forEach(add);
       if (/^loom\s*$/i.test(q)) parts.unshift(el('div', {class: 'none', text: 'Type the loom number, then Enter.'}));
-      else if (!rows.length) parts.push(el('div', {class: 'none', text: `Nothing matches “${q}”. Try a tab or card name, a loom number or a head group.`}));
+      else if (!rows.length && !askIsQuestion(q)) parts.push(el('div', {class: 'none', text: `Nothing matches “${q}”. Try a tab or card name, a loom number or a head group, or ask a question in a few words.`}));
     }
     if (o.keys) parts.push(el('div', {class: 'nkeys', text: 'Keys: 1–9 open the first nine tabs · / or Ctrl K (⌘ K on a Mac) opens this search · g then l opens a loom · Esc closes'}));
     list.replaceChildren(...parts);
@@ -468,7 +611,7 @@ function navFinder(inp, list, o) {
     else if (e.key === 'Enter') { e.preventDefault(); if (rows.length) pick(sel < 0 ? 0 : sel); }
     else if (e.key === 'Escape') { e.preventDefault(); if (inp.value) { inp.value = ''; sel = -1; draw(); } else o.done(); }
   });
-  return {draw, reset: () => { sel = inp.value.trim() ? 0 : -1; }};
+  return {draw, reset: () => { sel = inp.value.trim() ? 0 : -1; }, live: () => list.isConnected && !list.hidden && list.getClientRects().length > 0};   // fixed lists have no offsetParent
 }
 // Laptop: the box under the logo, its results in a drop-down beside the side menu.
 const nIn = $('#nq'), nRes = $('#nres');
@@ -482,6 +625,7 @@ window.addEventListener('resize', () => { if (!nRes.hidden) navPlaceRes(); });
 // Phone: the search sheet.
 const nSheet = $('#nsheet'), nInM = $('#nq-m');
 const NFM = navFinder(nInM, $('#nres-m'), {favs: true, done: () => nSheet.close()});
+ASKM.redraw = () => { if (NF.live()) NF.draw(); if (nSheet.open) NFM.draw(); };   // Round Q: the model's progress and its re-ranking
 $('#nsheet-x').addEventListener('click', () => nSheet.close());
 $('#nfind-m').addEventListener('click', () => navOpen(''));
 // Open the search with TEXT typed: in the side menu on a laptop, else the sheet.

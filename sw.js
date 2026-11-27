@@ -4,11 +4,11 @@
 // with no connection the app opens and says it cannot reach the database. The sealed data files left from the passcode view
 // (switchover, 14 Nov 2026) are deleted from the device on activate. BUILD is stamped by pipeline/publish_site.py.
 'use strict';
-const BUILD = '2acbee962f37';
+const BUILD = 'add72258de82';
 const SHELL = 'w2-shell-' + BUILD;
 const NET_WAIT = 4000;   // ms to wait for the network before using the saved copy
 const OLD_DATA = 'w2-data';   // the passcode view's sealed data copies: removed
-const SHELL_FILES = ['./', 'index.html', 'app/style.css', 'app/core.js', 'app/model.js', 'app/calc.js', 'app/panel.js', 'app/pages-looms.js', 'app/trends.js',
+const SHELL_FILES = ['./', 'index.html', 'app/style.css', 'app/core.js', 'app/model.js', 'app/ask.js', 'app/calc.js', 'app/panel.js', 'app/pages-looms.js', 'app/trends.js',
   'app/pages-config.js', 'app/charts.js', 'app/visuals.js', 'app/costing.js', 'app/guide.js', 'app/db.js', 'app/fabric_calc.js', 'app/working.js', 'app/fabric.js', 'app/nav.js', 'app/loader.js', 'manifest-db.webmanifest', 'pick-manifest.js', 'logo.svg', 'icon.svg',
   'icon-192.png', 'apple-touch-icon.png'];
 
@@ -37,6 +37,7 @@ self.addEventListener('fetch', (ev) => {
   const req = ev.request;
   if (req.method !== 'GET') return;
   const u = new URL(req.url);
+  if (isShell(u) && u.pathname.startsWith(scopeUrl.pathname + 'ask/')) return;   // Round Q: the question model keeps its own copy (w2-ask-v1), not one per publish
   if (isShell(u)) {
     // newest copy first: the page and its scripts come from the network, so a publish shows on the first open. The saved copy
     // is used only when the network fails or takes longer than NET_WAIT. The scripts follow the page the same way, so they

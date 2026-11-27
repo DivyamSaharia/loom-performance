@@ -559,6 +559,9 @@ dialog.nsheet::backdrop{background:rgba(0,0,0,.35)}
 .sugg.nlist button{display:grid;grid-template-columns:72px minmax(0,1fr);column-gap:10px;row-gap:1px;align-items:baseline}
 .sugg.nlist .k{grid-row:1 / span 2}.sugg.nlist .nl{white-space:normal}.sugg.nlist .s{grid-column:2;margin-left:0;text-align:left;white-space:normal}
 .navhit{outline:2px solid var(--accent);outline-offset:3px;border-radius:14px}
+/* Round Q: the question search's model line */
+.sugg .askm{font-size:13px;line-height:1.45}
+.sugg .askm button.askb,.sugg.nlist .askm button.askb{display:inline-block;width:auto;min-height:32px;padding:6px 4px;margin:0;font-size:inherit;font-weight:600;text-align:left;background:none}
 .navnote{margin:6px 0 10px}
 /* 18 Nov 2026: Realisation and the fabric screens keep the page's gap between cards; the Realisation tiles pin their
    7-day line to the foot so the four lines sit level; the Filter tables box spans the content like the cards. */
