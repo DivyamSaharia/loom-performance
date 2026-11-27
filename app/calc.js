@@ -197,7 +197,7 @@ function floorPaise(rupees, picks) {
 // ---- Sheet checks on the Costing tab (Divyam, 14 Nov 2026; owner only). Three sources, three names on screen:
 //   "Plant file"  = the plant's costing.xlsx as uploaded (app_data 'cost_checks', days[d].plant);
 //   "Recomputed"  = the CPP task's corrected tab (the plant's own entries with per-pick, progressives, totals and cost per pick
-//                   worked out again), which the Costing tab's "As entered" view shows (COST.days_entered);
+//                   worked out again), the Plant file basis of the app-wide switch (COST.days_entered);
 //   Realisation and profit use "Recomputed + power fix" (COST.days), which these cards do not compare.
 // A missing figure is a gap: its difference is null (shown "—"), never 0.
 // Under these the two sides agree: rupees, the files' 2-decimal rounding; picks, the app data's lakh to 4 decimals (±5 picks);
@@ -217,7 +217,7 @@ function scPlantLines(lines) {
   return out;
 }
 
-// Plant vs corrected for one day. plant = cost_checks days[d].plant ({lines, total, prog_total, month_total, picks, prog_picks,
+// Plant file vs recomputed for one day. plant = cost_checks days[d].plant ({lines, total, prog_total, month_total, picks, prog_picks,
 // month_picks, cpp, fcpp}: rupees, picks, rupees per pick); day = the Recomputed day (COST.days_entered: lines {n, a, prog, mt},
 // total, prog_total, mtd.amount, picks and mtd.picks in lakh, cpp_ex and fcpp in paise). One row per figure:
 // {line, fig: 'Day' | 'Progressive' | 'Month', unit, plant, corr, d, state}; the statement's totals first, then the lines.
@@ -420,7 +420,7 @@ function sheetChecks(c, mode) {
     unlisted: kn ? Math.max(0, kn[mode] - pick[mode].length) : null, headline: c.headline || ''};
 }
 // What a Sheet checks finding can change, as the card names it under the message (fig: the validator's labels, ", "-joined).
-const SC_FIG = {'cost chain': 'cost per pick, folded cost and profit', 'file side': 'the Plant file figures in Plant vs corrected and Month to date',
+const SC_FIG = {'cost chain': 'cost per pick, folded cost and profit', 'file side': 'the Plant file figures in Plant file vs recomputed and Month to date',
   'production': 'production by quality, looms and picks', 'B grade': 'B grade % and rupee impact', 'stock': 'the Stock card',
   'whole day': 'every figure of this day', 'day rules': 'the Day rules card',
   'not classified': 'possibly any figure: this check is new and not yet sorted, so treat it as one that can'};
@@ -773,7 +773,7 @@ function packRate(days, date) {
   return m > 0 ? a / m : null;
 }
 
-// ---- Target cost per pick (Divyam, 18 Nov 2026). The headline cost per pick, As entered, for one day: (total expenses +
+// ---- Target cost per pick (Divyam, 18 Nov 2026). The headline cost per pick, on the day passed (Round B1: the chosen basis), for one day: (total expenses +
 // cut piece loss) ÷ production picks. Steps applied in order, so they add up:
 //   1. CFM: each loom at its target CFM (excess air only, never more air); the compressor's kWh fall by the air saved ×
 //      the energy rate for the CFM saving (Round V: comp.k, the fitted slope or the window average; else the day's own kWh

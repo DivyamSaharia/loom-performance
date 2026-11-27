@@ -403,13 +403,12 @@ function trimCost(c) {
   return c;
 }
 let CDATE = '', CPER = 7, CLINE = 'POWER', CHG = '', CHSEL = '', CLINE_SET = false, CLQ = '';
-// Power units: 'fixed' = POWER units with the flat 0.02 rupees per pick taken out (default), 'entered' = as in the plant's file.
-// Display only: the sheets are never changed. Remembered per browser.
-let CPOW = 'entered';   // the plant's figures are the headline (decided 9 Nov 2026)
 // Production by quality head group: 'today' (default) or 'mtd'. Remembered per browser.
 let CHGV = 'today';
 try { if (localStorage.getItem('w2-cost-hgview') === 'mtd') CHGV = 'mtd'; } catch (e) {}
-try { if (localStorage.getItem('w2-cost-power2') === 'fixed') CPOW = 'fixed'; } catch (e) {}
+// Round B1 (Divyam, 27 Nov 2026): the Costing tab's own Power units switch is gone (the app-wide basis, BASIS in costing.js,
+// opens on Actual and is kept per email); its old per-device choice is dropped once, not carried over.
+try { localStorage.removeItem('w2-cost-power2'); } catch (e) {}
 const NA = 'Not available';
 const monthName = (d) => new Date(d.slice(0, 7) + '-01T00:00:00Z').toLocaleDateString('en-GB', {month: 'long', timeZone: 'UTC'});
 // Toggle boxes for line charts: one Set of switched-on series keys per chart id, kept while the page is open.

@@ -71,6 +71,7 @@ const PAGES = {actions: pageActions, quality: pageQuality, benchmarks: pageBench
 function render() {
   if (!D) return;
   if (typeof spSync === 'function') spSync();   // Round V: the compressor set point in force on the day shown
+  if (typeof bSync === 'function') bSync();   // Round B1: the costing basis, per email (user_prefs 'basis')
   for (const b of document.querySelectorAll('.segmented[aria-label="Loom width"] button')) b.setAttribute('aria-pressed', b.dataset.w === W ? 'true' : 'false');
   for (const a of document.querySelectorAll('[data-tab]')) { if (a.dataset.tab === TAB) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
   const mb = $('#morebtn'); if (mb) { if (!MOB.includes(TAB)) mb.setAttribute('aria-current', 'page'); else mb.removeAttribute('aria-current'); }
@@ -88,6 +89,7 @@ function render() {
     const fl = $('.filters'); if (fl) fl.hidden = noF;
     const wb = $('#wbar'); if (wb) wb.hidden = noF || TAB === 'pressure' || TAB === 'data';   // Round A2: the sticky width row (one compressor: none on Pressure)
     const dy = $('#day'); if (dy) dy.hidden = TAB === 'data';
+    const bs = $('#basis'); if (bs) { const g = typeof basisSeg === 'function' && TAB !== 'data' ? basisSeg() : null; if (g) bs.replaceChildren(g); else bs.replaceChildren(); bs.hidden = !g; }   // Round B1: beside the date chip
     const as = $('#asof'); if (as) as.hidden = ADMIN_TABS.includes(TAB) && TAB !== 'realisation'; }
   $('#main').replaceChildren(PAGES[TAB]());
   if (TRTABS[TAB]) addRowTrendButtons($('#main'));
@@ -305,7 +307,7 @@ const navGrp = (t) => (GROUPS.find((g) => g[1].includes(t)) || ['', []])[0];
 const navTabSub = (t) => 'in ' + navGrp(t);   // a tab's second line: its side-menu group
 const navTabs = () => GROUPS.flatMap((g) => g[1]).filter(tabAllowed);
 let NIDX = null, NIDX_T = 0, NAV_QUIET = false, NAV_BUSY = false;
-const navSig = () => [D, typeof COST !== 'undefined' ? COST : null, ME && ME.role, fxAnalysisOn(), typeof FX !== 'undefined' ? FX : null];
+const navSig = () => [D, typeof COST !== 'undefined' ? COST : null, ME && ME.role, fxAnalysisOn(), typeof FX !== 'undefined' ? FX : null, typeof BASIS !== 'undefined' ? BASIS : null];   // Round B1: a flip re-reads the index
 const navFresh = () => { const g = navSig(); return !!NIDX && NIDX.sig.every((v, i) => v === g[i]); };
 function navIndex() {
   if (!D) return [];

@@ -108,13 +108,13 @@ async function prefsLoad(c) {
   try {
     const {data, error} = await c.rpc('my_prefs');
     if (error || !data || typeof data !== 'object' || Array.isArray(data)) return;
-    const all = prefAll(), before = JSON.stringify(all);
+    const all = prefAll(), before = JSON.stringify(all), b0 = all.basis;
     Object.assign(all, data);   // the database wins over this device's copy
     try { localStorage.setItem(prefKey(), JSON.stringify(all)); } catch (e) {}
     if (JSON.stringify(all) === before || !D) return;
     if (typeof gapSoon === 'function') gapSoon();   // folded sections follow the email (12 Nov 2026)
     if (typeof navPaint === 'function') navPaint();   // Favourites follow the email (Round E, 17 Nov 2026)
-    if (typeof render === 'function' && TAB === 'realisation') render();
+    if (typeof render === 'function' && (TAB === 'realisation' || all.basis !== b0)) render();   // Round B1: a saved Plant file choice draws once the prefs arrive
   } catch (e) {}
 }
 async function signOut() { otpSet(''); try { const c = await sbClient(); await c.auth.signOut(); } catch (e) {} ME = null; D = null; LATEST = null; COST = null; CCHK = null; location.hash = '#actions'; load(); }

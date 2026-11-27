@@ -2,18 +2,43 @@
 // One of the classic scripts index.html loads in order; they share one scope (no modules, no build step).
 'use strict';
 // ---------------------------------------------------------------- Costing page
+// ---------------------------------------------------------------- The costing basis (Round B1, Divyam 27 Nov 2026)
+// One app-wide switch, "Plant file · Actual", beside the date chip (on Costing, beside the Day list). Actual (the default) =
+// COST.days, the POWER line less COST.pfix's paise a pick; Plant file = COST.days_entered, the costing as the plant entered it.
+// Kept per email (user_prefs 'basis', like q_period); a new email, or one that never switched, opens on Actual. The plant role
+// has no switch and no basis word: its COST.days is its own costing_plant copy (the plant's figures, no days_entered).
+// Round B1 moves the cost side (Costing, the Actions cost tiles and Where the saving is); the money side (profit, loom cost,
+// break-even, folded cost by quality) stays on Actual until Round B2, and says so on Plant file (bLater).
+let BASIS = 'actual';
 const cHasFix = () => !!(COST && COST.schema >= 2 && Array.isArray(COST.days_entered));
-const cFixed = () => cHasFix() && CPOW !== 'entered';
-const cDays = () => !COST ? [] : (cHasFix() && CPOW === 'entered' ? COST.days_entered : COST.days) || [];
-function powSeg() {
-  if (isPlant()) return null;   // plant view: the plant's figures only, no switch
-  const b = (v, t) => el('button', {type: 'button', 'aria-pressed': (cHasFix() ? CPOW : 'entered') === v ? 'true' : 'false', text: t, disabled: cHasFix() ? null : true,
-    onclick: () => { CPOW = v; try { localStorage.setItem('w2-cost-power2', v); } catch (e) {} render(); }});
-  return el('div', {class: 'toolbar'}, el('span', {class: 'note', text: 'Power units'}),
-    el('div', {class: 'seg', role: 'group', 'aria-label': 'Power units'}, b('entered', 'As entered (plant file)'), b('fixed', 'Corrected')),
-    el('span', {class: 'note', text: !cHasFix() ? 'Corrected view: not available yet. It arrives with the next costing run; figures below are as entered.'
-      : cFixed() ? `POWER units less ${pn(COST.pfix && COST.pfix.paise, 0)} paise × picks ÷ rate${COST.pfix && COST.pfix.from ? ` from ${dfmt(COST.pfix.from)}${COST.pfix.to ? ` to ${dfmt(COST.pfix.to)}` : ''}` : ' every day'}. Cost per pick, totals, folded cost and month to date follow. The sheets are unchanged.${COST.pfix && COST.pfix.below && COST.pfix.below.length ? ` On ${COST.pfix.below.length} day${COST.pfix.below.length === 1 ? '' : 's'} the corrected units fall below the compressor's own units: check the plant's entry (${COST.pfix.below.slice(-3).map(dfmt).join(', ')}).` : ''}`
-      : 'Exactly as the plant\'s file has it.'}));
+const bSync = () => { BASIS = typeof isPlant === 'function' && !isPlant() && typeof prefGet === 'function' && prefGet('basis') === 'plant' ? 'plant' : 'actual'; return BASIS; };
+// The cost side reads the plant's figures: Plant file chosen, or no Actual yet (an old costing file, schema < 2)
+const bPlant = () => !isPlant() && (!cHasFix() || BASIS === 'plant');
+// Every read of the costing days for a cost figure: the chosen basis (the plant role: its own copy)
+const bDays = () => !COST ? [] : (!isPlant() && cHasFix() && BASIS === 'plant' ? COST.days_entered : COST.days) || [];
+// The folding readers (folding shortage, each quality's folding %, A-grade folded picks): one set on both bases, so no
+// folding figure can move with the switch (design R6; picks, afold, metres, cut and bgrade are the same in both sets)
+const foldSrc = () => !COST ? [] : (cHasFix() ? COST.days_entered : COST.days) || [];
+const bName = () => isPlant() ? '' : bPlant() ? 'Plant file' : 'Actual';
+const bTxt = () => isPlant() ? '' : ' · ' + bName();
+// Round B1: a money figure that stays on Actual while Plant file is chosen (Round B2 moves it)
+const bLater = () => !isPlant() && cHasFix() && BASIS === 'plant' ? ' · Actual (Plant file comes with the next round)' : '';
+const cDays = () => bDays();
+// What the two choices mean, from COST.pfix (the Config sheet Settings rows); nothing here holds the rate or the dates
+function bTip() {
+  if (!cHasFix()) return 'Actual: not available yet. It arrives with the next costing run; the figures are as the plant entered them.';
+  const f = COST.pfix || {};
+  return `Actual: POWER less ${ok(f.paise) ? pn(f.paise, 0) : 'the correction\'s'} paise a pick${f.from ? ` from ${dfmt(f.from)}${f.to ? ` to ${dfmt(f.to)}` : ''}` : ' every day'} (Config sheet Settings). Plant file: the costing as the plant entered it.`;
+}
+function basisSeg() {
+  if (isPlant() || !COST) return null;   // plant view: its own figures only, no switch (R3)
+  const has = cHasFix(), cur = has ? BASIS : 'plant', tip = bTip();
+  const b = (v, t) => el('button', {type: 'button', 'aria-pressed': cur === v ? 'true' : 'false', text: t, disabled: v === 'actual' && !has ? true : null,
+    onclick: () => { if (cur === v) return; prefSet('basis', v); bSync(); render(); }});
+  // Round B1 (Q8): on Plant file, the money figures that stay on Actual until Round B2 are named once here, for the roles that see money
+  const later = has && BASIS === 'plant' && typeof fxOn === 'function' && fxOn() ? 'Profit, loom cost, break-even and folded cost by quality stay on Actual until the next round.' : '';
+  return el('div', {class: 'basis', title: tip}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Costing basis: Plant file or Actual'}, b('plant', 'Plant file'), b('actual', 'Actual')),
+    el('span', {class: 'note onph', text: tip}), later ? el('span', {class: 'note', text: later}) : null);
 }
 const cDay = () => { const D0 = cDays(); return D0.find((d) => d.date === CDATE) || D0[D0.length - 1]; };
 // Period per chart group on the Costing tab ('cpp', 'trends', 'line', 'hg', 'stock', 'power', 'labour'), kept on this device.
@@ -163,7 +188,7 @@ function moveCard(cur) {
       'month-only': `${dfmt(cur.date)} is ${mon}'s only costing day so far, so the running average is this day itself.`,
       pick: others.length ? 'Pick a costing day to compare with.' : 'There is no other costing day to compare with yet.', same: 'Pick a different day to compare with.'}[B.why] || NA + '.';
     const more = B.why === 'pick' && others.length || B.why === 'same' ? [] : [' ', ...next];
-    return card(ttl, 'paise per pick', bar, el('p', {class: 'scopenote'}, why, ...more));
+    return card(ttl, `paise per pick${bTxt()}`, bar, el('p', {class: 'scopenote'}, why, ...more));
   }
   const m = cppBridge(B.ref, cur);
   const avg = BMODE === 'mtd' || BMODE === 'month';
@@ -183,7 +208,7 @@ function moveCard(cur) {
     [el('b', {text: 'Total'}), '', el('b', {text: sg(Rb.reduce((a, v) => a + v, 0))}), `${pn(m.prev_cpp, 2)} → ${pn(m.now_cpp, 2)} paise`]];
   const vs = m.vol_split, who = avg ? 'the average day' : dfmt(B.label);
   const sw = (c, t, o) => el('span', {class: 'lg'}, el('i', {style: `display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:${c}${o ? ';opacity:.75' : ''}`}), t);
-  return card(ttl, `${refName} → ${dfmt(cur.date)} · paise per pick`, bar,
+  return card(ttl, `${refName} → ${dfmt(cur.date)} · paise per pick${bTxt()}`, bar,
     waterfall(steps, `Bridge of cost per pick from ${refName} to ${dfmt(cur.date)}`),
     el('div', {class: 'legend'}, sw('var(--bad)', 'pushed cost per pick up'), sw('var(--good)', 'pulled it down'), sw('var(--muted-2)', avg ? 'average and day totals' : 'day totals', true)),
     (() => { const t = table(['Driver', ['Change', `₹ vs ${avg ? 'the average day' : dfmt(B.label)}`], ['Effect', 'paise per pick'], 'Type'], rows, [2]); t.classList.add('bridge'); return t; })(),
@@ -201,7 +226,7 @@ function costTypeCard() {
   const layers = [...COST_TYPES, 'cut'].map((k) => ({name: names[k] || k, color: CT_COLS[k], vals: T.map((t) => t ? t[k] : null)}));
   const line = {name: 'Cost per pick', color: 'var(--ink)', vals: Bk.map((L) => aggDays(L, {get: (d) => d.cpp, agg: 'w', w: (d) => d.picks}))};
   const last = T.at(-1);
-  return card('Cost per pick by cost type', `paise per pick${isPlant() ? '' : cFixed() ? ' · power units corrected' : ' · as entered'}${wk ? ' · week by week' : ''}`, perBar('types'),
+  return card('Cost per pick by cost type', `paise per pick${bTxt()}${wk ? ' · week by week' : ''}`, perBar('types'),
     P.length ? hlStack({dates: Bk.map((L) => L[0].date), xlabels: wk ? Bk.map((L) => shortRange(L[0].date, L.at(-1).date)) : null, tips: wk ? Bk.map((L) => shortRange(L[0].date, L.at(-1).date)) : null,
       pickDates: Bk.map((L) => L.at(-1).date), layers, line, h: 280, fmt: (v) => pn(v, 2), aria: 'Cost per pick by cost type', onPick: pickDay}, 'cost-types',
       [el('span', {class: 'lg'}, el('i', {style: 'display:inline-block;width:14px;border-top:2px dashed var(--ink)'}), 'cost per pick (the figure on top of each bar)')]) : el('div', {class: 'empty', text: NA + ' for this period.'}),
@@ -209,7 +234,7 @@ function costTypeCard() {
 }
 
 // ---------------------------------------------------------------- B grade and cut pieces (from November)
-// Plant level from the corrected costing (B GRADE and CUT PIECE REV LOSS lines, folding metres, A-grade folded picks);
+// Plant level from the costing (the same on both bases: B GRADE and CUT PIECE REV LOSS lines, folding metres, A-grade folded picks);
 // loom, quality and reason from the B-grade register in the plant's own costing.xlsx. Cut pieces are a daily figure in metres (CUT PIC., K35 in the plant's file).
 let BGPER = 'mtd', BGHG = '', BGLOOM = '';
 // A head group in the B-grade cards opens the loom-wise table on it (10 Nov 2026).
@@ -375,12 +400,13 @@ function pageCosting() {
   // ---- header and the Day list
   const sel = el('select', {id: 'cday', 'aria-label': 'Costing day'}, D0.slice().reverse().map((d) => el('option', {value: d.date, text: (d.date === last.date ? 'Latest · ' : '') + dfmt(d.date), selected: d.date === cur.date ? true : null})));
   sel.addEventListener('change', () => { CDATE = sel.value === last.date ? '' : sel.value; render(); });
-  s.append(el('div', {}, el('h2', {text: `Costing, ${dfmt(cur.date)}`}),
-    el('p', {class: 'lead', text: isPlant() ? 'Why cost per pick moved, what the plant produced by quality head group, and the lines that drive cost, from the plant\'s costing file. Click any point on a chart to open that day.' : `Why cost per pick moved, what the plant produced by quality head group, and the lines that drive cost. Built from Unit 2\'s corrected costing. It runs on its own and is not reconciled with the loom tabs: metres, picks and looms running can differ, because this tab uses the plant\'s production block and the loom tabs use the Toyota reports. Click any point on a chart to open that day.`})));
+  s.append(el('div', {}, el('h2', {text: `Costing, ${dfmt(cur.date)}${bTxt()}`}),   // Round B1: the heading names the basis for the tiles under it
+    el('p', {class: 'lead', text: isPlant() ? 'Why cost per pick moved, what the plant produced by quality head group, and the lines that drive cost, from the plant\'s costing file. Click any point on a chart to open that day.' : `Why cost per pick moved, what the plant produced by quality head group, and the lines that drive cost. Built from Unit 2\'s costing on the basis chosen at the top (Actual or Plant file). It runs on its own and is not reconciled with the loom tabs: metres, picks and looms running can differ, because this tab uses the plant\'s production block and the loom tabs use the Toyota reports. Click any point on a chart to open that day.`})));
   s.append(el('div', {class: 'toolbar'}, el('label', {for: 'cday', text: 'Day'}), sel,
     el('span', {class: 'pill lime', text: `Costing: up to ${dfmt(last.date)}`}), D && !isPlant() ? el('span', {class: 'pill muted', text: `Looms: up to ${dfmt(D.latest)}`}) : null,
-    cur.date !== last.date ? el('button', {class: 'ghost', type: 'button', text: 'Back to latest', onclick: () => { CDATE = ''; render(); }}) : null));
-  if (!isPlant()) s.append(powSeg());
+    cur.date !== last.date ? el('button', {class: 'ghost', type: 'button', text: 'Back to latest', onclick: () => { CDATE = ''; render(); }}) : null, basisSeg()));
+  // Round B1: no Power units switch here any more; the app-wide basis switch sits in the Day row above
+  if (!isPlant() && !bPlant() && COST.pfix && COST.pfix.below && COST.pfix.below.length) s.append(el('p', {class: 'note', text: `On ${COST.pfix.below.length} day${COST.pfix.below.length === 1 ? '' : 's'} the Actual POWER units fall below the compressor's own units: check the plant's entry (${COST.pfix.below.slice(-3).map(dfmt).join(', ')}).`}));
   const un = (COST.unassigned || []).filter((u) => !assigned[u.style] && !(D.unassigned || []).some((x) => x.style === u.style));
   if (un.length && !isPlant()) s.append(assignCard(un.map((u) => ({...u, looms: [], run_h: null, costing: true}))));
 
@@ -409,7 +435,7 @@ function pageCosting() {
     kpiC('Month to date', pn(cur.mtd.cpp, 2), 'paise', `folded ${pn(cur.mtd.fcpp, 2)}`),
     kpiC('Same day last month', cur.ly ? pn(cur.ly.cpp, 2) : NA, cur.ly ? 'paise' : '', cur.ly ? `${dfmt(cur.ly.date)} · ${sg(cur.cpp - cur.ly.cpp)} paise now` : (cur.date.slice(0, 7) === COST_FROM.slice(0, 7) ? 'no data until 1 Dec: this tab starts on 1 Nov' : 'no costing day for that date'))));
 
-  // ---- Sheet checks (owner only, 14 Nov 2026): the CPP task's checks of the plant's file, plant vs corrected, month to date
+  // ---- Sheet checks (owner only, 14 Nov 2026): the CPP task's checks of the plant's file, plant file vs recomputed, month to date
   if (!isPlant() && typeof fxIsOwner === 'function' && fxIsOwner()) s.append(...sheetCheckCards(cur));
 
   // ---- 1. why cost per pick moved, against the basis picked on the card
@@ -418,7 +444,7 @@ function pageCosting() {
     // folded
     const fb = b.folded;
     if (fb && typeof wkPut === 'function') wkPut('J8', {prev: fb.prev, folding: fb.folding, opex: fb.opex, bgrade: fb.bgrade, cut: fb.cut, prevDate: dfmt(b.prev_date), date: dfmt(cur.date)});   // Round J
-    if (fb) s.append(card('Folded cost per pick', 'Cost of A-grade folded picks: OPEX, net B grade and cut-piece loss, over picks folded',
+    if (fb) s.append(card('Folded cost per pick', `Cost of A-grade folded picks: OPEX, net B grade and cut-piece loss, over picks folded${bTxt()}`,
       el('div', {class: 'nosort'}, table(['Step', ['Effect', 'paise per pick']], [[dfmt(b.prev_date), pn(fb.prev, 2)], ['Picks folded (timing of folding)', sg(fb.folding)], ['OPEX', sg(fb.opex)], ['Net B grade', ok(fb.bgrade) ? sg(fb.bgrade) : el('span', {class: 'note', text: 'bgrade' in fb ? '— the costing file has no B grade loss or revenue on one of the two days, so this card leaves it out. Next: ' + (isAdmin() ? 'see Files per day on Data health' : 'tell the owner') : '— until the next daily run (it runs every hour, 10:40 to 16:40 IST)'})], ['Cut-piece loss', sg(fb.cut)], [dfmt(cur.date), el('b', {text: pn(fb.now, 2)})]], [1])),   // a bridge from one day to the next: its steps are not a list to sort
       el('p', {class: 'note', text: `${f0(fb.folded_m)} m were folded against ${f0(fb.produced_m)} m produced, so folded cost per pick can move the other way from cost per pick on a day when folding runs ahead of or behind production.`})));
   }
@@ -427,7 +453,7 @@ function pageCosting() {
   const byT = {};
   for (const l of cur.lines) { const o = byT[l.t] = byT[l.t] || {t: l.t, a: 0, lines: []}; o.a += l.a; o.lines.push(l); }
   const spikes = cur.lines.filter((l) => l.spike), newL = cur.lines.filter((l) => l.new);
-  s.append(card('Fixed against variable cost', `${dfmt(cur.date)} · each line is tagged once`,
+  s.append(card('Fixed against variable cost', `${dfmt(cur.date)} · each line is tagged once${bTxt()}`,
     table(['Type', ['Amount', '₹'], ['Share', '% of cost'], ['Per pick', 'paise'], 'Largest lines'],
       ['fixed', 'attendance', 'output', 'lumpy'].filter((t) => byT[t]).map((t) => { const o = byT[t]; return [COST.types[t], rs(o.a), pc(o.a / cur.total), pn(o.a / (cur.picks * 1e5) * 100, 2), o.lines.slice(0, 3).map((l) => `${l.n} ${rs(l.a)}`).join(' · ')]; }), [1, 2, 3]),
     el('p', {class: 'note', text: 'Fixed lines move cost per pick only through volume, so this separates "we spent more" from "we made less". Lumpy lines are a bill on some days and nothing on others.'}),
@@ -443,7 +469,7 @@ function pageCosting() {
   const first = cDays()[0] ? cDays()[0].date : ym0 + '-01', fy = +first.slice(0, 4), fm = +first.slice(5, 7);
   const lyFrom = dfmt(`${fm === 12 ? fy + 1 : fy}-${String(fm === 12 ? 1 : fm + 1).padStart(2, '0')}-01`);
   const lyOff = M.some((d) => d.ly && ok(d.ly.cpp)) ? null : (M.every((d) => d.date.slice(0, 7) === first.slice(0, 7)) ? `no data until ${lyFrom}, because this tab holds data from ${monthName(first)} onward.` : 'not available for this period.');
-  s.append(card('Cost per pick', `paise, incl. cut piece loss${isPlant() ? '' : cFixed() ? ' · power units corrected' : ' · as entered'}`, perBar('cpp'),
+  s.append(card('Cost per pick', `paise, incl. cut piece loss${bTxt()}`, perBar('cpp'),
     dayChart('cpp', M, mPre, {id: 'cpp', w: Math.round(Math.max(340, Math.min(1000, (document.documentElement.clientWidth || 1000) - (document.documentElement.clientWidth >= 1024 ? 300 : 64)))), h: (document.documentElement.clientWidth || 1000) < 700 ? 260 : 280, aria: 'Cost per pick', fmt: (v) => pn(v, 1), onPick}, [
       {key: 'cpp', name: 'Cost per pick', get: (d) => d.cpp, agg: 'w', w: wPk, color: CC[0], avg: true},
       {key: 'fcpp', name: 'Folded', get: (d) => d.fcpp, agg: 'w', w: wFpk, color: CC[1], dash: true, avg: true},
@@ -479,23 +505,26 @@ function pageCosting() {
   const {P: PLn, pre: lnPre} = per('line');
   const lv = (d, k) => { const l = d.lines.find((x) => x.n === CLINE); return l ? l[k] : null; };
   if (typeof wkPut === 'function') wkPut('J11', {date: dfmt(cur.date), n: CLINE, a: lv(cur, 'a'), picks: cur.picks});   // Round J
-  s.append(card('Any single expense line', 'Day amount and paise per pick', el('div', {class: 'toolbar'}, el('label', {for: 'clfind', text: 'Line'}), lfind, lsel, lmsg), perBar('line'),
+  s.append(card('Any single expense line', `Day amount and paise per pick${CLINE === 'POWER' ? bTxt() : ''}`, el('div', {class: 'toolbar'}, el('label', {for: 'clfind', text: 'Line'}), lfind, lsel, lmsg), perBar('line'),
     el('div', {class: 'trgrid'}, el('div', {}, el('h4', {class: 'trh', text: cWeekly('line', PLn.length) ? '₹ a day, average of the week' : '₹ a day'}), dayChart('line', PLn, lnPre, {aria: CLINE + ' amount', fmt: (v) => rs(v), onPick}, [{name: CLINE + (cWeekly('line', PLn.length) ? ' (₹, average a day)' : ' (₹)'), get: (d) => lv(d, 'a')}])),
       el('div', {}, el('h4', {class: 'trh', text: 'Paise per pick'}), dayChart('line', PLn, lnPre, {aria: CLINE + ' per pick', fmt: (v) => pn(v, 2), onPick}, [{name: CLINE + ' (paise per pick)', get: (d) => lv(d, 'pp'), agg: 'w', w: wPk}]))),
-    CLINE === 'POWER' && cHasFix() ? el('p', {class: 'note', text: cFixed() ? 'POWER is shown with corrected units. Switch "Power units" at the top to see it as entered.' : 'POWER is shown as entered in the plant\'s file.'}) : null));
+    CLINE === 'POWER' && cHasFix() && !isPlant() ? el('p', {class: 'note', text: bPlant() ? 'POWER is shown as the plant entered it (Plant file). Pick Actual at the top for it less the POWER correction.' : 'POWER is shown on Actual: the plant\'s units less the POWER correction. Pick Plant file at the top to see it as entered.'}) : null));
 
   // ---- 4. power (cost line) and labour, above production
   const {P: PP, pre: pPre} = per('power'), {P: PL, pre: lPre} = per('labour');
+  // Round B1: the day's POWER correction, from the Actual set (a Plant file day carries none of its own)
+  const pfx = !isPlant() && cHasFix() ? ((COST.days || []).find((x) => x.date === cur.date) || {}).pfix || null : null;
   const powPP = (d) => d.power && ok(d.power.amount) && d.picks ? d.power.amount / (d.picks * 1e5) * 100 : null;
   s.append(el('div', {class: 'trgrid'},
-    card('Power', 'POWER line of the costing: units, rate and cost per lakh picks', table(['', 'Today'], [['Units', f0(cur.power.units)], ['Units per lakh picks', pn(cur.power.per_lakh, 0)], ['Rate per unit', '₹ ' + pn(cur.power.rate, 2)], ['Amount', rs(cur.power.amount)], ['Power cost per pick', ok(powPP(cur)) ? pn(powPP(cur), 2) + ' paise' : NA], ['₹ per lakh picks', rs(cur.power.rs_lakh)]], [1]),
+    card('Power', `POWER line of the costing: units, rate and cost per lakh picks${bTxt()}`, table(['', 'Today'], [['Units', f0(cur.power.units)], ['Units per lakh picks', pn(cur.power.per_lakh, 0)], ['Rate per unit', '₹ ' + pn(cur.power.rate, 2)], ['Amount', rs(cur.power.amount)], ['Power cost per pick', ok(powPP(cur)) ? pn(powPP(cur), 2) + ' paise' : NA], ['₹ per lakh picks', rs(cur.power.rs_lakh)]], [1]),
       perBar('power'),
       el('h4', {class: 'trh', text: 'Power cost per pick, paise'}),
       dayChart('power', PP, pPre, {aria: 'Power cost per pick', fmt: (v) => pn(v, 2), onPick}, [{name: 'Power cost per pick (paise)', get: powPP, agg: 'w', w: wPk}]),
       el('h4', {class: 'trh', text: 'Units per lakh picks'}),
       dayChart('power', PP, pPre, {aria: 'Power units per lakh picks', fmt: f0, onPick}, [{name: 'Units per lakh picks', get: (d) => d.power.per_lakh, agg: 'w', w: wPk}]),
-      cur.pfix ? el('p', {class: 'scopenote', text: cFixed() ? `Corrected: ${f0(cur.pfix.units_entered)} units entered, less ${f0(cur.pfix.units)} (${pn(COST.pfix && COST.pfix.paise, 0)} paise × ${pn(cur.picks, 2)} lakh picks ÷ ₹${pn(cur.power.rate, 2)}) = ${f0(cur.power.units)} units.` : `As entered. Corrected units would be ${f0(cur.pfix.units_entered - cur.pfix.units)}, ${f0(cur.pfix.units)} fewer.`}) : null,
-      cur.pfix && cur.pfix.below ? el('p', {class: 'err', text: `The corrected units (${f0(cur.pfix.units_entered - cur.pfix.units)}) are below the compressor's own units for the day: the POWER or Power (Compressor) entry in the plant's file needs a look.`}) : null,
+      pfx ? el('p', {class: 'scopenote', text: !bPlant() ? `Actual: ${f0(pfx.units_entered)} units entered, less ${f0(pfx.units)} (${pn(COST.pfix && COST.pfix.paise, 0)} paise × ${pn(cur.picks, 2)} lakh picks ÷ ₹${pn(cur.power.rate, 2)}) = ${f0(cur.power.units)} units.` : `Plant file: as entered. On Actual the units would be ${f0(pfx.units_entered - pfx.units)}, ${f0(pfx.units)} fewer.`}) : null,
+      pfx && pfx.below ? el('p', {class: 'err', text: `On Actual the units (${f0(pfx.units_entered - pfx.units)}) are below the compressor's own units for the day: the POWER or Power (Compressor) entry in the plant's file needs a look.`}) : null,
+      !isPlant() && cHasFix() && !pfx ? el('p', {class: 'note', text: 'No POWER correction on this day: both bases agree.'}) : null,
       el('p', {class: 'note', text: 'The power line here is the plant\'s whole electricity bill. The compressor share of it is analysed on the CFM and Pressure tabs.'})),
     card('Labour', 'attendance and cost from the costing\'s labour lines', table(['', 'Today'], [['Headcount on salary lines', f0(cur.labour.head)], ['Labour cost', rs(cur.labour.cost)], ['Labour cost per pick', pn(cur.labour.per_pick, 2) + ' paise'], ['Labour cost per running loom', rs(cur.labour.per_loom)]], [1]),
       perBar('labour'),
@@ -516,12 +545,12 @@ function pageCosting() {
   // all widths together by the quality's Style-map name; Today = the day, Month to date = MTD; a name with no match "—", named
   const FQ = typeof fxCostFq === 'function' ? fxCostFq(cur.date, CHGV === 'mtd') : null, fqH = FQ ? [['Folded cost per pick', CHGV === 'mtd' ? 'paise, month to date' : 'paise, the day'], ['Target folded cost', CHGV === 'mtd' ? 'paise, month to date' : 'paise, the day']] : [];
   const fqN = (cols) => FQ ? [...cols, cols.length + 1, cols.length + 2] : cols;
-  const fqNote = () => FQ ? el('p', {class: 'note', text: `Folded cost per pick and Target folded cost (owner only): the Actions view Folded cost per pick by quality's All widths figures${CHGV === 'mtd' ? ', month to date' : ' for the day'}, each quality across both widths by its head group's Style-map name, in paise per A-grade folded pick (not per metre).${FQ.miss.length ? ` No match in the loom data, so "—": ${FQ.miss.join(', ')}. Next: check the name against the Style map on Head-group links.` : ''}`}) : null;
+  const fqNote = () => FQ ? el('p', {class: 'note', text: `Folded cost per pick and Target folded cost (owner only${bLater() ? '; on Actual until the next round' : ''}): the Actions view Folded cost per pick by quality's All widths figures${CHGV === 'mtd' ? ', month to date' : ' for the day'}, each quality across both widths by its head group's Style-map name, in paise per A-grade folded pick (not per metre).${FQ.miss.length ? ` No match in the loom data, so "—": ${FQ.miss.join(', ')}. Next: check the name against the Style map on Head-group links.` : ''}`}) : null;
   if (CHGV === 'mtd') s.append(card('Production by quality head group', `${dfmt(ym + '-01')} – ${dfmt(cur.date)} · month to date · whole plant, both widths together · sorted by metres`, hgSeg,
     table(['Head group', ['Metres', 'day / night'], ['Total', 'm'], ['Share', '% of metres'], ['Picks', 'lakh'], ['Share', '% of picks'], ['Average looms', 'a day'], ['Metres per loom-day', 'm'], ...fqH],
       ag.map((g) => [el('span', {}, el('b', {text: g.hg}), el('div', {class: 'note', text: [...g.names].join(', ')})), `${f0(g.dm)} / ${f0(g.nm)}`, f0(g.tm), pc(g.tm / totM), pn(g.pp, 2), pc(totP ? g.pp / totP : null), pn(g.loomdays / (cur.mtd.days || 1), 1), f0(g.tm / (g.loomdays || 1)), ...(FQ ? FQ.cells(g.hg) : [])]), fqN([1, 2, 3, 4, 5, 6, 7])), fqNote(),
     el('p', {class: 'note', text: `${cur.mtd.days} day${cur.mtd.days === 1 ? '' : 's'} of ${monthName(cur.date)}. Average looms = loom-days ÷ days in the month so far. Converting cost per metre is a day figure: switch to Today to see it.`})));
-  else s.append(card('Production by quality head group', `${dfmt(cur.date)} · whole plant, both widths together · sorted by metres`, hgSeg,
+  else s.append(card('Production by quality head group', `${dfmt(cur.date)} · whole plant, both widths together · sorted by metres${bTxt()}`, hgSeg,
     table(['Head group', ['Metres', 'day / night'], ['Total', 'm'], ['vs previous day', 'm'], ['Picks', 'lakh'], ['Share', '% of picks'], ['Looms', 'running'], ['Metres per loom', 'm'], ['Converting cost', '₹ per metre'], ...fqH],
       hgRows.map((h) => [el('span', {}, el('b', {text: h.hg}), el('div', {class: 'note', text: h.names.join(', ')})), `${f0(h.dm)} / ${f0(h.nm)}`, f0(h.tm), pv[h.hg] ? ((h.tm - pv[h.hg].tm) >= 0 ? '+' : '−') + f0(Math.abs(h.tm - pv[h.hg].tm)) : 'new', pn(h.pp, 2), pc(h.share), pn(h.looms, 2), f0(h.mpl), ok(h.conv) ? pn(h.conv, 2) : '—', ...(FQ ? FQ.cells(h.hg) : [])]), fqN([1, 2, 3, 4, 5, 6, 7, 8])), fqNote(),
     el('p', {class: 'note', text: `Converting cost per metre = the day's cost per pick (${pn(cur.cpp, 2)} paise) × the quality's picks per inch, so it differs between groups only through picks per inch. A quality running on both widths counts once. Click a point on a chart below to open another day.`}),
@@ -567,7 +596,7 @@ function pageCosting() {
 
   // ---- 6. month to date table
   const lines = cur.lines.slice().sort((a, c) => c.mt - a.mt);
-  s.append(card('Month to date', `${cur.mtd.days} day${cur.mtd.days === 1 ? '' : 's'} of ${dfmt(ym + '-01').split(' ')[1]}`,
+  s.append(card('Month to date', `${cur.mtd.days} day${cur.mtd.days === 1 ? '' : 's'} of ${dfmt(ym + '-01').split(' ')[1]}${bTxt()}`,
     table(['Line', ['Today', '₹'], ['Average a day', '₹'], ['Month total', '₹'], ['Per pick, month', 'paise']],
       [...lines.slice(0, 14).map((l) => [l.n, rs(l.a), rs(l.avg), rs(l.mt), pn(l.mt / (cur.mtd.picks * 1e5) * 100, 2)]),
         lines.length > 14 ? ['Other lines (' + (lines.length - 14) + ')', rs(lines.slice(14).reduce((a, l) => a + l.a, 0)), rs(lines.slice(14).reduce((a, l) => a + l.avg, 0)), rs(lines.slice(14).reduce((a, l) => a + l.mt, 0)), pn(lines.slice(14).reduce((a, l) => a + l.mt, 0) / (cur.mtd.picks * 1e5) * 100, 2)] : null,
@@ -597,8 +626,8 @@ function pageCosting() {
 // ---------------------------------------------------------------- Sheet checks (Divyam, 14 Nov 2026; owner only)
 // Three cards for the costing day picked. The database returns app_data 'cost_checks' to the owner only (0015); the plant view
 // and every other role never get here. Arithmetic: calc.js sheetChecks / sheetPlantVs / sheetMtd. Gaps show "—", never 0.
-// Names on screen: "Plant file" (costing.xlsx as uploaded) and "Recomputed" (the corrected costing, COST.days_entered, which the
-// "As entered" view shows). Realisation uses Recomputed + the power fix (COST.days), named in a footnote.
+// Names on screen: "Plant file" (costing.xlsx as uploaded) and "Recomputed" (the app's re-working of it, COST.days_entered, the
+// Plant file basis of the app-wide switch). Actual is Recomputed + the power fix (COST.days), named in a footnote.
 const scRecomputed = () => (cHasFix() ? COST.days_entered : COST.days) || [];
 const rs2 = (x) => !ok(x) ? '—' : (x < 0 ? '−₹' : '₹') + Math.abs(x).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const scFmt = (v, unit) => !ok(v) ? '—' : unit === 'rs' ? rs2(v) : unit === 'picks' ? f0(v) : v.toFixed(3);
@@ -652,14 +681,14 @@ function sheetCheckCards(cur) {
   }
   // (a2) day rules: the expected adjustment in the plant's month totals, and the previous day's double pay line by line
   if (adj || dp) out.push(dayRulesCard(d, adj, dp, R));
-  // (b) plant vs corrected, line by line
+  // (b) plant file vs recomputed, line by line
   const rec = scRecomputed().find((x) => x.date === d) || null;
   const V = day && day.plant ? sheetPlantVs(day.plant, rec, adj) : null;
   if (typeof wkPut === 'function') { const r = V && (V.rows.find((x) => x.state === 'differ') || V.rows.find((x) => x.state !== 'gap'));   // Round J
     wkPut('J19', r ? {what: `${r.line}, ${r.fig}`, file: r.plant, calc: r.corr, exp: r.exp, unit: r.unit, agree: r.state === 'agree'} : null); }
   const xc = !!V && V.rows.some((r) => r.exp === null || (ok(r.exp) && Math.abs(r.exp) >= SC_TOL[r.unit]));
   const fix = COST.pfix && ok(COST.pfix.paise) ? `${pn(COST.pfix.paise, 0)} paise a pick off the POWER line` : 'the POWER correction';
-  out.push(card('Plant vs corrected', `${dfmt(d)} · Plant file = costing.xlsx as uploaded · Recomputed = the corrected costing ("As entered" view)`,
+  out.push(card('Plant file vs recomputed', `${dfmt(d)} · Plant file = costing.xlsx as uploaded · Recomputed = the app's re-working of it, before the POWER correction (the Plant file basis)`,
     !V ? el('p', {class: 'empty', text: `— ${fileNote || `no recomputed costing for ${dfmt(d)}`}.`})
       : el('div', {}, el('div', {class: 'toolbar'}, el('span', {class: 'pill ' + (V.differ ? 'warn' : 'good'), text: V.differ ? `${V.differ} figure${V.differ === 1 ? '' : 's'} differ${xc ? ' beyond the expected part' : ''}` : xc ? 'No difference beyond the expected part' : 'Every figure agrees'}),
           V.expected ? el('span', {class: 'pill info', text: `${V.expected} differ as expected`}) : null,
@@ -1047,9 +1076,8 @@ function powerRuleCard() {
 }
 // ================================================================ Round F (Divyam, 18 Nov 2026): Target cost per pick
 // The Actions tiles (Target cost per pick, Folding shortage) and the "Where the saving is" card. Same day as Actions
-// (D.latest); headline cost per pick As entered (the plant's power units, without the power correction); whole plant, both
+// (D.latest); headline cost per pick on the chosen basis (Round B1: Actual or Plant file, bDays); whole plant, both
 // widths. Never falls back to another day. Arithmetic: targetCost, foldShort, packRate in calc.js.
-const tcDays = () => !COST ? [] : (cHasFix() ? COST.days_entered : COST.days) || [];
 const tcOwner = () => typeof fxIsOwner === 'function' && fxIsOwner();
 const tcNext = () => tcOwner() ? 'see Files per day on Data health' : 'tell the owner';
 const TC_CARD = 'Where the saving is';
@@ -1062,7 +1090,7 @@ function tcPressAt(date) {
   return [...by.values()].map((l) => ({...l, best: pBest(l.width, l.hg)}));
 }
 function tcRun(date) {
-  const days = tcDays(), day = days.find((d) => d.date === date) || null;
+  const days = bDays(), day = days.find((d) => d.date === date) || null;   // Round B1: the chosen basis
   const PL = date === D.latest ? pressLooms() : tcPressAt(date);
   // Round A2 (Divyam, 24 Nov 2026): every loom at its best main pressure (the pressure target is the best), else where it ran
   const floorT = PL.length ? Math.max(...PL.map((l) => ok(l.best) ? Math.min(l.main, l.best) : l.main)) : null;
@@ -1084,7 +1112,7 @@ function tcLooms(date) {
 }
 function tcShort(date) {
   const bq = (COST && COST.bq) || {};
-  return foldShort(tcDays(), bq.reg || [], (bq.days || []).filter((d) => d.reg).map((d) => d.date), date);
+  return foldShort(foldSrc(), bq.reg || [], (bq.days || []).filter((d) => d.reg).map((d) => d.date), date);
 }
 const tcUnavail = (date) => `Unavailable: costing for ${dfmt(date)} not uploaded yet`;
 const tcPp = (x) => !ok(x) ? '—' : (x < 0 ? '−' : x > 0 ? '+' : '') + Math.abs(x).toFixed(Math.abs(x) < 0.1 && x !== 0 ? 3 : 2);
@@ -1108,7 +1136,7 @@ function tcActionTiles(kpi) {
   }
   const t = tc.ok
     ? kpi('Target cost per pick', pn(tc.cpp, 2), 'paise', el('span', {class: 'delta ' + (tc.cpp < tc.c0 ? 'up' : 'flat'), text: `now ${pn(tc.c0, 2)} · ${tcPp(tc.cpp - tc.c0)} paise`}),
-      `As entered · ${tc.cover.full} of ${tc.cover.looms} looms with every target${tcGapText(tc).length ? ' · ' + tcGapText(tc).length + ' part' + (tcGapText(tc).length === 1 ? '' : 's') + ' left out' : ''}`,
+      `${bName() ? bName() + ' · ' : ''}${tc.cover.full} of ${tc.cover.looms} looms with every target${tcGapText(tc).length ? ' · ' + tcGapText(tc).length + ' part' + (tcGapText(tc).length === 1 ? '' : 's') + ' left out' : ''}`,
       el('div', {class: 'note', text: 'Folding, beams and dispatch lag the looms: this assumes they catch up within the month.'}))
     : kpi('Target cost per pick', '—', '', null, `${tcUnavail(date)}. Next: ${tcNext()}.`);
   t.classList.add('tap'); t.setAttribute('role', 'button'); t.setAttribute('tabindex', '0'); t.setAttribute('aria-label', 'Target cost per pick: open Where the saving is');
@@ -1178,7 +1206,7 @@ function tcCard() {
         el('div', {text: `Effect on cost per pick: ${tcPp(o.effect)} paise`}), o.gap ? gapCell(o) : null))), {b: 'ef', d: 'a'})
     : table(heads, [...R.map((o) => [el('div', {}, name(o), o.gap ? gapCell(o) : null), ...(hg ? [o.looms.length] : []), cell(o.cfmRs, rs), cell(o.E, (v) => pn(v / 1e5, 3)), cell(o.dM, f0), sortAs(el('span', {text: tcPp(o.effect)}), o.none ? null : o.effect)]),
       [el('b', {text: 'Total'}), ...(hg ? [R.reduce((a, o) => a + o.looms.length, 0)] : []), rs(tot.cfm), pn(tot.E / 1e5, 3), f0(tot.dM), tcPp(tot.ef)]], hg ? [1, 2, 3, 4, 5] : [1, 2, 3, 4]);
-  return card(TC_CARD, `${dfmt(date)} · headline cost per pick, As entered · whole plant, both widths`,
+  return card(TC_CARD, `${dfmt(date)} · headline cost per pick${bName() ? ', ' + bName() : ''} · whole plant, both widths`,
     steps,
     el('p', {class: 'note', text: `Coverage: ${tc.cover.full} of ${tc.cover.looms} looms that ran have a target CFM, a target RPM and a picks-per-metre figure for their quality on the day's costing; the rest count only the parts they have and are listed below as gaps, never as 0.${left.length ? ' ' + left.join('. ') + '.' : ''}`}),
     el('div', {class: 'toolbar'}, bvSeg('tc')), body,
@@ -1194,7 +1222,7 @@ try { const v = localStorage.getItem('w2-act-fold-period'); if (['7', '14', '30'
 function tcFoldCard() {
   if (!COST) return null;
   const title = ACTV.fold[0], bq = COST.bq || {}, sub = 'whole plant, both widths · 1 − (A-grade folded + B grade + cut piece picks) ÷ production picks';
-  const all = foldDays(tcDays(), bq.reg || [], (bq.days || []).filter((d) => d.reg).map((d) => d.date), D.latest);
+  const all = foldDays(foldSrc(), bq.reg || [], (bq.days || []).filter((d) => d.reg).map((d) => d.date), D.latest);
   if (!all.length) return card(title, sub, el('p', {class: 'empty', text: `No costing day up to ${dfmt(D.latest)} yet. Next: ${tcNext()}.`}));
   const ds = all.map((r) => r.date), inR = TCFPER === 'range' ? new Set(rngDays(ds)) : null, ym = D.latest.slice(0, 7);
   const per = TCFPER === 'mtd' ? all.filter((r) => r.date.slice(0, 7) === ym) : inR ? all.filter((r) => inR.has(r.date)) : all.slice(-(+TCFPER));
