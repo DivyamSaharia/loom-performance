@@ -916,24 +916,42 @@ function drawRealisation0(box, pend) {
   // loom cost not recovered off the week's profit (it is a gap in the daily line)
   // Round A7: a week's profit per folded pick is weighted by its days' A-grade folded picks
   const lcWeek = (L) => { const c = L.reduce((a, d) => a + (d.lc_ld && ok(d.profit_lc_pp) ? d.afold_lc : 0), 0); return c > 0 ? 100 * L.reduce((a, d) => a + (d.lc_ld ? d.profit_lc : d.unrec_only ? -d.unrec : 0), 0) / c : null; };
-  const trend = anyVal ? dayChart('fx', daily, [], {id: 'fx-trend', aria: 'Realisation, profit (loom cost basis) and sale value per folded pick', fmt: f2, marks, onPick: (d) => fxDaysPanel(dfmt(d), `every loom on ${dfmt(d)} · As sold`, rows.filter((r) => r.date === d), true)}, [
-      {key: 'real', name: 'Realisation', get: (d) => d.real_fp, agg: 'w', w: (d) => d.afold, color: CSL.real, avg: false},
-      {key: 'lc', name: 'Profit (loom cost)', get: (d) => d.lc_ld ? d.profit_lc_pp : null, wk: lcWeek, color: CSL.profit, avg: false},
-      {key: 'sale', name: 'Sale value', get: (d) => d.sale_fp, agg: 'w', w: (d) => d.afold, color: CSL.sale, dash: true, avg: false}], ['real', 'lc'])
+  // Round C2a (Divyam, 28 Nov 2026, audit #3): two panels on one date axis. Top: Realisation against Cost per folded pick
+  // (loom cost) (= the loom cost, own B grade and loom cost not recovered of the loom-days with a loom cost, ÷ their A-grade
+  // folded picks; Costing's Realisation against cost per pick line), the gap shaded; Sale value a box, off at the start.
+  // Bottom: Profit (loom cost) per folded pick as bars either side of 0. A week's cost adds its days' rupees like its profit
+  // (lcWeek), so a day with nothing priced puts its loom cost not recovered in that week's cost too.
+  // numbers review (Round C2a): on a day with a loom cost the realisation line is that of the loom-days with a loom cost (the
+  // Realisation tab's tables do the same, Round A7), so the shading equals the profit bar; a day priced but not costed keeps
+  // the realisation of every priced loom-day (no cost line, no shading); a week takes its loom-cost days when it has any
+  const realLc = (d) => ok(d.real_fp_lc) && d.afold_lc > 0 ? d.real_fp_lc : d.real_fp, realW = (d) => ok(d.real_fp_lc) && d.afold_lc > 0 ? d.afold_lc : d.afold;
+  const realWeek = (L) => { const lc = L.filter((d) => ok(d.real_fp_lc) && d.afold_lc > 0), U = lc.length ? lc : L.filter((d) => ok(d.real_fp) && d.afold > 0), W = U.reduce((a, d) => a + realW(d), 0); return W > 0 ? U.reduce((a, d) => a + realLc(d) * realW(d), 0) / W : null; };
+  const lcCostWeek = (L) => { const c = L.reduce((a, d) => a + (d.lc_ld && ok(d.cost_fp_u) ? d.afold_lc : 0), 0); return c > 0 ? 100 * L.reduce((a, d) => a + (d.lc_ld && ok(d.cost_fp_u) ? d.cost_fp_u * d.afold_lc / 100 : d.unrec_only ? d.unrec : 0), 0) / c : null; };
+  const trend = anyVal ? twinDay('fx', daily, [], {id: 'fx-trend', aria: 'Realisation against cost and sale value per folded pick', fmt: f2, marks, shade: ['real', 'cost'], onPick: (d) => fxDaysPanel(dfmt(d), `every loom on ${dfmt(d)} · As sold`, rows.filter((r) => r.date === d), true)}, [
+      {key: 'real', name: 'Realisation', get: realLc, agg: 'w', w: realW, wk: realWeek, color: CSL.real, avg: false},
+      {key: 'cost', name: 'Cost per folded pick (loom cost)', get: (d) => d.lc_ld ? d.cost_fp_u : null, agg: 'w', w: (d) => d.lc_ld && ok(d.cost_fp_u) ? d.afold_lc : null, wk: lcCostWeek, color: CSL.cost, avg: false},
+      {key: 'sale', name: 'Sale value', get: (d) => d.sale_fp, agg: 'w', w: (d) => d.afold, color: CSL.sale, dash: true, avg: false}], ['real', 'cost'],
+      {key: 'lc', name: 'Profit (loom cost)', head: `Profit (loom cost) per folded pick, paise${fxBTxt()}`, aria: 'Profit (loom cost basis) per folded pick by day', get: (d) => d.lc_ld ? d.profit_lc_pp : null, agg: 'w', w: (d) => d.lc_ld && ok(d.profit_lc_pp) ? d.afold_lc : null, wk: lcWeek, color: CSL.profit})
     : el('div', {class: 'empty'}, `Nothing priced in this period${tcov.reasons.length ? ': ' + tcov.reasons[0].reason + ` (${fxPct(tcov.reasons[0].share)} of picks)` : ''}. `, tcov.reasons.length && tcov.reasons[0].go ? el('a', {href: FX_GO[tcov.reasons[0].go][1], text: `Fix on ${FX_GO[tcov.reasons[0].go][0]} ›`}) : null);
   const trendCard = card('Trend', `Paise per A-grade folded pick each day${cWeekly('fx', daily.length) ? ', week by week (weighted by A-grade folded picks)' : ''} · ${fxSTxt(rows.S, true)}${fxBTxt()}`, fxPerBar('trend', redraw, viewSeg('fx', daily.length), fxWk('real', end)), trend,
     marks.length ? el('p', {class: 'note', text: `Short ticks at the top of the chart: days a money approval took effect (${marks.map((m) => dfmt(m.date)).join(', ')}). Point at a tick to read it; point at or tap that day on the chart and its dashed line shows.`}) : null,
-    el('p', {class: 'note', text: 'Point at or tap a day for its figures, then Open this day for its loom-days. Realisation = sale value less yarn. Profit (loom cost), solid = realisation less each loom\'s loom cost, its own B grade and the loom cost not recovered; a day with nothing priced is a gap in the line, and week by week its loom cost not recovered is still taken off. Sale value is dashed.'}));
+    ...notePh('Two panels on one date axis. Top: Realisation (sale value less yarn) against Cost per folded pick (loom cost): each loom\'s loom cost, its own B grade and the loom cost not recovered, ÷ the A-grade folded picks of the loom-days with a loom cost. Green shading: realisation above cost; red: below. Sale value (dashed) is a box above the chart. Bottom: Profit (loom cost) per folded pick as bars, green above 0, red below. A day with nothing priced breaks the lines and has no bar ("—" in the details bar); week by week its loom cost not recovered is still taken off. On a day with a loom cost, realisation is that of the loom-days with a loom cost (as in the tables below), so the shading is the profit bar; a day priced but not costed yet shows realisation alone. Dotted lines: each line\'s period average. Point at or tap a day for its figures, then Open this day for its loom-days. Next: for a day with no bar, see Coverage on this tab.',
+      'Top: realisation against cost per folded pick, the gap shaded (green above, red below). Bottom: profit bars. Dotted: period averages. A day with nothing priced has no bar. Tap a day, then Open this day. Next: for a day with no bar, see Coverage on this tab.'));
   // 12 Nov 2026 (Divyam): the ranking card is gone; By loom / By head group (with its Profit / Realisation / per pick switch)
   // sits right after Trend.
   // ---- per-pick waterfall for the plant (each row's panel has its own)
   const wfRows = rowsOf('wf'), wcov = fcCoverage(wfRows), Wf = fcWaterfall(wfRows, 'lc');   // Round A3: the loom cost basis only
   if (typeof wkPut === 'function') wkPut('K9', Wf ? {basis: 'lc', sale: Wf.sale, yarn: Wf.yarn, conv: Wf.conv, bgrade: Wf.bgrade, unrec: Wf.unrec, picks: Wf.picks} : null);   // Round J
-  const wfWhy = Object.keys(fcSum(wfRows).lc_gaps)[0];
+  const wfWhy = Object.keys(fcSum(wfRows).lc_gaps)[0], WD = Wf ? fcWfDraw(Wf.steps, 2) : null;
   const wfCard = card('Per folded pick: sale value to profit', Wf ? `paise per A-grade folded pick over the ${Wf.loomdays} costed loom-days · As sold · loom cost basis${fxBTxt()} · ${fxSTxt(wfRows.S, true)}` : 'paise per A-grade folded pick', fxPerBar('wf', redraw, null, fxWk('lc', end)),
-    Wf ? waterfall(Wf.steps, 'Sale value to profit per folded pick, whole plant', null, {flip: true, dec: 2}) : el('p', {class: 'empty', text: !wcov.priced ? 'Nothing priced in this period. Next: see Coverage on this tab.' : !wcov.costed ? 'Nothing costed yet in this period: the waterfall needs a costing day. Next: see Files per day on Data health.'
+    // Round C2a (Divyam, 28 Nov 2026, audit #17): steps that round to 0.00 left out and named; costs grey, the profit bar green
+    // or red by its sign; then a second bridge from Realisation to Profit on its own axis, so the profit can be read
+    WD ? waterfall(WD.steps, 'Sale value to profit per folded pick, whole plant', null, {grey: true, dec: 2}) : el('p', {class: 'empty', text: !wcov.priced ? 'Nothing priced in this period. Next: see Coverage on this tab.' : !wcov.costed ? 'Nothing costed yet in this period: the waterfall needs a costing day. Next: see Files per day on Data health.'
       : `No loom cost profit in this period: ${wfWhy || 'not worked out'}. Next: see Files per day on Data health.`}),
-    Wf ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2);opacity:.75'}), 'sale value and profit'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), 'what each step takes')) : null,
+    WD ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2);opacity:.75'}), 'sale value and realisation'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted)'}), 'what each cost takes'),
+      el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--good)'}), el('span', {class: 'sq', style: 'background:var(--bad)'}), 'profit, or a loss')) : null,
+    WD && WD.zero.length ? el('p', {class: 'note', text: `Left out of the chart, 0.00 paise per folded pick in this period: ${WD.zero.join(', ')}. Next: nothing to do; their rupees are in the line under the chart.`}) : null,
+    WD && WD.tail ? el('div', {}, el('h4', {class: 'trh', text: `Realisation to profit, zoomed${fxBTxt()}`}), waterfall(WD.tail, 'Realisation to profit per folded pick, whole plant', null, {grey: true, dec: 2})) : null,
     Wf ? el('p', {class: 'note', text: `Every step ÷ ${fxLakh(Wf.picks)} lakh A-grade folded picks${Wf.nofold_ld ? ` (${Wf.nofold_ld} loom-day${Wf.nofold_ld === 1 ? '' : 's'} with no A-grade folded picks yet left out: no costing or folding figures for the day. Next: ${tcNext()})` : ''}. Sale ${fxMoney(Wf.sale)} − standard yarn ${fxMoney(Wf.yarn)} = realisation ${fxMoney(Wf.real)}; − loom cost ${fxMoney(Wf.conv)} − the looms' own B grade ${fxMoney(Wf.bgrade)} − the loom cost not recovered ${fxMoney(Wf.unrec)} (${Wf.unrec_ld} loom-day${Wf.unrec_ld === 1 ? '' : 's'} not priced) = profit ${fxMoney(Wf.profit)}, loom cost basis. Costed loom-days only, so the steps add up exactly. Tap any row below for the same chart for that loom or head group.`}) : null);
   box.className = 'fxpage';   // 18 Nov 2026: cards keep the page's 16 px gap
   box.replaceChildren(
@@ -954,10 +972,27 @@ function drawRealisation0(box, pend) {
     fxByCard(box, fabPending, rowsOf('by'), RG.by, grow, colsOf, nums, redraw),
     wfCard,
     card('By width', 'Click a row for its loom-days. Profit on the loom cost basis' + fxBOn() + '; a width\'s profit includes the loom cost not recovered of its looms not priced, so its realisation − folded cost − that loom cost ÷ its A-grade folded picks = its profit per folded pick.', fxPerBar('width', redraw, null, fxWk('real', end)),
+      ...fxWidthBars(byW, fcSum(widthRows, true)),
       table(['Width', ...colsOf().slice(1)], byW.map((g) => grow(g.key, g, false, g.key, RG.width.label, 'lc', true)), nums)));   // Round A3 (ask 8): no Cost charged card; its check is the line under Coverage
   collapseTables(box);
 }
 
+// Round C2a (Divyam, 28 Nov 2026, audit #44): By width as split bars above its table, the form of Realisation per pick by quality:
+// each width's (and both widths') realisation per folded pick of the loom-days with a loom cost, against its cost per folded pick
+// including the loom cost not recovered (cost_fp_u, the Total row's cost there): grey covered, green profit, red not covered; the
+// difference is its profit per folded pick (profit_fp). A width with no loom cost profit is named, not drawn.
+function fxWidthBars(byW, all) {
+  const rows = [...byW.map((g) => ({lab: g.key, t: g})), {lab: 'Both widths', t: all}];
+  const fig = (t) => ok(t.real_fp_lc) && ok(t.cost_fp_u) ? {real: t.real_fp_lc, cost: t.cost_fp_u, profit: t.profit_fp} : null;
+  const R = rows.filter((r) => fig(r.t)), out = rows.filter((r) => !fig(r.t)).map((r) => r.lab);
+  const sg2 = (v) => `${v >= 0 ? '+' : '−'}${fxPaise(Math.abs(v))}`;
+  return [R.length ? signedBars(R.map((r) => { const f = fig(r.t), d = fcRealLessFold(f.real, f.cost);
+    return {label: r.lab, v: f.real, split: {cost: f.cost, ...d}, text: `${fxPaise(f.real)} · ${sg2(f.profit)}`,
+      title: `${r.lab}: realisation ${fxPaise(f.real)} against cost ${fxPaise(f.cost)} paise per folded pick (incl. the loom cost not recovered) = profit ${sg2(f.profit)}${fxBOn()}`}; }),
+    {aria: 'Realisation against cost per folded pick by width', axis: 'paise per A-grade folded pick', fmt: fxPaise, labelW: 120, wideText: true, nosort: true}) : null,
+    R.length ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2);opacity:.55'}), 'realisation covering the cost'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--good)'}), 'profit'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), 'cost not covered'), el('span', {class: 'lg', text: 'beside each bar: realisation · profit, paise per folded pick'})) : null,
+    out.length ? el('p', {class: 'note', text: `Not drawn, no loom cost profit in this period: ${out.join(', ')}. Next: see Coverage on this tab.`}) : null];
+}
 // Round W (Divyam, 20 Nov 2026): the Break-even realisation tile, owner only (the Realisation tab is). The day on the date
 // chip, as the tiles beside it: the same break-even as the Actions tile (fxBreakEven; Round A1), set against the Realisation
 // tile's ₹ per loom per day. No costing day, or no loom running, is a gap with its next step, never ₹0.
@@ -1805,17 +1840,19 @@ function fxCostChart(P, pre) {
   const bq = (COST.bq && COST.bq.days) || [], bqOf = new Map(bq.map((x) => [x.date, x]));
   const bp = (d) => { const x = bqOf.get(d.date); return x && ok(x.bgrade_loss) && x.afold ? 100 * x.bgrade_loss / x.afold : null; };
   const body = !A ? el('p', {class: 'note', text: 'Loading the fabric masters…'}) : !P.some((d) => { const t = day(d); return t && t.priced; }) ? el('div', {class: 'empty', text: 'No priced loom-day in this period: see Coverage on the Realisation tab.'})
-    : dayChart('cpp', P, pre, {id: 'fx-cost', aria: 'Realisation, cost and profit per folded pick by day', fmt: (v) => pn(v, 2), onPick: pickDay}, [
+    // Round C2a (Divyam, 28 Nov 2026, audit #3): two panels on one date axis (twinDay): realisation against cost per folded pick
+    // with the gap shaded (B grade a box, off at the start), then profit per folded pick as bars either side of 0
+    : twinDay('cpp', P, pre, {id: 'fx-cost', aria: 'Realisation against cost per folded pick by day', fmt: (v) => pn(v, 2), onPick: pickDay, shade: ['real', 'cpp']}, [
       {key: 'real', name: 'Realisation per folded pick', get: fl('real_fp_lc'), agg: 'w', w: fw, wk: wkOf('real_fp_lc'), color: CSL.real, avg: false},
       {key: 'cpp', name: 'Cost per folded pick (loom cost)', get: fl('cost_fp_u'), agg: 'w', w: fw, wk: wkOf('cost_fp_u'), color: CSL.cost, avg: false},
-      {key: 'bg', name: 'B grade loss per good pick', get: bp, agg: 'w', w: (d) => d.afold, color: CSL.bgrade, dash: true, avg: false},
-      {key: 'profit', name: 'Profit per folded pick', get: fl('profit_fp'), agg: 'w', w: fw,
-        wk: wkOf('profit_fp'), color: CSL.profit, dash: true, avg: false}], ['real', 'cpp', 'profit']);   // a week or rolling 7 days: the days' rows added up, so a day with nothing priced still takes off its loom cost (risk C)
+      {key: 'bg', name: 'B grade loss per good pick', get: bp, agg: 'w', w: (d) => d.afold, color: CSL.bgrade, dash: true, avg: false}], ['real', 'cpp'],
+      {key: 'profit', name: 'Profit per folded pick', head: `Profit per folded pick, paise${fxBTxt()}`, aria: 'Profit per folded pick by day', get: fl('profit_fp'), agg: 'w', w: fw,
+        wk: wkOf('profit_fp'), color: CSL.profit});   // a week or rolling 7 days: the days' rows added up, so a day with nothing priced still takes off its loom cost (risk C)
   const last = A ? [...P].reverse().map(day).find((t) => t && t.priced) : null;
   if (typeof wkPut === 'function') { const d0 = A ? [...P].reverse().find((d) => { const t = day(d); return t && t.priced; }) : null;   // Round J
     const t0 = d0 ? day(d0) : null; wkPut('J22', t0 && t0.lc_ld && ok(t0.profit_fp) ? {date: dfmt(d0.date), real: t0.real_fp_lc * t0.afold_lc / 100, cost: t0.cost_fp_u * t0.afold_lc / 100, picks: t0.afold_lc} : null); }   // Round A7
   return card('Realisation against cost per pick', `paise per A-grade folded pick by day · the period of the Cost per pick chart above · realisation As sold, from the Realisation tab${AR ? ' · ' + fxSTxt(AR.S, true) : ''}${fxBTxt()}`, body,
-    ...notePh(`Every line but B grade is ÷ the A-grade folded picks (picks × (1 − its quality's own folding %) − B grade picks − cut piece picks) of the priced loom-days with a loom cost profit. Realisation = sale value at prevailing rate less standard yarn cost, on folded metres. Cost per folded pick (loom cost) = their loom cost and own B grade plus the loom cost not recovered (looms that ran but are not priced), so realisation − cost = profit per folded pick, the Realisation tab's Profit (loom cost basis) per folded pick. The day's headline cost per pick is on the Cost per pick chart above (it is ÷ every production pick). The B grade line is the plant's B grade loss per A-grade folded pick, already in the Quality loss table.${last ? ` Latest priced day covers ${fxPct(last.coverage)} of its picks.` : ''}`, `Every line but B grade is ÷ the A-grade folded picks of the priced loom-days with a loom cost profit, each quality at its own folding %, so realisation − cost = profit per folded pick. More in the Guide, under Costing.`));
+    ...notePh(`Every line but B grade is ÷ the A-grade folded picks (picks × (1 − its quality's own folding %) − B grade picks − cut piece picks) of the priced loom-days with a loom cost profit. Realisation = sale value at prevailing rate less standard yarn cost, on folded metres. Cost per folded pick (loom cost) = their loom cost and own B grade plus the loom cost not recovered (looms that ran but are not priced), so realisation − cost = profit per folded pick, the Realisation tab's Profit (loom cost basis) per folded pick. The day's headline cost per pick is on the Cost per pick chart above (it is ÷ every production pick). The B grade line (a box above the chart, off at the start) is the plant's B grade loss per A-grade folded pick, already in the Quality loss table. Two panels on one date axis: the top's green shading is realisation above cost, red below; the bars under it are profit per folded pick, green above 0, red below; a day with nothing priced breaks the lines and has no bar ("—" in the details bar). Dotted lines: each line's period average.${last ? ` Latest priced day covers ${fxPct(last.coverage)} of its picks.` : ''}`, `Top: realisation against cost per folded pick, the gap shaded (green above, red below). Bottom: profit per folded pick as bars. Dotted: period averages. Realisation − cost = profit. More in the Guide, under Costing.`));
 }
 function fxStockRows(st, cur, MD) {
   if (!fxOn()) return [];

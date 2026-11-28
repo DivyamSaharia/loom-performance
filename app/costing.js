@@ -132,24 +132,41 @@ function aggDays(L, s, rolling) {
 // A Costing line chart built from day records. g: the chart group (period and Daily/Weekly); P: the days in the period;
 // pre: earlier days, so a 7-day average is a full 7 days from the first point. specs: {key, name, get(d), agg, w, wk, color,
 // dash, off, avg (offer a 7-day average; default on for a one-line chart)}. defaults: boxes on when the page opens.
+// Round C2a (audit #29): each spec's period average over every day of P (calc.js perAvg; s.per: false for a running line), the
+// same on Daily and Weekly. o.extra: specs worked the same way, read in the details bar only (a panel drawn under this one).
 function dayChart(g, P, pre, o, specs, defaults) {
   const wk = cWeekly(g, P.length), long = P.length > LONGP;
-  specs = specs.map((s, i) => ({...s, key: s.key || 's' + i, color: s.color || ccAt(i)}));
+  specs = specs.map((s, i) => ({...s, key: s.key || 's' + i, color: s.color || ccAt(i), per: perAvg(P, s)}));
+  const exOf = (vals) => (o.extra || []).map((x) => ({...x, vals: vals(x)}));
   if (wk) {
     const Bk = weekBuckets(P);
+    o = {...o, extra: exOf((x) => Bk.map((L) => aggDays(L, x)))};
     const tips = Bk.map((L) => `${shortRange(L[0].date, L[L.length - 1].date)}${L.length < 7 ? ` (${L.length} day${L.length === 1 ? '' : 's'})` : ''}`);
     return lineChart({...o, id: o.id ? o.id + ':w' : undefined, dates: Bk.map((L) => L[0].date), xlabels: Bk.map((L) => shortRange(L[0].date, L[L.length - 1].date)), tips,
       pickDates: Bk.map((L) => L[L.length - 1].date), defaults, pan: PAN, px: true, series: specs.map((s) => ({...s, vals: Bk.map((L) => aggDays(L, s))}))});
   }
+  o = {...o, extra: exOf((x) => P.map((d) => x.get(d)))};
   const series = specs.map((s) => ({...s, vals: P.map((d) => s.get(d))}));
   if (long) {
     const all = [...(pre || []), ...P], off = (pre || []).length;
     for (const s of specs) if (s.avg || (s.avg !== false && specs.length === 1)) {
-      series.push({key: s.key + '-7', avgOf: s.key, name: specs.length === 1 ? '7-day average' : `${s.name}, 7-day average`, color: s.color,
+      series.push({key: s.key + '-7', avgOf: s.key, per: null, name: specs.length === 1 ? '7-day average' : `${s.name}, 7-day average`, color: s.color,
         vals: P.map((d, i) => aggDays(all.slice(Math.max(0, off + i - 6), off + i + 1), s, true))});
     }
   }
   return lineChart({...o, dates: P.map((d) => d.date), defaults, pan: PAN, series});
+}
+// Round C2a (Divyam, 28 Nov 2026, audit #3): two panels on one date axis. Top: specs as lines, the axis fitted to the lines
+// shown (o.fit), a day with no figure a break in each line, the gap between the two lines o.shade names shaded green where the
+// first is above, red where below. Bottom: one spec (bot) as bars either side of 0, green at or above, red below, on its own
+// axis from 0 and its own period average. The two scroll together; the top's details bar reads the bottom's figure too ("—" on
+// a day with none). Both on the same period and Daily / Weekly choice (g).
+function twinDay(g, P, pre, o, specs, defaults, bot) {
+  const sync = 'tw:' + o.id, top = dayChart(g, P, pre, {...o, fit: true, breaks: true, sync, padL: 26, padX: 16, extra: [bot]}, specs, defaults);
+  const tid = cWeekly(g, P.length) ? o.id + ':w' : o.id, pavg = !TOGS[tid] || TOGS[tid].has(PAVG);
+  const low = dayChart(g, P, pre, {...o, id: o.id + '-b', aria: bot.aria || bot.name, plain: true, zero: true, fit: false, breaks: false, shade: null, marks: null,
+    sync, padL: 26, padX: 16, barPad: true, nobar: true, noread: true, pavg, h: 160}, [{...bot, bars: true, avg: false}]);
+  return el('div', {class: 'twin'}, top, el('h4', {class: 'trh twinh', text: bot.head || bot.name}), low);
 }
 // The days just before a period (for 7-day averages), from the same day list.
 const preOf = (L, P) => { if (!P.length) return []; const i = L.findIndex((d) => d.date === P[0].date); return i > 0 ? L.slice(Math.max(0, i - 6), i) : []; };
@@ -318,7 +335,15 @@ function bgradeSection(cur) {
   const hgR = Object.values(byHg).filter((g) => g.m > 0).map((g) => ({...g, pct: g.prod ? 100 * g.m / g.prod : null})).sort((a, c) => (c.pct ?? -1) - (a.pct ?? -1) || c.m - a.m);
   const totB = E.reduce((a, e) => a + e.m, 0);
   if (typeof wkPut === 'function') wkPut('J18', hgR[0] && hgR[0].prod ? {hg: hgR[0].hg, m: hgR[0].m, prod: hgR[0].prod} : null);   // Round J
+  // Round C2a (Divyam, 28 Nov 2026, audit #40): ranked bars of the B grade share above the table, the rupee impact beside each
+  // (calc.js bgHgBars); a head group with no produced metres on register days has no share: named, not drawn
+  const BGB = bgHgBars(hgR);
   out.append(card('B grade by head group', `${span} · ranked by B grade as a share of the head group's produced metres`,
+    BGB.bars.length ? hbars(BGB.bars.map((g) => ({label: g.hg, v: g.pct, rs: g.rs, color: CSL.bgrade, onClick: () => goBgLoom(g.hg),
+      text: `${g.pct.toFixed(2)}% · ${ok(g.rs) ? rs(g.rs) : '₹ —'}`, title: `${g.hg}: ${g.pct.toFixed(2)}% of its produced metres · ${f0(g.m)} m B grade · rupee impact ${ok(g.rs) ? rs(g.rs) : '— (no B grade rate for it in the plant\'s B.LOSS table)'}${g.miss ? ` (${g.miss} entr${g.miss === 1 ? 'y' : 'ies'} unvalued)` : ''}. Tap for its looms.`})),
+      {aria: 'B grade share by head group', axis: 'B grade, % of produced metres', fmt: (v) => v.toFixed(2) + '%', labelW: 150, wideText: true, nameLabel: 'Head group', sortLabel: 'B grade share', sortId: 'cost-bghg',
+        sortBases: [{v: 'rs', label: 'Rupee impact', get: (r) => ok(r.rs) ? r.rs : null}]}) : null,
+    BGB.out.length ? el('p', {class: 'note', text: `Not drawn, no produced metres on the register days: ${BGB.out.join(', ')}. Next: check the head group in Production by quality head group.`}) : null,
     hgR.length ? table(['#', 'Head group', ['B grade', 'm'], ['Rupee impact', '₹ B grade loss'], ['Produced', 'm'], ['B grade share', '% of produced'], ['Share of all B grade', '%'], ['Entries', 'looms']],
       hgR.map((g, i) => [String(i + 1), bgHgBtn(g.hg), f0(g.m), rsOf(g.rs, g.miss), g.prod ? f0(g.prod) : NA, ok(g.pct) ? g.pct.toFixed(2) + '%' : NA, totB ? (100 * g.m / totB).toFixed(1) + '%' : NA, `${g.n} · ${g.looms.size}`]), [2, 3, 4, 5, 6, 7])
       : el('p', {class: 'empty', text: regDays.length ? 'No B grade in this period.' : `${NA}: no B-grade register for this period.`}),
@@ -447,18 +472,25 @@ function pageCosting() {
     // folded
     const fb = b.folded;
     if (fb && typeof wkPut === 'function') wkPut('J8', {prev: fb.prev, folding: fb.folding, opex: fb.opex, bgrade: fb.bgrade, cut: fb.cut, prevDate: dfmt(b.prev_date), date: dfmt(cur.date)});   // Round J
+    // Round C2a (Divyam, 28 Nov 2026, audit #41): the same steps as a bridge above the table (a cost going up red, down green);
+    // a step with no figure keeps its place with "—"
+    const FB = fb ? foldBridge(fb, dfmt(b.prev_date), dfmt(cur.date)) : null;
     if (fb) s.append(card('Folded cost per pick', `Cost of A-grade folded picks: OPEX, net B grade and cut-piece loss, over picks folded${bTxt()}`,
+      FB ? waterfall(FB, 'Folded cost per pick, step by step from the previous costing day', null, {dec: 2}) : null,
       el('div', {class: 'nosort'}, table(['Step', ['Effect', 'paise per pick']], [[dfmt(b.prev_date), pn(fb.prev, 2)], ['Picks folded (timing of folding)', sg(fb.folding)], ['OPEX', sg(fb.opex)], ['Net B grade', ok(fb.bgrade) ? sg(fb.bgrade) : el('span', {class: 'note', text: 'bgrade' in fb ? '— the costing file has no B grade loss or revenue on one of the two days, so this card leaves it out. Next: ' + (isAdmin() ? 'see Files per day on Data health' : 'tell the owner') : '— until the next daily run (it runs every hour, 10:40 to 16:40 IST)'})], ['Cut-piece loss', sg(fb.cut)], [dfmt(cur.date), el('b', {text: pn(fb.now, 2)})]], [1])),   // a bridge from one day to the next: its steps are not a list to sort
       el('p', {class: 'note', text: `${f0(fb.folded_m)} m were folded against ${f0(fb.produced_m)} m produced, so folded cost per pick can move the other way from cost per pick on a day when folding runs ahead of or behind production.`})));
   }
 
   // ---- 2. fixed against variable
-  const byT = {};
-  for (const l of cur.lines) { const o = byT[l.t] = byT[l.t] || {t: l.t, a: 0, lines: []}; o.a += l.a; o.lines.push(l); }
+  // Round C2a (Divyam, 28 Nov 2026, audit #30): one segmented bar of the cost types above the table (calc.js costTypeSplit, the
+  // table's own figures): each part its paise per pick and share of the day's cost
+  const CTS = costTypeSplit(cur.lines, cur.total, cur.picks), ctSum = CTS.reduce((a, o) => a + (ok(o.pp) ? o.pp : 0), 0);
   const spikes = cur.lines.filter((l) => l.spike), newL = cur.lines.filter((l) => l.new);
   s.append(card('Fixed against variable cost', `${dfmt(cur.date)} · each line is tagged once${bTxt()}`,
+    segBar(CTS.map((o) => ({label: COST.types[o.t] || o.t, v: o.pp, color: CT_COLS[o.t] || 'var(--muted)', text: `${pn(o.pp, 2)} paise · ${pc(o.share)}`})),
+      {aria: 'The day\'s cost per pick split by cost type', total: `${pn(ctSum, 2)} paise a pick before the cut piece loss`, empty: 'No expense line on this day. Next: see Files per day on Data health.'}),
     table(['Type', ['Amount', '₹'], ['Share', '% of cost'], ['Per pick', 'paise'], 'Largest lines'],
-      ['fixed', 'attendance', 'output', 'lumpy'].filter((t) => byT[t]).map((t) => { const o = byT[t]; return [COST.types[t], rs(o.a), pc(o.a / cur.total), pn(o.a / (cur.picks * 1e5) * 100, 2), o.lines.slice(0, 3).map((l) => `${l.n} ${rs(l.a)}`).join(' · ')]; }), [1, 2, 3]),
+      CTS.map((o) => [COST.types[o.t], rs(o.a), pc(o.share), pn(o.pp, 2), o.lines.slice(0, 3).map((l) => `${l.n} ${rs(l.a)}`).join(' · ')]), [1, 2, 3]),
     el('p', {class: 'note', text: 'Fixed lines move cost per pick only through volume, so this separates "we spent more" from "we made less". Lumpy lines are a bill on some days and nothing on others.'}),
     spikes.length ? el('p', {class: 'scopenote', text: `One-off day: ${spikes.map((l) => `${l.n} ${rs(l.a)} against a ${rs(l.avg)} daily average`).join('; ')}. Read a jump in these lines as timing, not a trend. With lumpy lines spread over the month, cost per pick is ${pn(cur.cpp_smooth, 2)} paise against ${pn(cur.cpp, 2)}.`}) : el('p', {class: 'note', text: `With lumpy lines spread over the month, cost per pick is ${pn(cur.cpp_smooth, 2)} paise against ${pn(cur.cpp, 2)} as booked.`}),
     newL.length ? el('p', {class: 'scopenote', text: `New expense line${newL.length === 1 ? '' : 's'} today: ${newL.map((l) => l.n).join(', ')}. Shown as lumpy until it is tagged.`}) : null));
@@ -476,8 +508,8 @@ function pageCosting() {
     dayChart('cpp', M, mPre, {id: 'cpp', w: Math.round(Math.max(340, Math.min(1000, (document.documentElement.clientWidth || 1000) - (document.documentElement.clientWidth >= 1024 ? 300 : 64)))), h: (document.documentElement.clientWidth || 1000) < 700 ? 260 : 280, aria: 'Cost per pick', fmt: (v) => pn(v, 1), onPick}, [
       {key: 'cpp', name: 'Cost per pick', get: (d) => d.cpp, agg: 'w', w: wPk, color: CSL.cpp, avg: true},
       {key: 'fcpp', name: 'Folded', get: (d) => d.fcpp, agg: 'w', w: wFpk, color: CSL.fcpp, dash: true, avg: true},
-      {key: 'mtd', name: 'Month-to-date cost per pick', get: (d) => d.mtd.cpp, agg: 'last', color: 'var(--muted)', dash: true, avg: false},
-      {key: 'mtdf', name: 'Month-to-date folded', get: (d) => d.mtd.fcpp, agg: 'last', color: CSL.mtdf, dash: true, avg: false},
+      {key: 'mtd', name: 'Month-to-date cost per pick', get: (d) => d.mtd.cpp, agg: 'last', color: 'var(--muted)', dash: true, avg: false, per: false},
+      {key: 'mtdf', name: 'Month-to-date folded', get: (d) => d.mtd.fcpp, agg: 'last', color: CSL.mtdf, dash: true, avg: false, per: false},
       {key: 'ly', name: 'Same day last month', get: (d) => d.ly ? d.ly.cpp : null, agg: 'w', w: (d) => d.ly ? d.ly.picks : null, color: CSL.ly, off: lyOff, avg: false}], ['cpp', 'fcpp'])));
   if (typeof fxCostChart === 'function') { const fc = fxCostChart(M, mPre); if (fc) s.append(fc); }   // R2: realisation against cost per pick (owner, analysis on)
   s.append(costTypeCard());
@@ -549,11 +581,23 @@ function pageCosting() {
   const FQ = typeof fxCostFq === 'function' ? fxCostFq(cur.date, CHGV === 'mtd') : null, fqH = FQ ? [['Folded cost per pick', CHGV === 'mtd' ? 'paise, month to date' : 'paise, the day'], ['Target folded cost', CHGV === 'mtd' ? 'paise, month to date' : 'paise, the day']] : [];
   const fqN = (cols) => FQ ? [...cols, cols.length + 1, cols.length + 2] : cols;
   const fqNote = () => FQ ? el('p', {class: 'note', text: `Folded cost per pick and Target folded cost (owner only): the Actions view Folded cost per pick by quality's All widths figures${CHGV === 'mtd' ? ', month to date' : ' for the day'}, each quality across both widths by its head group's Style-map name, in paise per A-grade folded pick (not per metre).${FQ.miss.length ? ` No match in the loom data, so "—": ${FQ.miss.join(', ')}. Next: check the name against the Style map on Head-group links.` : ''}`}) : null;
-  if (CHGV === 'mtd') s.append(card('Production by quality head group', `${dfmt(ym + '-01')} – ${dfmt(cur.date)} · month to date · whole plant, both widths together · sorted by metres`, hgSeg,
+  // Round C2a (Divyam, 28 Nov 2026, audit #31): ranked bars of metres above the table, day and night in two shades, each with
+  // its share of all metres (calc.js prodBars, the table's figures). No money: the owner columns stay in the table.
+  const prodChart = (R) => {
+    const B = prodBars(R); if (!B.length) return null;
+    const dn = (r) => ok(r.dm) && ok(r.nm) && Math.abs(r.dm + r.nm - r.tm) < 1;
+    return el('div', {}, hbars(B.map((r) => ({label: r.hg, v: r.tm, dm: r.dm, nm: r.nm, segs: dn(r) ? [{name: 'Day', v: r.dm, color: 'var(--bar)'}, {name: 'Night', v: r.nm, color: 'var(--bar)', op: 0.5}] : null,
+      text: `${f0(r.tm)} m · ${pc(r.share)}`, title: `${r.hg}: ${f0(r.tm)} m${dn(r) ? ` (day ${f0(r.dm)}, night ${f0(r.nm)})` : ''} · ${pc(r.share)} of all metres`})),
+      {aria: 'Metres by quality head group, day and night', axis: 'metres', fmt: f0, labelW: 150, wideText: true, nameLabel: 'Head group', sortLabel: 'Metres', sortId: 'cost-prodhg',
+        sortBases: [{v: 'day', label: 'Day metres', get: (r) => r.dm}, {v: 'night', label: 'Night metres', get: (r) => r.nm}]}),
+      B.some((r) => !dn(r)) ? el('p', {class: 'note', text: `One colour, no day and night split in the file: ${B.filter((r) => !dn(r)).map((r) => r.hg).join(', ')}. Next: the metres are in the table.`}) : null,
+      el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar)'}), 'Day'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar);opacity:.5'}), 'Night'), el('span', {class: 'lg', text: 'beside each bar: metres · share of all metres'})));
+  };
+  if (CHGV === 'mtd') s.append(card('Production by quality head group', `${dfmt(ym + '-01')} – ${dfmt(cur.date)} · month to date · whole plant, both widths together · sorted by metres`, hgSeg, prodChart(ag),
     table(['Head group', ['Metres', 'day / night'], ['Total', 'm'], ['Share', '% of metres'], ['Picks', 'lakh'], ['Share', '% of picks'], ['Average looms', 'a day'], ['Metres per loom-day', 'm'], ...fqH],
       ag.map((g) => [el('span', {}, el('b', {text: g.hg}), el('div', {class: 'note', text: [...g.names].join(', ')})), `${f0(g.dm)} / ${f0(g.nm)}`, f0(g.tm), pc(g.tm / totM), pn(g.pp, 2), pc(totP ? g.pp / totP : null), pn(g.loomdays / (cur.mtd.days || 1), 1), f0(g.tm / (g.loomdays || 1)), ...(FQ ? FQ.cells(g.hg) : [])]), fqN([1, 2, 3, 4, 5, 6, 7])), fqNote(),
     el('p', {class: 'note', text: `${cur.mtd.days} day${cur.mtd.days === 1 ? '' : 's'} of ${monthName(cur.date)}. Average looms = loom-days ÷ days in the month so far. Converting cost per metre is a day figure: switch to Today to see it.`})));
-  else s.append(card('Production by quality head group', `${dfmt(cur.date)} · whole plant, both widths together · sorted by metres${bTxt()}`, hgSeg,
+  else s.append(card('Production by quality head group', `${dfmt(cur.date)} · whole plant, both widths together · sorted by metres${bTxt()}`, hgSeg, prodChart(hgRows),
     table(['Head group', ['Metres', 'day / night'], ['Total', 'm'], ['vs previous day', 'm'], ['Picks', 'lakh'], ['Share', '% of picks'], ['Looms', 'running'], ['Metres per loom', 'm'], ['Converting cost', '₹ per metre'], ...fqH],
       hgRows.map((h) => [el('span', {}, el('b', {text: h.hg}), el('div', {class: 'note', text: h.names.join(', ')})), `${f0(h.dm)} / ${f0(h.nm)}`, f0(h.tm), pv[h.hg] ? ((h.tm - pv[h.hg].tm) >= 0 ? '+' : '−') + f0(Math.abs(h.tm - pv[h.hg].tm)) : 'new', pn(h.pp, 2), pc(h.share), pn(h.looms, 2), f0(h.mpl), ok(h.conv) ? pn(h.conv, 2) : '—', ...(FQ ? FQ.cells(h.hg) : [])]), fqN([1, 2, 3, 4, 5, 6, 7, 8])), fqNote(),
     el('p', {class: 'note', text: `Converting cost per metre = the day's cost per pick (${pn(cur.cpp, 2)} paise) × the quality's picks per inch, so it differs between groups only through picks per inch. A quality running on both widths counts once. Click a point on a chart below to open another day.`}),
@@ -592,14 +636,20 @@ function pageCosting() {
       el('div', {}, el('h4', {class: 'trh', text: sWk ? 'Produced and dispatched, m, average a day' : 'Produced and dispatched, m'}), dayChart('stock', P, pre, {id: 'stock-pd', w: 520, h: 300, aria: 'Produced and dispatched', fmt: f0, onPick}, [{key: 'p', name: 'Produced (m)', get: (d) => d.stock.produced, color: 'var(--muted)'}, {key: 'd', name: 'Dispatched (m)', get: (d) => d.stock.dispatch, color: CC[2]}])),
       el('div', {}, el('h4', {class: 'trh', text: 'Stock days'}), dayChart('stock', P, pre, {w: 520, h: 300, aria: 'Stock days', fmt: (v) => pn(v, 1), onPick}, [{name: 'Stock days', get: sDays,
         wk: (L) => { const c = L.map((d) => d.stock.closing).filter(ok), pr = L.map((d) => d.stock.produced).filter((v) => ok(v) && v > 0); return c.length && pr.length ? c[c.length - 1] / (pr.reduce((a, x) => a + x, 0) / pr.length) : null; }}])),
-      el('div', {}, el('h4', {class: 'trh', text: 'Dispatch %, month to date'}), dayChart('stock', P, pre, {w: 520, h: 300, zero: true, aria: 'Dispatch percent month to date', fmt: (v) => pn(v, 1) + '%', onPick}, [{name: 'Dispatch % (month to date)', get: dPct, agg: 'last', avg: false}])))));
+      el('div', {}, el('h4', {class: 'trh', text: 'Dispatch %, month to date'}), dayChart('stock', P, pre, {w: 520, h: 300, zero: true, aria: 'Dispatch percent month to date', fmt: (v) => pn(v, 1) + '%', onPick}, [{name: 'Dispatch % (month to date)', get: dPct, agg: 'last', avg: false, per: false}])))));
 
   // ---- 5b. B grade and cut pieces
   s.append(bgradeSection(cur));
 
   // ---- 6. month to date table
   const lines = cur.lines.slice().sort((a, c) => c.mt - a.mt);
+  // Round C2a (Divyam, 28 Nov 2026, audit #42): ranked bars of each line's month-to-date paise per pick above the table, with its
+  // share of the month's cost (calc.js mtdLineBars: the table's rows, the tail in "Other lines", then the cut piece loss)
+  const MLB = mtdLineBars(cur.lines, cur.mtd.picks, cur.mtd.cut || 0, 14).filter((r) => ok(r.pp) && r.mt > 0);
   s.append(card('Month to date', `${cur.mtd.days} day${cur.mtd.days === 1 ? '' : 's'} of ${dfmt(ym + '-01').split(' ')[1]}${bTxt()}`,
+    MLB.length ? hbars(MLB.map((r) => ({label: r.label, v: r.pp, color: r.cut ? CSL.cut : r.other ? 'var(--muted-2)' : CSL.cost, text: `${pn(r.pp, 2)} · ${pc(r.share)}`,
+      title: `${r.label}: ${pn(r.pp, 2)} paise per pick this month · ${rs(r.mt)} · ${pc(r.share)} of the month's cost incl. cut piece loss`})),
+      {aria: 'Month-to-date paise per pick by expense line', axis: 'paise per pick, month to date', fmt: (v) => pn(v, 2), labelW: 150, wideText: true, nameLabel: 'Line', sortLabel: 'Paise per pick, month', sortId: 'cost-mtdl'}) : null,
     table(['Line', ['Today', '₹'], ['Average a day', '₹'], ['Month total', '₹'], ['Per pick, month', 'paise']],
       [...lines.slice(0, 14).map((l) => [l.n, rs(l.a), rs(l.avg), rs(l.mt), pn(l.mt / (cur.mtd.picks * 1e5) * 100, 2)]),
         lines.length > 14 ? ['Other lines (' + (lines.length - 14) + ')', rs(lines.slice(14).reduce((a, l) => a + l.a, 0)), rs(lines.slice(14).reduce((a, l) => a + l.avg, 0)), rs(lines.slice(14).reduce((a, l) => a + l.mt, 0)), pn(lines.slice(14).reduce((a, l) => a + l.mt, 0) / (cur.mtd.picks * 1e5) * 100, 2)] : null,
@@ -953,7 +1003,8 @@ function airCard() {
   // Round U: the reference line (dashed) for a figure that has one; it follows the Benchmark / Best / Target switch
   const [, refT, refW, refC] = AP_REFS.find((r) => r[0] === APREF);
   const lineVals = pick.line ? rows.map((r) => pick.line(r.a)) : [];
-  const series = [{name, vals: rows.map((r) => pick.get(r.a))}].concat(lineVals.some(ok) ? [{key: 'ref', name: `At ${refW}`, vals: lineVals, dash: true, color: refC}] : []);
+  // Round C2a (audit #29): the period average weighted as the week line weights the figure (by picks, air or minutes run)
+  const series = [{name, vals: rows.map((r) => pick.get(r.a)), per: perAvg(rows, {get: (r) => pick.get(r.a), agg: 'w', w: (r) => pick.w(r.a)})}].concat(lineVals.some(ok) ? [{key: 'ref', name: `At ${refW}`, vals: lineVals, dash: true, color: refC}] : []);
   const chart = rows.length > 1 ? lineChart({dates: rows.map((r) => r.d), aria: `${name}, day by day`, fmt: pick.fmt, series})
     : el('p', {class: 'note', text: allF.length > 1 ? 'Pick a longer period: the line needs two days with this figure.' : pick.comp ? `The line starts once a second day with a compressor reading is in (${tcNext()} if it does not come).` : 'The line starts once a second complete day is in: check again after the daily run.'});
   // the costing sheet's compressor kWh has so far been a near-fixed figure, not a daily meter reading (energy-rate analysis,
@@ -1059,8 +1110,8 @@ function compTrendBlock(s, dates) {
   const air = ds.map((r) => mine(r.d).reduce((a, x) => a + x.cfm * x.run, 0));
   if (typeof wkPut === 'function') { const i = ds.length - 1; wkPut('E6', {date: dfmt(ds[i].d), ft3: air[i], rsFt3: ds[i].c.rsFt3, what: s.kind === 'loom' ? 'loom' : 'head group'}); }   // Round J
   return card('Compressor cost of this air', 'Whole-floor compressor energy per ft³ × this ' + (s.kind === 'loom' ? 'loom' : 'head group') + '\'s air, per day',
-    lineChart({dates: ds.map((r) => r.d), aria: 'Compressor cost of this air per day', fmt: rs, series: [{name: 'Cost of the air (₹ a day)', vals: ds.map((r, i) => air[i] * r.c.rsFt3)}]}),
-    lineChart({dates: ds.map((r) => r.d), aria: 'Compressor energy per 1,000 ft³ of air', fmt: f2, series: [{name: 'Floor compressor kWh per 1,000 ft³', vals: ds.map((r) => r.c.kwhFt3 * 1000)}]}),   // Round T: ft³ only
+    lineChart({dates: ds.map((r) => r.d), aria: 'Compressor cost of this air per day', fmt: rs, series: [{name: 'Cost of the air (₹ a day)', vals: ds.map((r, i) => air[i] * r.c.rsFt3), per: perAvg(ds.map((r, i) => ({v: air[i] * r.c.rsFt3})), {get: (x) => x.v})}]}),   // Round C2a (#29): ₹ a day, the mean of the days
+    lineChart({dates: ds.map((r) => r.d), aria: 'Compressor energy per 1,000 ft³ of air', fmt: f2, series: [{name: 'Floor compressor kWh per 1,000 ft³', vals: ds.map((r) => r.c.kwhFt3 * 1000), per: perAvg(ds, {get: (r) => r.c.kwhFt3 * 1000, agg: 'w', w: (r) => r.c.ft3})}]}),   // Round C2a (#29): Σ kWh ÷ Σ ft³   // Round T: ft³ only
     el('p', {class: 'note', text: 'The compressor is shared, so this is an allocation by air drawn, not a meter on this loom or quality.'}));
 }
 function powerRuleCard() {
@@ -1236,7 +1287,8 @@ function tcFoldCard() {
     wkPill(wkBy(good, D.latest, (r) => r.date, sh, 'down'), {what: 'Folding shortage', fmt: (v) => (100 * v).toFixed(1), unit: '%', dunit: ' points'}));
   const pc = (v) => ok(v) ? (100 * v).toFixed(1) + '%' : '—', lk = (p) => pn(p / 1e5, 2);
   const chart = per.some((r) => ok(r.s)) ? lineChart({id: 'act-fold', dates: per.map((r) => r.date), aria: 'Folding shortage by day, %', fmt: (v) => pn(v, 1) + '%',
-    series: [{key: 'mtd', name: 'Month to date, %', vals: per.map((r) => ok(r.mtd) && r.mtdDays ? 100 * r.mtd : null)}, {key: 'day', name: 'The day\'s own, %', vals: per.map((r) => ok(r.s) ? 100 * r.s : null), dash: true}]})
+    series: [{key: 'mtd', name: 'Month to date, %', vals: per.map((r) => ok(r.mtd) && r.mtdDays ? 100 * r.mtd : null)}, {key: 'day', name: 'The day\'s own, %', vals: per.map((r) => ok(r.s) ? 100 * r.s : null), dash: true,
+      per: perAvg(per, {get: (r) => ok(r.s) ? 100 * r.s : null, agg: 'w', w: (r) => r.P})}]})   // Round C2a (#29): 1 − Σ (folded + B grade + cut) ÷ Σ production picks, the days with every figure
     : el('p', {class: 'empty', text: 'No day in this period has every figure: pick a longer period.'});
   const last = per.at(-1);
   const tb = actTable('fold', ['Date', ['Production picks', 'lakh'], ['A-grade folded', 'lakh picks'], ['B grade', 'lakh picks'], ['Cut pieces', 'lakh picks'], ['The day\'s own', '%'], ['Month to date', '%']],

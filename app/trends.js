@@ -198,16 +198,26 @@ function trWidth(where) {
 // boxes; the data line always shows. One setting for every trend chart, kept on this device.
 let TRHIDE = new Set();
 try { const h = JSON.parse(localStorage.getItem('w2-trend-hide') || '[]'); if (Array.isArray(h)) TRHIDE = new Set(h); } catch (e) {}
-const TRREF = {bm: ['Benchmark', 'var(--muted)', true], best: ['Best', 'var(--good)', true], tg: ['Target', 'var(--ink)', false], line: ['Line', 'var(--warn)', true], med: ['Median', 'var(--muted)', true]};
-const trRefKeys = (Ts) => Object.keys(TRREF).filter((k) => Ts.some((T) => T.pts.some((p) => ok(p.R[k]))));
+const TRREF = {bm: ['Benchmark', 'var(--muted)', true], best: ['Best', 'var(--good)', true], tg: ['Target', 'var(--ink)', false], line: ['Line', 'var(--warn)', true], med: ['Median', 'var(--muted)', true], avg: ['Period average', 'var(--series)', true]};
+// Round C2a (Divyam, 28 Nov 2026, audit #29): the card's own period figure (T.per: the pooled loom-days of 60 minutes or more;
+// looms and hours the mean of the days) drawn as a dotted line, thinner than the reference lines. None for main pressure (its
+// period figure is the highest of the day maxima) or under 2 days with a figure. n of m: the days counted of the days shown.
+function trAvg(T) {
+  if (!T || T.m === 'main_max' || !ok(T.per)) return null;
+  // looms, hours and the realisation metrics average every day with a figure; the pooled loom metrics only the days counted (≥ 60 min)
+  const all = T.m === 'looms' || T.m === 'hours' || (typeof REAL_M !== 'undefined' && REAL_M.has(T.m));
+  const n = T.pts.filter((p) => ok(p.v) && (all || !p.short)).length;
+  return n >= 2 ? {v: T.per, n, m: T.pts.length} : null;
+}
+const trRefKeys = (Ts) => Object.keys(TRREF).filter((k) => k === 'avg' ? Ts.some((T) => trAvg(T)) : Ts.some((T) => T.pts.some((p) => ok(p.R[k]))));
 function trRefToggles(keys, m) {
   if (!keys.length) return null;
-  const name = (k) => k !== 'line' ? TRREF[k][0] : m === 'warp' ? 'Beam line' : m === 'eff' ? 'Efficiency line' : 'Efficiency and beam lines';
+  const name = (k) => k === 'avg' ? 'Period average' : k !== 'line' ? TRREF[k][0] : m === 'warp' ? 'Beam line' : m === 'eff' ? 'Efficiency line' : 'Efficiency and beam lines';
   return el('div', {class: 'togs', role: 'group', 'aria-label': 'Reference lines shown'}, keys.map((k) => {
     const on = !TRHIDE.has(k), [, col, dash] = TRREF[k];
     return el('button', {type: 'button', class: 'tog', 'aria-pressed': on ? 'true' : 'false', title: (on ? 'Hide ' : 'Show ') + name(k).toLowerCase(),
       onclick: (e) => { if (on) TRHIDE.add(k); else TRHIDE.delete(k); try { localStorage.setItem('w2-trend-hide', JSON.stringify([...TRHIDE])); } catch (x) {} if (e.currentTarget.closest('dialog')) drawPanel(true); else render(); }},
-      el('i', {style: dash ? `background:repeating-linear-gradient(90deg,${col} 0 4px,transparent 4px 7px)` : `background:${col}`}), name(k));
+      el('i', {style: k === 'avg' ? `background:repeating-linear-gradient(90deg,${col} 0 2px,transparent 2px 5px)` : dash ? `background:repeating-linear-gradient(90deg,${col} 0 4px,transparent 4px 7px)` : `background:${col}`}), name(k));
   }));
 }
 function trChart(T, o = {}) {
@@ -220,6 +230,8 @@ function trChart(T, o = {}) {
   if (!vals.length) { wrap.append(el('div', {class: 'empty', text: 'No running record in this period.'})); return wrap; }
   const refVals = [];
   for (const p of pts) for (const k of ['bm', 'best', 'tg', 'line', 'med']) if (ok(p.R[k]) && !TRHIDE.has(k)) refVals.push(p.R[k]);
+  const AV = TRHIDE.has('avg') ? null : trAvg(T);
+  if (AV) refVals.push(AV.v);
   let lo = Math.min(...vals, ...refVals), hi = Math.max(...vals, ...refVals);
   if (T.m === 'looms') lo = 0;
   const span = hi - lo || Math.abs(hi) * 0.05 || 1; lo -= span * 0.08; hi += span * 0.16;
@@ -269,6 +281,11 @@ function trChart(T, o = {}) {
     const d = refPath(k); if (!d) continue;
     svg.append(svgEl('path', Object.assign({d, fill: 'none'}, st)));
     const lv = lastOf(k); if (ok(lv)) rl.push({y: y(lv), text: `${lab} ${M.fmt(lv)}`, col});
+  }
+  if (AV) {   // Round C2a (#29): the period average, dotted, its label with the reference lines' at the right
+    const ln = svgEl('line', {x1: m.l, x2: Wd - m.r, y1: y(AV.v), y2: y(AV.v), class: 'pavg', stroke: series, 'stroke-width': 1.1, 'stroke-dasharray': '1.5 3.5', 'stroke-linecap': 'round'});
+    const tt = svgEl('title'); tt.textContent = `Period average: ${perLabel(AV, M.fmt)}`; ln.append(tt); svg.append(ln);
+    rl.push({y: y(AV.v), text: `Avg ${M.fmt(AV.v)}`, col: series});
   }
   rl.sort((a, b) => a.y - b.y); let py = -1e9;
   for (const r of rl) { const yy = Math.max(r.y + 4, py + 12); py = yy; svg.append(svgText({x: Wd - m.r + 5, y: yy, 'font-size': 10.5, fill: r.col}, r.text)); }
@@ -357,6 +374,8 @@ function detail(T, i) {
     if (p.other) out.push(el('span', {class: 'note', text: `on ${p.rhg}: the lines are ${T.pts.at(-1).rhg || 'the current quality'}'s, so this day is not judged`}));
     else if (ok(p.ref) && ok(p.v)) { const g = p.v - p.ref; out.push(el('span', {class: p.worse ? 'up-bad' : 'up-good', text: `${g >= 0 ? '+' : '−'}${M.fmt(Math.abs(g))} vs reference`})); }
   }
+  const AV = TRHIDE.has('avg') ? null : trAvg(T);
+  if (AV && ok(p.v)) { const g = p.v - AV.v; out.push(el('span', {class: 'note vsavg', text: `vs avg ${Math.abs(g) < 1e-9 ? '±' : g > 0 ? '+' : '−'}${M.fmt(Math.abs(g))} (${perLabel(AV, M.fmt)})`})); }   // Round C2a (#29)
   const A = p.A;
   if (A) {
     out.push(el('span', {text: `run ${f1(A.run / 60)} h · stopped ${f1(A.stop / 60)} h`}));

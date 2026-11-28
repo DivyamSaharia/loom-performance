@@ -911,6 +911,18 @@ function fcWaterfall(rows, basis, withU = true) {
   s.steps = [{label: 'Sale value', v: s.pp.sale, total: true}, {label: 'Yarn', v: -s.pp.yarn}, {label: 'Realisation', v: s.pp.real, total: true}, {label: 'Loom cost', v: -s.pp.conv}, {label: 'B grade', v: -s.pp.bgrade}, {label: 'Loom cost not recovered', v: -s.pp.unrec}, {label: 'Profit', v: s.pp.profit, total: true}];
   return s;
 }
+// Round C2a (Divyam, 28 Nov 2026, audit #17): the sale value to profit bridge as drawn. A step that rounds to 0.00 paise is
+// left out of the chart and named (zero); the last total (profit) is marked res, so it is coloured by its sign. tail: the
+// same steps from Realisation on (a second, zoomed bridge: Realisation → loom cost → B grade → loom cost not recovered →
+// Profit), whose bars are big enough to read on their own axis.
+function fcWfDraw(steps, dec = 2) {
+  if (!steps || !steps.length) return null;
+  const r = (v) => Math.abs(v) < 0.5 * Math.pow(10, -dec);
+  const S = steps.map((x, i) => i === steps.length - 1 && x.total ? {...x, res: true} : x);
+  const zero = S.filter((x) => !x.total && r(x.v)).map((x) => x.label), kept = S.filter((x) => x.total || !r(x.v));
+  const i = kept.findIndex((x) => x.total && x.label === 'Realisation');
+  return {steps: kept, zero, tail: i >= 0 ? kept.slice(i) : null};
+}
 // Products (or head groups) ranked by profit a loom a day on the loom cost basis (Round A4, Divyam, 24 Nov 2026; realisation
 // a loom a day where nothing has a loom cost profit), with the plant average over the same rows as the reference.
 // key: (row) => the group key. Each group is By head group's figure (fcGroup, withU false: priced rows only, never U).

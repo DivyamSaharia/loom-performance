@@ -105,7 +105,7 @@ function spark(vals, o = {}) {
 function hbars0(rows, o = {}) {
   const fmt = o.fmt || pn;
   return fitted((W) => {
-    const rowH = 24, L = Math.round(Math.max(64, Math.min(o.labelW || 170, W * (W < 480 ? 0.38 : 0.32)))), R = W < 420 ? 52 : 70, T = o.ref ? 20 : 6, B = 32;
+    const rowH = 24, L = Math.round(Math.max(64, Math.min(o.labelW || 170, W * (W < 480 ? 0.38 : 0.32)))), R = (W < 420 ? 52 : 70) + (o.wideText ? 44 : 0), T = o.ref ? 20 : 6, B = 32;   // Round C2a: o.wideText leaves room for a two-part value
     const H = T + B + rows.length * rowH, hiV = Math.max(...rows.map((r) => Math.max(r.v || 0, r.tol || 0)), o.ref && ok(o.ref.v) ? o.ref.v : 0, 1e-9);
     const [, b, ticks] = niceRange(0, hiV);
     const x = (v) => L + (W - L - R) * Math.max(0, v) / (b || 1);
@@ -118,7 +118,11 @@ function hbars0(rows, o = {}) {
       const lt = tx({x: L - 8, y: y + 16, 'text-anchor': 'end', class: r.onClick ? 'lkt' : null}, clip(r.label, chars), 'fill:var(--ink);font-size:11.5px');
       if (r.onClick) lt.addEventListener('click', r.onClick);
       tip(lt, r.title || r.label); svg.append(lt);
-      if (ok(r.tol) && r.tol > 0) {
+      if (r.segs) {   // Round C2a (audit #31): the bar in parts, left to right (e.g. day and night metres); each part its own hover text
+        let run = 0;
+        for (const g of r.segs) { const gv = Math.max(0, g.v || 0); if (!gv) continue;
+          svg.append(tip(svgEl('rect', {x: x(run), y: y + 6, width: Math.max(1, x(run + gv) - x(run)), height: 12, rx: 2, class: 'hseg', style: `fill:${g.color || col};${g.op ? `opacity:${g.op}` : ''}`}), `${r.title || r.label} · ${g.name}: ${fmt(gv)}`)); run += gv; }
+      } else if (ok(r.tol) && r.tol > 0) {
         svg.append(svgEl('rect', {x: x(0), y: y + 6, width: Math.max(0, x(Math.min(v, r.tol)) - x(0)), height: 12, rx: 2, style: `fill:${col};opacity:.35`}));
         if (v > r.tol) svg.append(svgEl('rect', {x: x(r.tol), y: y + 6, width: Math.max(1, x(v) - x(r.tol)), height: 12, rx: 2, style: `fill:${col}`}));
         svg.append(svgEl('rect', {x: x(r.tol) - 1, y: y + 2, width: 2, height: 20, style: 'fill:var(--barline)'}));
@@ -179,6 +183,30 @@ function signedBars0(rows, o = {}) {
     }
     return svg;
   }, 300);
+}
+
+// ---------------------------------------------------------------- one segmented bar (a split of one whole)
+// Round C2a (Divyam, 28 Nov 2026, audit #30): parts [{label, v, color, text}] that add up to one whole (Fixed against variable
+// cost: the cost types' paise per pick), drawn as one bar, left to right, each part its width; a part wide enough carries its
+// text on it; the key under it names every part with its text, so a small part is never lost. o: {aria, fmt, total (words at
+// the right end)}. A part with no figure is left out (the caller names it), never drawn as 0.
+function segBar(parts, o = {}) {
+  const P = parts.filter((p) => ok(p.v) && p.v > 0), T = P.reduce((a, p) => a + p.v, 0), fmt = o.fmt || pn;
+  if (!(T > 0)) return el('p', {class: 'empty', text: o.empty || 'Nothing to split on this day.'});
+  const svgBox = fitted((W) => {
+    const H = 44, L = 2, R = 2, svg = svgRoot(W, H, o.aria), x = (v) => L + (W - L - R) * v / T;
+    let run = 0;
+    for (const p of P) {
+      const x0 = x(run), w = Math.max(1, x(run + p.v) - x0), txt = p.text != null ? p.text : fmt(p.v);
+      svg.append(tip(svgEl('rect', {x: x0, y: 6, width: w, height: 30, class: 'segp', style: `fill:${p.color};stroke:var(--panel);stroke-width:1.5`}), `${p.label}: ${txt}`));
+      if (w >= txt.length * 6.2 + 8) svg.append(tx({x: x0 + w / 2, y: 25, 'text-anchor': 'middle', 'pointer-events': 'none'}, txt, `fill:${inkOn(p.color)};font-size:11px;font-weight:600`));
+      run += p.v;
+    }
+    return svg;
+  }, 260);
+  const out = parts.filter((p) => !(ok(p.v) && p.v > 0));
+  return el('div', {class: 'segbar'}, svgBox, out.length ? el('p', {class: 'note', text: `Not in the bar (no figure, or at or below 0): ${out.map((p) => `${p.label} ${ok(p.v) ? fmt(p.v) : '—'}`).join(', ')}. Next: see the table under it.`}) : null, el('div', {class: 'legend'}, P.map((p) => el('span', {class: 'lg'}, el('span', {class: 'sq', style: `background:${p.color}`}), `${p.label} ${p.text != null ? p.text : fmt(p.v)}`)),
+    o.total ? el('span', {class: 'lg', text: o.total}) : null));
 }
 
 // ---------------------------------------------------------------- stacked bars, one per day

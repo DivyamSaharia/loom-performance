@@ -18,6 +18,28 @@ const HEAT_BAND_TXT = ['under 2%', '2–5%', '5–10%', '10–25%', '25% or more
 const heatBand = (p) => { if (!ok(p)) return null; const a = Math.abs(p); let i = 0; while (i < HEAT_BANDS.length && a >= HEAT_BANDS[i]) i++; return i; };
 const heatLevel = (p) => !ok(p) ? 0 : HEAT_LV[heatBand(p)];
 
+// ---- Round C2a (Divyam, 28 Nov 2026, audit #29): the period average a line chart draws as a dotted line, over every day of
+// the card's period (L, in day order). s: the series' spec, as the chart's Weekly view adds days up (Costing's aggDays):
+//  · s.wk(L): the chart's own sum for a run of days (e.g. the days' rows added up, profit after the loom cost not recovered);
+//  · agg 'w': Σ value × weight ÷ Σ weight (per-pick figures, ratios), over the days with a figure and a weight above 0;
+//  · agg 'last' (a level such as closing stock) and the default: the mean of the days with a figure.
+// A day with no figure, or with a figure but no weight, is left out and counted (n of m), never taken as 0. Under 2 days with
+// a figure: no average (null). s.per === false: none (a month-to-date or other running line is already an average).
+// Returns {v, n, m}: the average, the days it counts, the days in the period.
+function perAvg(L, s) {
+  if (!s || s.per === false || !L || !L.length) return null;
+  const m = L.length, w = (d) => s.w ? s.w(d) : 1;
+  const keep = L.filter((d) => ok(s.get(d)) && (s.agg !== 'w' || (ok(w(d)) && w(d) > 0)));
+  const n = keep.length;
+  if (n < 2) return null;
+  let v;
+  if (s.wk) v = s.wk(L);
+  else if (s.agg === 'w') { const W = keep.reduce((a, d) => a + w(d), 0); v = W > 0 ? keep.reduce((a, d) => a + s.get(d) * w(d), 0) / W : null; }
+  else v = keep.reduce((a, d) => a + s.get(d), 0) / n;
+  return ok(v) ? {v, n, m} : null;
+}
+const perLabel = (p, fmt) => `avg ${fmt(p.v)} · ${p.n} of ${p.m} day${p.m === 1 ? '' : 's'}`;
+
 // ---- Pressure: the floor ladder. looms: [{loom, hg, width, main, ref}], every loom on the compressor. At each step the
 // loom setting the floor is brought down to its reference (lowest loom number first on a tie) and the floor is worked out
 // again. The ladder stops after `max` steps, or when a loom at the floor cannot come down (no reference, or already at or
@@ -1231,4 +1253,45 @@ function missedLikely(m, chk) {
   if (!m || m.kind !== 'short' || !chk) return false;
   const r = chk.rows.find((x) => x.name === m.hg && (x.width === String(m.width) || x.width === 'both'));
   return !!(r && r.flag && r.gapM != null && r.gapM < 0);
+}
+
+// ---- Round C2a (Divyam, 28 Nov 2026; audit #30, #31, #40, #41, #42): the charts drawn above Costing's tables. Each takes the
+// table's own figures, so the chart and the table under it always agree. Gaps stay gaps (null), never 0.
+// #30 Fixed against variable cost: the day's lines by cost type (fixed, attendance, output, lumpy, in that order, the types
+// present): amount ₹, share of the day's cost (₹ ÷ total) and paise per pick (₹ ÷ (lakh picks × 1e5) × 100).
+const CT_ORDER = ['fixed', 'attendance', 'output', 'lumpy'];
+function costTypeSplit(lines, total, picks) {
+  const by = {};
+  for (const l of lines || []) { const o = by[l.t] = by[l.t] || {t: l.t, a: 0, lines: []}; o.a += l.a; o.lines.push(l); }
+  return CT_ORDER.filter((t) => by[t]).map((t) => ({...by[t], share: total ? by[t].a / total : null, pp: picks ? by[t].a / (picks * 1e5) * 100 : null}));
+}
+// #31 Production by quality head group: rows {hg, dm, nm, tm} → bars of metres with day and night parts and each row's share of
+// all metres (tm ÷ Σ tm). A row with no metres is left out of the chart (it stays in the table).
+function prodBars(rows) {
+  const R = (rows || []).filter((r) => ok(r.tm) && r.tm > 0), T = R.reduce((a, r) => a + r.tm, 0);
+  return R.map((r) => ({hg: r.hg, tm: r.tm, dm: ok(r.dm) ? r.dm : null, nm: ok(r.nm) ? r.nm : null, share: T ? r.tm / T : null}));
+}
+// #40 B grade by head group: rows {hg, m, prod, pct, rs, miss} → bars of the B grade share (% of produced metres); a row with no
+// share (no produced metres on register days) is left out of the chart and named (out).
+function bgHgBars(rows) {
+  const R = rows || [];
+  return {bars: R.filter((r) => ok(r.pct)), out: R.filter((r) => !ok(r.pct)).map((r) => r.hg)};
+}
+// #41 Folded cost per pick (Working J8) as a bridge: the previous day's figure, the four steps, today's figure. A step with no
+// figure (net B grade on a day the file has none) is a gap: no bar, "—".
+function foldBridge(fb, prevLabel, nowLabel) {
+  if (!fb || !ok(fb.prev) || !ok(fb.now)) return null;
+  const st = (label, v) => ok(v) ? {label, v} : {label, v: null, gap: true};
+  return [{label: prevLabel, v: fb.prev, total: true}, st('Picks folded', fb.folding), st('OPEX', fb.opex), st('Net B grade', fb.bgrade), st('Cut-piece loss', fb.cut), {label: nowLabel, v: fb.now, total: true}];
+}
+// #42 Month to date by expense line: the table's rows (the top n lines by month total, "Other lines (k)" for the rest, then the
+// cut piece loss), each with its paise per pick for the month (month ₹ ÷ (month lakh picks × 1e5) × 100) and its share of the
+// month's cost incl. cut piece loss (month ₹ ÷ (Σ month ₹ of the lines + month cut piece loss)).
+function mtdLineBars(lines, mtdPicks, mtdCut, n = 14) {
+  const L = (lines || []).slice().sort((a, c) => c.mt - a.mt), pp = (v) => mtdPicks ? v / (mtdPicks * 1e5) * 100 : null;
+  const tot = L.reduce((a, l) => a + l.mt, 0) + (mtdCut || 0);
+  const rows = L.slice(0, n).map((l) => ({label: l.n, mt: l.mt}));
+  if (L.length > n) rows.push({label: `Other lines (${L.length - n})`, mt: L.slice(n).reduce((a, l) => a + l.mt, 0), other: true});
+  rows.push({label: 'Cut piece loss', mt: mtdCut || 0, cut: true});
+  return rows.map((r) => ({...r, pp: pp(r.mt), share: tot ? r.mt / tot : null}));
 }

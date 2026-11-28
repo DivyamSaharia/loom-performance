@@ -682,3 +682,8 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
 .piedet .pieo{margin-top:6px;line-height:1.4}
 .piedet dt{color:var(--muted)} .piedet dd{margin:0;font-variant-numeric:tabular-nums}
 @media (max-width:560px){.piebox{justify-content:center}.piebox .pie{width:190px;height:190px}}
+/* Round C2a (audit #3): two panels on one date axis; the bars panel under the lines panel */
+.twin .twinh { margin: 10px 0 2px; }
+.twin > .tablebox:last-child { margin-top: 0; }
+/* Round C2a (audit #30): one segmented bar of a split of one whole, its key under it */
+.segbar .legend { margin-top: 4px; }
