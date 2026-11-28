@@ -1190,9 +1190,11 @@ function tcActionTiles(kpi) {
   }
   const t = tc.ok
     ? kpi('Target cost per pick', pn(tc.cpp, 2), 'paise', el('span', {class: 'delta ' + (tc.cpp < tc.c0 ? 'up' : 'flat'), text: `now ${pn(tc.c0, 2)} · ${tcPp(tc.cpp - tc.c0)} paise`}),
-      `${bName() ? bName() + ' · ' : ''}${tc.cover.full} of ${tc.cover.looms} looms with every target${tcGapText(tc).length ? ' · ' + tcGapText(tc).length + ' part' + (tcGapText(tc).length === 1 ? '' : 's') + ' left out' : ''}`,
-      el('div', {class: 'note', text: 'Folding, beams and dispatch lag the looms: this assumes they catch up within the month.'}))
+      `${bName() ? bName() + ' · ' : ''}${tc.cover.full} of ${tc.cover.looms} looms with every target${tcGapText(tc).length ? ' · ' + tcGapText(tc).length + ' part' + (tcGapText(tc).length === 1 ? '' : 's') + ' left out' : ''}`)
     : kpi('Target cost per pick', '—', '', null, `${tcUnavail(date)}. Next: ${tcNext()}.`);
+  // Round C2b (audit #28): the note stays within 3 lines on a laptop; the lag note and the parts left out are at the top of
+  // Where the saving is (tcFull), and on pointing at the note
+  if (tc.ok) kpiCap(t, tcFull(tc));
   t.classList.add('tap'); t.setAttribute('role', 'button'); t.setAttribute('tabindex', '0'); t.setAttribute('aria-label', 'Target cost per pick: open Where the saving is');
   tapTip(t, 'Tap to see Where the saving is: the five steps and every loom\'s part');   // Round A1: the hover note
   const go = () => navGoCard('actions', TC_CARD);
@@ -1205,6 +1207,16 @@ function tcActionTiles(kpi) {
     : kpi('Folding shortage', '—', '', null, fs.of ? `no day this month has all its figures yet (${fs.out.map((o) => `${dfmt(o.date)}: ${o.why}`).slice(0, 2).join('; ')}). Next: ${tcNext()}.` : `no costing day this month up to ${dfmt(date)} yet. Next: ${tcNext()}.`));
   if (typeof fxTargetTiles === 'function') out.push(...fxTargetTiles(kpi, tc, fs));
   return out;
+}
+// Round C2b (audit #28): the Target cost per pick tile's note in full, at the top of Where the saving is
+const tcFull = (tc) => `The Target cost per pick tile in full: ${bName() ? bName() + ', ' : ''}${tc.cover.full} of ${tc.cover.looms} looms with every target${tcGapText(tc).length ? `; left out: ${tcGapText(tc).join('; ')}` : ''}. Folding, beams and dispatch lag the looms: this assumes they catch up within the month.`;
+// Round C2b (audit #8): the five steps as a bridge, the short names under the bars (the table names them in full)
+const TC_BR = {cfm: '1. Target CFM', press: '2. Set point', picks: '3. Effective RPM', added: '4. Growing costs', quality: '5. No B grade or cut'};
+function tcBridgeChart(tc) {
+  const W = tcBridge(tc, TC_BR, 'Cost per pick now', 'Target cost per pick');
+  if (!W) return null;
+  return [waterfall(W.map((it) => it.gap ? {...it, tip: `${it.label}: left out, no figure (the table says why)`} : it), `Cost per pick now to the target cost per pick, step by step, ${dfmt(tc.date)}`, null, {dec: 2}),
+    el('p', {class: 'note', text: `Each bar is a step of the table below, in paise per pick: green lowers the cost per pick, red raises it; a step left out reads "—" (the table says why and what to do). The last bar is the Target cost per pick tile, ${pn(tc.cpp, 2)} paise.`})];
 }
 function tcCard() {
   if (!COST) return null;
@@ -1249,7 +1261,8 @@ function tcCard() {
   const cell = (v, fmt) => ok(v) ? fmt(v) : '—';
   const phone = window.matchMedia('(max-width: 560px)').matches;
   const tot = R.reduce((a, o) => ({cfm: a.cfm + (o.cfmRs || 0), E: a.E + (o.E || 0), dM: a.dM + (o.dM || 0), ef: a.ef + o.effect}), {cfm: 0, E: 0, dM: 0, ef: 0});
-  if (!R.length) return card(TC_CARD, `${dfmt(date)} · target cost per pick, step by step`, steps, el('p', {class: 'empty', text: `No loom ran on ${dfmt(date)}, so there is no loom to bring to its targets. Pick another day with the date chip at the top of the page.`}));
+  const top = [el('p', {class: 'note tcfull', text: tcFull(tc)}), ...(tcBridgeChart(tc) || [])];
+  if (!R.length) return card(TC_CARD, `${dfmt(date)} · target cost per pick, step by step`, ...top, steps, el('p', {class: 'empty', text: `No loom ran on ${dfmt(date)}, so there is no loom to bring to its targets. Pick another day with the date chip at the top of the page.`}));
   const heads = [hg ? 'Head group' : 'Loom', hg ? ['Looms', 'ran'] : null, ['CFM saving', '₹'], ['Extra picks', 'lakh'], ['Extra metres', 'm'], ['Effect on cost per pick', 'paise']].filter(Boolean);
   const body = phone
     ? sortableChart('tc-' + (hg ? 'hg' : 'loom'), R, [{v: 'name', label: hg ? 'Head group' : 'Loom', get: (o) => hg ? o.hgs[0] : o.loom, d: 'a'}, ...(hg ? [{v: 'looms', label: 'Looms', get: (o) => o.looms.length}] : []),
@@ -1261,7 +1274,7 @@ function tcCard() {
     : table(heads, [...R.map((o) => [el('div', {}, name(o), o.gap ? gapCell(o) : null), ...(hg ? [o.looms.length] : []), cell(o.cfmRs, rs), cell(o.E, (v) => pn(v / 1e5, 3)), cell(o.dM, f0), sortAs(el('span', {text: tcPp(o.effect)}), o.none ? null : o.effect)]),
       [el('b', {text: 'Total'}), ...(hg ? [R.reduce((a, o) => a + o.looms.length, 0)] : []), rs(tot.cfm), pn(tot.E / 1e5, 3), f0(tot.dM), tcPp(tot.ef)]], hg ? [1, 2, 3, 4, 5] : [1, 2, 3, 4]);
   return card(TC_CARD, `${dfmt(date)} · headline cost per pick${bName() ? ', ' + bName() : ''} · whole plant, both widths`,
-    steps,
+    ...top, steps,
     el('p', {class: 'note', text: `Coverage: ${tc.cover.full} of ${tc.cover.looms} looms that ran have a target CFM, a target RPM and a picks-per-metre figure for their quality on the day's costing; the rest count only the parts they have and are listed below as gaps, never as 0.${left.length ? ' ' + left.join('. ') + '.' : ''}`}),
     el('div', {class: 'toolbar'}, bvSeg('tc')), body,
     el('p', {class: 'note', text: `Effect on cost per pick = (− the CFM saving + the added costs − today's cost per pick × the extra picks) ÷ the target day's ${lk(tc.P + tc.E)} lakh picks. The pressure step (${tcPp(tc.floorPp.press)} paise on that footing) and step 5 (${tcPp(tc.floorPp.quality)} paise) are whole-floor and not split by ${hg ? 'head group' : 'loom'}; with them the rows add up to the change on the tile.`}),
@@ -1272,6 +1285,7 @@ function tcCard() {
 // date to begin with) and a week line on the shortage of each week's days together. A day missing a figure is left out
 // and named, never drawn as 0.
 let TCFPER = 'mtd';
+const FOLD_WIN = 5;   // Round C2b (audit #9): points either side of the month to date line that the day's own dots may stretch the axis to
 try { const v = localStorage.getItem('w2-act-fold-period'); if (['7', '14', '30', 'mtd', 'range'].includes(v)) TCFPER = v; } catch (e) {}
 function tcFoldCard() {
   if (!COST) return null;
@@ -1285,9 +1299,12 @@ function tcFoldCard() {
   const bar = el('div', {class: 'toolbar perbar'}, el('div', {class: 'seg', role: 'group', 'aria-label': 'Period'}, b('7', '7 days', '7d'), b('14', '14 days', '14d'), b('30', '30 days', '30d'), b('mtd', 'Month to date', 'MTD'), b('range', 'Dates')),
     TCFPER === 'range' ? rngCtl(ds, render) : null, per.length ? el('span', {class: 'note', text: `${TCFPER === 'mtd' ? 'Month to date: ' : ''}${dfmt(per[0].date)} – ${dfmt(per.at(-1).date)} · ${per.filter((r) => !r.why).length} of ${per.length} costing day${per.length === 1 ? '' : 's'} with every figure`}) : null,
     wkPill(wkBy(good, D.latest, (r) => r.date, sh, 'down'), {what: 'Folding shortage', fmt: (v) => (100 * v).toFixed(1), unit: '%', dunit: ' points'}));
-  const pc = (v) => ok(v) ? (100 * v).toFixed(1) + '%' : '—', lk = (p) => pn(p / 1e5, 2);
-  const chart = per.some((r) => ok(r.s)) ? lineChart({id: 'act-fold', dates: per.map((r) => r.date), aria: 'Folding shortage by day, %', fmt: (v) => pn(v, 1) + '%',
-    series: [{key: 'mtd', name: 'Month to date, %', vals: per.map((r) => ok(r.mtd) && r.mtdDays ? 100 * r.mtd : null)}, {key: 'day', name: 'The day\'s own, %', vals: per.map((r) => ok(r.s) ? 100 * r.s : null), dash: true,
+  const pc = (v) => pcz(v, 1), lk = (p) => pn(p / 1e5, 2);   // Round C2b (audit #9): "0.0%", never "−0.0%"
+  // Round C2b (audit #9): the month to date line (the tile) leads; the day's own figure is faint dots; the axis fits the month to
+  // date line ± FOLD_WIN points and the dots inside that, and a dot outside it sits at the edge as an arrow with its value
+  const mv = per.map((r) => ok(r.mtd) && r.mtdDays ? 100 * r.mtd : null);
+  const chart = per.some((r) => ok(r.s)) ? lineChart({id: 'act-fold', dates: per.map((r) => r.date), aria: 'Folding shortage by day, %', fmt: (v) => pn(v, 1).replace(/^-(?=0\.0$)/, '').replace('-', '−') + '%',
+    series: [{key: 'mtd', name: 'Month to date, %', vals: mv}, {key: 'day', name: 'The day\'s own, %', vals: per.map((r) => ok(r.s) ? 100 * r.s : null), dots: true, win: dotWin(mv, FOLD_WIN),
       per: perAvg(per, {get: (r) => ok(r.s) ? 100 * r.s : null, agg: 'w', w: (r) => r.P})}]})   // Round C2a (#29): 1 − Σ (folded + B grade + cut) ÷ Σ production picks, the days with every figure
     : el('p', {class: 'empty', text: 'No day in this period has every figure: pick a longer period.'});
   const last = per.at(-1);
@@ -1296,7 +1313,8 @@ function tcFoldCard() {
       : [[dfmt(r.date), lk(r.P), lk(r.A), lk(r.B), lk(r.C), pc(r.s), pc(r.mtd)], [r.date, r.P, r.A, r.B, r.C, r.s, r.mtd]]), [1, 2, 3, 4, 5, 6]);
   const miss = per.filter((r) => r.why);
   return card(title, sub,
-    last ? el('p', {class: 'note', text: `${dfmt(last.date)}: month to date ${pc(last.mtdDays ? last.mtd : null)} over ${last.mtdDays} day${last.mtdDays === 1 ? '' : 's'}${ok(last.s) ? `, the day's own ${pc(last.s)}` : ` (the day itself is left out: ${last.why})`}. The month to date line is the tile; it starts again on the 1st.`}) : null,
+    ...(last ? notePh(`${dfmt(last.date)}: month to date ${pc(last.mtdDays ? last.mtd : null)} over ${last.mtdDays} day${last.mtdDays === 1 ? '' : 's'}${ok(last.s) ? `, the day's own ${pc(last.s)}` : ` (the day itself is left out: ${last.why})`}. The month to date line (solid) is the tile; it starts again on the 1st. The day's own figure is the faint dots; the axis fits the month to date line and the dots within ${FOLD_WIN} points of its range, and a dot off the axis sits at its edge as an arrow with its value.`,
+      `${dfmt(last.date)}: month to date ${pc(last.mtdDays ? last.mtd : null)}${ok(last.s) ? `, the day's own ${pc(last.s)}` : ''}. Solid line: month to date (the tile). Dots: each day's own; an arrow at the edge is a day off the axis. More in the Guide, under Actions.`) : []),
     bar, chart, tb,
     miss.length ? el('p', {class: 'note', text: `${miss.length} day${miss.length === 1 ? '' : 's'} left out (a figure missing; never counted as 0). Next: ${tcNext()}.`}) : null,
     ...tcFoldByQ(),
@@ -1334,7 +1352,19 @@ function tcFoldByQ() {
     Q.unas > 0 ? `${lk(Q.unas)} lakh picks with no head group at the plant's figure` : null].filter(Boolean);
   const chk = ok(Q.readd) ? `Check: the figures used, re-added by their loom picks, give ${pc2(Q.readd)} against the plant's ${pc2(Q.ps)} (${sgn(100 * Q.diff)} points)${why.length ? ': ' + why.join(', ') : ''}. A check, not a gap: nothing is forced to tie.`
     : `Check: not worked out yet (no costing day this month has a figure). Next: ${tcNext()}.`;
-  return [h, intro, tb, el('p', {class: 'note', text: chk})];
+  // Round C2b (Divyam, 28 Nov 2026, audit #33): the figures used as ranked bars above the table, the plant's month to date as a
+  // dashed line; a quality on its own figure in lime (now), one on a fallback (last month's, the plant's) grey. No money.
+  const fb = R.filter(({e}) => ok(e.s)), fo = R.filter(({e}) => !ok(e.s));
+  const qchart = fb.length ? [signedBars(fb.map(({q, e}) => ({label: name(q, e), v: 100 * e.s, own: ok(e.own) ? 100 * e.own : null, lp: e.picks, color: e.src === 'own' ? 'var(--bar)' : 'var(--muted-2)', text: pc2(e.s),
+      title: `${name(q, e)}: figure used ${pc2(e.s)} (${src(e)}); its own ${pc2(e.own)} month to date over ${e.n} of ${Q.mdays} days; ${lk(e.picks)} lakh loom picks`})),
+    {aria: `Folding % used for each quality, month to date as at ${dfmt(D.latest)}`, fmt: (v) => pn(v, 2) + '%', axis: 'Folding % used, month to date', labelW: 150, limit: 15, nameLabel: 'Quality', sortLabel: 'Figure used', sortId: 'act-foldq-bars',
+      sortBases: [{v: 'own', label: 'Its own % month to date', get: (r) => ok(r.own) ? r.own : null}, {v: 'lp', label: 'Loom picks', get: (r) => ok(r.lp) ? r.lp : null}],
+      ref: ok(Q.ps) ? {v: 100 * Q.ps, label: `Plant ${pc2(Q.ps)}`} : null}),
+    el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bar)'}), 'its own figure'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--muted-2)'}), 'a fallback: its own last month\'s, or the plant\'s'),
+      el('span', {class: 'lg'}, legendShape('dash'), 'the plant\'s month to date')),
+    fo.length ? el('p', {class: 'note', text: `No folding figure yet (not drawn, never 0): ${fo.map(({q, e}) => name(q, e)).join('; ')}. Next: ${tcNext()}.`}) : null,
+    typeof actCut === 'function' ? actCut(fb.length, 15, 'qualities') : null] : [];
+  return [h, intro, ...qchart, tb, el('p', {class: 'note', text: chk})];
 }
 // ================================================================ END COSTING TAB
 // COSTING-TAB>>

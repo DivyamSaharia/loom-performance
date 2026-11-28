@@ -1296,3 +1296,11 @@ function fcPieSlots(items) {
   const L = items.slice().sort((a, b) => (n(b.real) - n(a.real)) || (n(a.real) && n(b.real) ? b.real - a.real : 0) || String(a.key).localeCompare(String(b.key)));
   return new Map(L.map((x, i) => [x.key, i]));
 }
+
+// Round C2b (Divyam, 28 Nov 2026; audit #19): a quality's profit in rupees for the day, so volume counts: its profit per folded
+// pick × its A-grade folded picks (of the loom-days with a loom cost profit, fcSum's afold_lc), ÷ 100 (paise to rupees). On
+// fcSum's own figures that is its loom-days' profit less any loom cost not recovered in the group (none inside a quality). A
+// group with no profit per folded pick, or no A-grade folded picks, is a gap (null), never ₹0.
+function fcProfitRs(g) {
+  return g && typeof g.profit_fp === 'number' && isFinite(g.profit_fp) && g.afold_lc > 0 ? g.profit_fp * g.afold_lc / 100 : null;
+}

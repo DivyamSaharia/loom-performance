@@ -141,7 +141,28 @@ function priorityCard() {
     : 'Ranked by lost picks, then extra air: the costing for this day is not in yet, so there are no rupee figures.')
     + (P.rows.some((o) => o.rsReal != null) ? ' With the realisation analysis on, lost picks on a priced loom-day are valued at that loom-day\'s realisation per pick instead (sale value at prevailing rate less standard yarn cost, As sold, its own quality), so a loom on a dearer cloth ranks higher; a loom-day the Realisation tab cannot price keeps the cost valuation and says so.' : '');
   return card('Work on these first', `${dfmt(D.latest)} · top ${P.rows.length} of ${P.total} loom${P.total === 1 ? '' : 's'} off their reference`,
-    el('ol', {class: 'prio'}, li), sk, el('p', {class: 'note', text: basis}));
+    ...prioChart(P), el('ol', {class: 'prio'}, li), sk, el('p', {class: 'note', text: basis}));
+}
+// Round C2b (Divyam, 28 Nov 2026, audit #37): the listed looms as ranked bars above the list, the rupees a day in their parts
+// (coloured by why: lost picks, extra air, floor pressure; calc.js prioParts), the same figures and audience as the list (the
+// owner's lost picks at realisation where priced, everyone else's at cost). With no rupees (no costing for the day), lost picks
+// in lakh. Loom by loom only: the list is the day's top looms, so there is no head group view.
+// slots 1, 3 and 4 (validated as neighbours in both themes); CC lives in pages-config.js, loaded after this file
+const prioSeg = () => ({picks: {name: 'Lost picks', color: CC[0]}, air: {name: 'Extra air', color: CC[2]}, press: {name: 'Floor pressure', color: CC[3]}});
+function prioChart(P) {
+  if (!P.rows.length) return [];
+  const PRIO_SEG = prioSeg();
+  const lab = (o) => `Loom ${o.x.loom} · ${o.x.hg || '—'}${o.x.width ? ` · ${o.x.width}` : ''}`, go = (o) => () => openLoom(+o.x.loom, D.latest);
+  if (!P.money) return [hbars(P.rows.map((o) => ({label: lab(o), v: o.lakh, text: `${pn(o.lakh, 3)} lakh`, ft3: o.ft3, onClick: go(o), title: `Loom ${o.x.loom}: ${pn(o.lakh, 3)} lakh lost picks, ${f0(o.ft3)} ft³ extra air (no rupees: the costing for the day is not in yet)`})),
+    {aria: 'Work on these first: lost picks by loom', fmt: (v) => pn(v, 3), axis: 'Lost picks, lakh', labelW: 170, nameLabel: 'Loom', sortLabel: 'Lost picks', sortId: 'prio-bars', sortBases: [{v: 'ft3', label: 'Extra air', get: (r) => r.ft3}]})];
+  // the parts drawn only when they add up to the total (a lost-picks figure below ₹0, e.g. yarn above the sale value, draws one bar)
+  const rows = P.rows.map((o) => { const parts = prioParts(o), whole = Math.abs(parts.reduce((a, p) => a + p.v, 0) - o.rs) < 0.5;
+    return {label: lab(o), v: o.rs, text: `${rs(o.rs)} a day`, segs: whole ? parts.map((p) => ({v: p.v, name: PRIO_SEG[p.k].name, color: PRIO_SEG[p.k].color})) : null, lakh: o.lakh, onClick: go(o),
+      title: `Loom ${o.x.loom}: ${rs(o.rs)} a day = ${whole ? parts.map((p) => `${PRIO_SEG[p.k].name.toLowerCase()} ${rs(p.v)}`).join(' + ') || 'nothing valued' : 'one bar: its lost picks are valued below ₹0 (yarn above the sale value), so its parts do not add up to it'}`}; });
+  const used = new Set(P.rows.flatMap((o) => prioParts(o).map((p) => p.k)));
+  return [hbars(rows, {aria: 'Work on these first: rupees a day by loom, in parts', fmt: rs, axis: '₹ a day', labelW: 170, wideText: true, nameLabel: 'Loom', sortLabel: 'Rupees a day', sortId: 'prio-bars',
+      sortBases: [{v: 'lakh', label: 'Lost picks', get: (r) => r.lakh}]}),
+    el('div', {class: 'legend'}, Object.entries(PRIO_SEG).filter(([k]) => used.has(k)).map(([, x]) => el('span', {class: 'lg'}, el('span', {class: 'sq', style: `background:${x.color}`}), x.name)))];
 }
 // Round A1: the loom's last quality change in the loom data (the last 60 complete days), under its name in the list
 function prioChange(loom) {
@@ -251,6 +272,9 @@ const actSub = () => `${dfmt(D.latest)} · ${wLabel()}`;
 const actPhone = () => window.matchMedia('(max-width: 560px)').matches;
 // Round A10 (the wording list): a long note on a laptop, its short twin (280 characters or fewer, the detail in the Guide) on a phone
 const notePh = (long, short) => [el('p', {class: 'note offph', text: long}), el('p', {class: 'note onph', text: short})];
+// Round C2b (Divyam, 28 Nov 2026, audit #28): a tile's note kept within 3 lines on a laptop (.cap3; the short text, as on a
+// phone), its full text on pointing at it (title) and at the top of the view the tile opens, or in the Guide when it opens none
+const kpiCap = (k, full) => { const n = k && k.querySelector(':scope > .note'); if (n) { n.classList.add('cap3'); if (full) n.title = full; } return k; };
 function actTable(id, heads, rows, num, tot) {
   if (!actPhone()) return table(heads, [...rows.map((r) => r[0]), ...(tot ? [tot] : [])], num);
   const nm = (h) => Array.isArray(h) ? (h[1] === 'ran' || h[1] === 'running' ? `${h[0]} ${h[1]}` : h[1] === 'which' ? h[0] : `${h[0]} (${h[1]})`) : h;   // "Looms ran: 3", not "Looms, ran: 3"

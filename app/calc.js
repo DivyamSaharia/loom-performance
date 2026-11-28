@@ -1295,3 +1295,33 @@ function mtdLineBars(lines, mtdPicks, mtdCut, n = 14) {
   rows.push({label: 'Cut piece loss', mt: mtdCut || 0, cut: true});
   return rows.map((r) => ({...r, pp: pp(r.mt), share: tot ? r.mt / tot : null}));
 }
+
+// ---- Round C2b (Divyam, 28 Nov 2026; claude/2026-11-28_data-viz-audit.md items 8, 9, 37): the pure pieces of the Actions charts.
+// #8 Where the saving is as a bridge: cost per pick now, the five steps (each its own paise, so they add up), the target cost
+// per pick. A step with no figure (left out: no compressor reading, no set point) is a gap: its slot reads "—", no bar, and
+// the running figure carries on, as the table's foot (tc.cpp) leaves it out too. names: {id: label}.
+function tcBridge(tc, names, nowLabel, endLabel) {
+  if (!tc || !tc.ok || !ok(tc.c0) || !ok(tc.cpp)) return null;
+  const nm = (id) => (names && names[id]) || id;
+  return [{label: nowLabel, v: tc.c0, total: true},
+    ...tc.steps.map((s) => ok(s.pp) ? {label: nm(s.id), v: s.pp} : {label: nm(s.id), v: null, gap: true}),
+    {label: endLabel, v: tc.cpp, total: true}];
+}
+// #9 The axis window of a line drawn with faint dots under it: the lead line's lowest and highest values, widened by pad. A
+// dot inside the window sets the axis like any value; a dot outside it is drawn at the axis edge as an arrow with its value
+// (charts.js), so one wild day does not flatten the lead line. null when the lead line has no value.
+function dotWin(lead, pad) {
+  const v = (lead || []).filter(ok);
+  return v.length ? [Math.min(...v) - pad, Math.max(...v) + pad] : null;
+}
+// A share as a % with d decimals, a proper minus, and no sign on a figure that shows as zero ("0.0%", never "−0.0%").
+function pcz(v, d = 1) {
+  if (!ok(v)) return '—';
+  const t = (100 * v).toFixed(d);
+  return (/^-0\.?0*$/.test(t) ? t.slice(1) : t.replace('-', '−')) + '%';
+}
+// #37 Work on these first as bars: a loom's rupees a day in its parts, left to right, the parts that carry rupees only (lost
+// picks when they are valued, extra air, floor pressure). They add up to the loom's total (fcPrioValue's rs).
+function prioParts(o) {
+  return [['picks', o.pickBy ? o.rsPicks : 0], ['air', o.rsAir], ['press', o.rsPress]].filter(([, v]) => ok(v) && v > 0).map(([k, v]) => ({k, v}));
+}

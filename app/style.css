@@ -687,3 +687,7 @@ dialog.wks::backdrop{background:rgba(0,0,0,.38)}
 .twin > .tablebox:last-child { margin-top: 0; }
 /* Round C2a (audit #30): one segmented bar of a split of one whole, its key under it */
 .segbar .legend { margin-top: 4px; }
+/* Round C2b (audit #28): the notes on the Realisation per pick, Target profit per pick and Target cost per pick tiles stay within 3 lines on a laptop; the full note is at the top of the view the tile opens (or in the Guide) */
+@media (min-width:561px){.kpi>.note.cap3{display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+/* Round C2b (audit #27): a quality's name and its ↗ on one line in Realisation per pick by quality's table */
+.hgnw{white-space:nowrap}

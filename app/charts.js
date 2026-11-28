@@ -43,7 +43,7 @@ function frame(o, lo, hi, n) {
     const edge = X(i) + 26 > W ? 'end' : 'middle';   // the last date stays inside the chart on a phone
     const tx = svgEl('text', {x: edge === 'end' ? W - 2 : X(i), y: H - 12, 'text-anchor': edge, style: 'fill:var(--muted);font-size:11px'}); tx.textContent = o.xlabels ? o.xlabels[i] : dfmt(d); svg.append(tx);
   });
-  return {svg, X, Y, W, H, L, R, T, B, PX};
+  return {svg, X, Y, W, H, L, R, T, B, PX, a, b};
 }
 // Every line chart with more than one line gets toggle boxes for its legend (toggleChart); o.plain draws it as is.
 // o.id names the chart so its switched-on lines are kept while the page is open (defaults to its aria label).
@@ -58,6 +58,27 @@ function frame(o, lo, hi, n) {
 const LIGHT = 16;
 // the period averages drawn (they set the Y range too: a week's sum can sit outside the days' own values)
 const perVals = (o) => o.pavg === false ? [] : o.series.filter((s) => s.per && ok(s.per.v) && !s.avgOf).map((s) => s.per.v);
+// Round C2b (audit #9): a series with s.win = [lo, hi] (calc.js dotWin) sets the axis only with its values inside that window;
+// the rest are drawn at the edge of the axis as arrows with their value (plotEdge)
+const axVals = (o) => o.series.flatMap((s) => s.win ? s.vals.filter((v) => ok(v) && v >= s.win[0] && v <= s.win[1]) : s.vals).filter(ok);
+const inAxis = (o, a, b) => o.series.some((s) => s.win) ? {...o, series: o.series.map((s) => s.win ? {...s, vals: s.vals.map((v) => ok(v) && (v < a - 1e-9 || v > b + 1e-9) ? null : v)} : s)} : o;
+function plotEdge(svg, o, X, a, b, top, bottom) {
+  const fmt = o.fmt || pn, drawn = svg.__lab = svg.__lab || [];
+  o.series.forEach((s, si) => {
+    if (!s.win) return;
+    const col = s.color || ccAt(si);
+    s.vals.forEach((v, i) => {
+      if (!ok(v) || (v >= a - 1e-9 && v <= b + 1e-9)) return;
+      const up = v > b, x = X(i), y = up ? top + 1 : bottom - 1, d = up ? 7 : -7;
+      const p = svgEl('path', {d: `M${x - 5} ${y + d}L${x} ${y}L${x + 5} ${y + d}Z`, class: 'edgear', style: `fill:${col}`});
+      const tt = svgEl('title'); tt.textContent = `${s.name} · ${ptLabel(o, i)}: ${fmt(v)} (off the axis)`; p.append(tt); svg.append(p);
+      const ty = up ? y + 19 : y - 11, txt = fmt(v), bx = labBox(x, ty, txt, 'middle');
+      if (drawn.some((q) => labHit(bx, q))) return;   // the value stays in the hover text and the details bar
+      const t = svgEl('text', {x, y: ty, 'text-anchor': 'middle', class: 'edgel', style: 'fill:var(--ink);font-size:10px;font-weight:600;paint-order:stroke;stroke:var(--panel);stroke-width:3px'});
+      t.textContent = txt; svg.append(t); drawn.push(bx);
+    });
+  });
+}
 // Round C2a (audit #3): pan charts with the same o.sync scroll together (two panels on one date axis)
 const SYNC = {};
 const ptLabel = (o, i) => o.tips ? o.tips[i] : dfmt(o.dates[i]);
@@ -67,7 +88,7 @@ function lineChart(o) {
     const ser = o.series.map((x, i) => ({...x, key: x.key || String(i), color: x.color || ccAt(i)}));
     return toggleChart(o.id || 'lc:' + (o.aria || ''), {...o, series: ser}, o.defaults || ser.filter((x) => !x.avgOf).map((x) => x.key));
   }
-  const n = o.dates.length, vals = o.series.flatMap((s) => s.vals).filter(ok).concat((o.refs || []).map((r) => r.v).filter(ok), perVals(o));
+  const n = o.dates.length, vals = axVals(o).concat((o.refs || []).map((r) => r.v).filter(ok), perVals(o));
   if (!n || !vals.length) return el('div', {class: 'empty', text: o.empty || 'Not available for this period.'});
   if ((o.pan && n > o.pan) || (o.px && n > 1)) return panChart(o);
   const f = frame(o, Math.min(...vals), Math.max(...vals), n), {svg, X, Y} = f, light = n > LIGHT;
@@ -78,7 +99,8 @@ function lineChart(o) {
   }
   plotMarks(svg, o, X, f.T, f.H - f.B, f.W);
   plotShade(svg, o, X, Y);
-  plotSeries(svg, o, X, Y, light, f.W);
+  plotSeries(svg, inAxis(o, f.a, f.b), X, Y, light, f.W);
+  plotEdge(svg, o, X, f.a, f.b, f.T, f.H - f.B);
   plotAvg(svg, o, f.L, f.W - f.R, Y, false);
   const box = el('div', {class: 'tablebox'}, svg, legend(o.series));
   if (!o.noread) readout(svg, box, o, X, f);
@@ -111,15 +133,16 @@ function plotSeries(svg, o, X, Y, light, wMax) {
         if (o.onPick) r.addEventListener('click', () => o.onPick(ptPick(o, p[3])));
         svg.append(r);
       }
-    } else for (const r of runs) if (r.length > 1) svg.append(svgEl('polyline', {points: r.map((p) => p[0] + ',' + p[1]).join(' '), fill: 'none', style: `stroke:${col};stroke-width:${s.avgOf ? 2.8 : 2};${s.dash ? 'stroke-dasharray:5 4;' : ''}${fade ? 'opacity:.35;' : ''}`}));
+    } else if (!s.dots) for (const r of runs) if (r.length > 1) svg.append(svgEl('polyline', {points: r.map((p) => p[0] + ',' + p[1]).join(' '), fill: 'none', style: `stroke:${col};stroke-width:${s.avgOf ? 2.8 : 2};${s.dash ? 'stroke-dasharray:5 4;' : ''}${fade ? 'opacity:.35;' : ''}`}));
     const alone = new Set(runs.filter((r) => r.length === 1).map((r) => r[0][3]));
-    const lab = !fade && strong.length <= 2, k = Math.max(1, Math.ceil(pts.length / 12));
+    const lab = !fade && !s.dots && strong.length <= 2, k = Math.max(1, Math.ceil(pts.length / 12));
     let mark = null;
     if (light && pts.length) { const hi = pts.reduce((a, p) => p[2] > a[2] ? p : a), lo = pts.reduce((a, p) => p[2] < a[2] ? p : a); mark = new Set([hi[3], lo[3], pts[pts.length - 1][3]]); }
     pts.forEach((p, j) => {
-      const showDot = !fade && !s.bars && (!light || j === pts.length - 1 || alone.has(p[3]));
+      // Round C2b (audit #9): s.dots draws the series as faint dots only (no line, no value labels), every point shown
+      const showDot = !fade && !s.bars && (s.dots || !light || j === pts.length - 1 || alone.has(p[3]));
       if (showDot) {
-        const c = svgEl('circle', {cx: p[0], cy: p[1], r: 3.6, style: `fill:${col};stroke:var(--panel);stroke-width:1.5;${o.onPick ? 'cursor:pointer;' : ''}`});
+        const c = svgEl('circle', {cx: p[0], cy: p[1], r: s.dots ? 3.2 : 3.6, class: s.dots ? 'fdot' : null, style: `fill:${col};stroke:var(--panel);stroke-width:1.5;${s.dots ? 'opacity:.5;' : ''}${o.onPick ? 'cursor:pointer;' : ''}`});
         const tt = svgEl('title'); tt.textContent = `${s.name} · ${ptLabel(o, p[3])}: ${(o.fmt || pn)(p[2])}`; c.append(tt);
         if (o.onPick && !light && !o.pan) c.addEventListener('click', () => o.onPick(ptPick(o, p[3])));
         svg.append(c);
@@ -259,7 +282,7 @@ function openDayAny(d) {
 // drawn apart from the plot so it never scrolls away. Drawn in screen pixels at the box's real width, redrawn when it changes.
 function panChart(o) {
   const n = o.dates.length, win = Math.min(n, o.pan || n), scrolls = n > win, AX = 48, R = 24, T = 18, B = 34, PADL = o.padL || 12;   // o.padL: room for a bar at the first day (two panels keep one value)
-  const vals = o.series.flatMap((s) => s.vals).filter(ok).concat((o.refs || []).map((r) => r.v).filter(ok), perVals(o));
+  const vals = axVals(o).concat((o.refs || []).map((r) => r.v).filter(ok), perVals(o));
   const lo = Math.min(...vals), hi = Math.max(...vals);
   const [a, b, ticks] = yAxis(o, lo, hi);
   const wrap = el('div', {class: 'panbox'}), axis = el('div', {class: 'panaxis'}), sc = el('div', {class: 'panscroll' + (scrolls ? '' : ' still')});
@@ -291,7 +314,8 @@ function panChart(o) {
     }
     plotMarks(svg, o, X, T, H - B, PW);
     plotShade(svg, o, X, Y);
-    plotSeries(svg, o, X, Y, false, PW);
+    plotSeries(svg, inAxis(o, a, b), X, Y, false, PW);
+    plotEdge(svg, o, X, a, b, T, H - B);
     plotAvg(svg, o, PADL, PW - R, Y, true);
     if (RO) {
       const guide = svgEl('line', {y1: T, y2: H - B, style: 'stroke:var(--muted);stroke-width:1;stroke-dasharray:2 3;display:none'});
@@ -356,7 +380,7 @@ function toggleChart(id, o, defaults) {
     return el('button', {type: 'button', class: 'tog', 'aria-pressed': pressed ? 'true' : 'false', disabled: can ? null : true,
       title: can ? (pressed ? 'Hide ' : 'Show ') + s.name : (s.off || 'Not available for this period'),
       onclick: (e) => { if (on.has(s.key)) on.delete(s.key); else on.add(s.key); if (e.currentTarget.closest('dialog')) drawPanel(true); else render(); }},
-      el('i', {style: `background:${cols[s.key]};${s.dash ? `background:repeating-linear-gradient(90deg,${cols[s.key]} 0 4px,transparent 4px 7px);` : ''}`}), s.name);
+      el('i', {style: `background:${cols[s.key]};${s.dash ? `background:repeating-linear-gradient(90deg,${cols[s.key]} 0 4px,transparent 4px 7px);` : ''}${s.dots ? 'border-radius:50%;opacity:.6;' : ''}`}), s.name);
   }), hasAvg ? el('button', {type: 'button', class: 'tog tavg', 'aria-pressed': on.has(PAVG) ? 'true' : 'false', title: (on.has(PAVG) ? 'Hide' : 'Show') + ' the period average of each line shown (dotted)',
     onclick: (e) => { if (on.has(PAVG)) on.delete(PAVG); else on.add(PAVG); if (e.currentTarget.closest('dialog')) drawPanel(true); else render(); }},
     el('i', {style: 'background:repeating-linear-gradient(90deg,var(--muted) 0 2px,transparent 2px 5px)'}), 'Period average') : null);
