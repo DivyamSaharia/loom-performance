@@ -171,12 +171,19 @@ function benchSummary(w, hg, A, nowLabel, opts = {}) {
     ['Efficiency', '%', A && nowCell(A.eff, f1, A.eff < EFF_BAD(), true), `line ${f0(EFF_BAD())}`, '—', '—', gw('eff')],
     ['Warp breaks', 'per 100k picks', A && f2(A.warpRate), btn(b.warp_med, 'warp_rate', f2), '—', '—', G ? '—' : null]];
   const t2 = el('table');
-  t2.append(el('thead', {}, el('tr', {}, th('Metric'), th(nowLabel || 'This day', null, true), th('Benchmark', null, true), th('Best', 'single loom-day', true), th('Target', null, true), G ? th('Gap worth', '₹ a day, to benchmark', true) : null)));
+  // Round C3 (audit #23): a Range column, the Targets tab's small bar (now, benchmark tick, best dot, target diamond)
+  const rcfm = (v) => ok(rpm) ? cfmOf(v, w, hg, rpm) : null;
+  const rv = [[A && A.rpm, b.rpm, bestVal(w, hg, 'rpm'), t.rpm, f0], [A && A.erpm, b.erpm, bestVal(w, hg, 'erpm'), tgtE(w, hg), f0], [A && A.cfm, rcfm(b.apk), rcfm(bestVal(w, hg, 'apk')), t.cfm, f1],
+    [A && A.apk, b.apk, bestVal(w, hg, 'apk'), null, f1], [A && A.main_max, b[pk], bestVal(w, hg, pk), null, f2], [A && A.eff, EFF_BAD(), null, null, f1], [A && A.warpRate, b.warp_med, null, null, f2]];
+  const rb = (i) => { const [now, bm, best, tg, fmt] = rv[i]; return typeof rangeBar === 'function' ? rangeBar({now, bm, best, tg, fmt, w: 110, aria: `${rows[i][0]}: now, benchmark${i === 5 ? ' (the line)' : ''}, best and target`, title: i === 5 ? `now ${ok(now) ? fmt(now) : '—'} · the ${f0(bm)}% line` : null}) : null; };
+  t2.append(el('thead', {}, el('tr', {}, th('Metric'), th(nowLabel || 'This day', null, true), th('Benchmark', null, true), th('Best', 'single loom-day', true), th('Target', null, true), th('Range', 'now · bm · best · tgt'), G ? th('Gap worth', '₹ a day, to benchmark', true) : null)));
   const tb = el('tbody');
-  for (const r of rows) tb.append(el('tr', {}, el('td', {}, el('b', {text: r[0]}), el('div', {class: 'note', text: r[1]})),
-    el('td', {class: 'num'}, A ? r[2] : '—'), el('td', {class: 'num hl'}, r[3]), el('td', {class: 'num'}, r[4]), el('td', {class: 'num'}, r[5]), G ? el('td', {class: 'num'}, A ? r[6] : '—') : null));
+  rows.forEach((r, i) => tb.append(el('tr', {}, el('td', {}, el('b', {text: r[0]}), el('div', {class: 'note', text: r[1]})),
+    el('td', {class: 'num'}, A ? r[2] : '—'), el('td', {class: 'num hl'}, r[3]), el('td', {class: 'num'}, r[4]), el('td', {class: 'num'}, r[5]), el('td', {class: 'rbc'}, rb(i)), G ? el('td', {class: 'num'}, A ? r[6] : '—') : null)));
   t2.append(tb);
-  return el('div', {}, el('div', {class: 'tablebox'}, t2), G && !G.loading && A ? el('p', {class: 'note', text: G.note}) : null);
+  // Round C3 (#23): the Range column's key
+  const rkey = typeof legendShape === 'function' ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, legendShape('bar'), 'now'), el('span', {class: 'lg'}, legendShape('tick'), 'benchmark (efficiency: the line)'), el('span', {class: 'lg'}, legendShape('circle'), 'best'), el('span', {class: 'lg'}, legendShape('diamond'), 'target')) : null;
+  return el('div', {}, el('div', {class: 'tablebox'}, t2), rkey, G && !G.loading && A ? el('p', {class: 'note', text: G.note}) : null);
 }
 
 // Panna switch for a 280 cm head group (default double panna).
@@ -258,8 +265,10 @@ function hgView(hg, w, date) {
       el('button', {class: 'link', type: 'button', text: 'Open in Benchmarks tab ›', onclick: () => { BQ = key(w, hg); closePanel(); setTab('benchmarks'); }})),
     card('Benchmark, best and target', `Day figures from looms that ran at least 60 min on ${dfmt(date)}`, benchSummary(w, hg, A, `${dfmt(date)}, all looms`, {date})),
     typeof fxHgFoldBlock === 'function' ? fxHgFoldBlock(hg, w, date) : null,   // Round A8 (scope item 2): owner only
-    card(`Looms running ${hg} on ${dfmt(date)} · ${new Set(L.map((x) => x.loom)).size}`, 'Each loom against the head group benchmark and target',
-      L.length ? loomTable(L) : el('div', {class: 'empty', text: 'No loom ran this quality on this day.'})),
+    card(`Looms running ${hg} on ${dfmt(date)} · ${new Set(L.map((x) => x.loom)).size}`, 'Each loom against the head group benchmark, best and target',
+      L.length ? loomTable(L, {range: true}) : el('div', {class: 'empty', text: 'No loom ran this quality on this day.'}),
+      L.length ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, legendShape('bar'), 'this loom'), el('span', {class: 'lg'}, legendShape('tick'), 'benchmark'), el('span', {class: 'lg'}, legendShape('circle'), 'best'), el('span', {class: 'lg'}, legendShape('diamond'), 'target'),
+        el('span', {text: 'Point at a bar for the figures; ▼ / ▲ = short of or over the benchmark or target. Next: open a loom for its readings.'})) : null),
     hg !== 'Unassigned' ? panelTrend({kind: 'hg', w, hg}) : null]};
 }
 // openGuide lives in app/guide.js

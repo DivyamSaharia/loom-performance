@@ -947,6 +947,20 @@ function fcBestByWidth(rows, key) {
   }
   return out;
 }
+// Round C3 (audit #46): Best product per loom type as bars: for each width, every priced product's figure a loom a day, ranked,
+// on the same basis fcBestByWidth picks the best on: profit a loom a day on the loom cost basis where any product on that width
+// has a loom cost profit (the products with none are named, never drawn as ₹0), else realisation a loom a day. best: the key
+// fcBestByWidth picks, so the first bar is the note's best product.
+function fcWidthRank(rows, key) {
+  const out = {}, B = fcBestByWidth(rows, key);
+  for (const w of Object.keys(B)) {
+    const R = fcRank(rows.filter((r) => r.width === w), key).groups.filter((g) => g.priced > 0), by = B[w].by;
+    const has = (g) => by === 'profit' ? g.lc_ld > 0 && g.profit_lc_ld != null : g.real_ld != null;
+    out[w] = {by, best: B[w].key, rows: R.filter(has).map((g) => ({key: g.key, v: by === 'profit' ? g.profit_lc_ld : g.real_ld, loomdays: by === 'profit' ? g.lc_ld : g.priced_ld})),
+      none: R.filter((g) => !has(g)).map((g) => g.key)};
+  }
+  return out;
+}
 // Lost picks of one loom-day, the Actions tab's way (10 Nov 2026): below the efficiency line, the minutes short of it at
 // the loom's own RPM; below the RPM reference by more than its tolerance, the RPM short × run minutes. x: {run, stop, rpm,
 // eff} (minutes, RPM, %); refs: {effLine, rpmBm, rpmTg, tolPct}. Machine picks; the caller applies the panna factor and

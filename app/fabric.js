@@ -1096,7 +1096,7 @@ function fxHeatReal(P0, w, hg, mode) {
     const Nm = name.charAt(0).toUpperCase() + name.slice(1), head = `${hg}, ${w} cm · Loom ${what}`;
     if (!R || gap == null) return {none: `no ${name}`, tip: `${head}\nCurrent: ${fxMoney(now)}\n${Nm}: none (no ${name} effective RPM to compare with)${cov}`};
     const G = gapPct(now, ref, true), p = G ? G.p : 0, z = Math.abs(gap) < 0.5;
-    return {text: z ? '±₹0' : (gap > 0 ? '+' : '') + fxMoney(gap), level: heatLevel(p), tone: z ? 'none' : gap < 0 ? 'bad' : 'good',
+    return {text: z ? '±₹0' : (gap > 0 ? '+' : '') + fxMoney(gap), v: gap, level: heatLevel(p), tone: z ? 'none' : gap < 0 ? 'bad' : 'good',   // v (Round C3, #21): the phone's bars
       tip: `${head}\nCurrent: ${fxMoney(now)}\n${Nm} (at its effective RPM ${f0(R.erpm)}): ${fxMoney(ref)} · ${z ? 'level' : gap < 0 ? 'a deficit of ' + fxMoney(-gap) : 'a surplus of ' + fxMoney(gap)} (${p >= 0 ? '+' : '−'}${Math.abs(p).toFixed(1)}%)${cov}\nClick to open the head group.`,
       onClick: () => openHg(hg, w, date)};
   };
@@ -1661,7 +1661,7 @@ function fxHeatFold(P0, w, hg, mode) {
   if (!G) return {none: 'no figure', tip: `${head}\n${cur}\n${Nm}: ${pn(r.pp, 2)} paise\nNext: see Coverage on the Realisation tab.${lo}`};
   const txt = `${Math.abs(G.p) < 0.05 ? '±' : G.p > 0 ? '+' : '−'}${Math.abs(G.p).toFixed(1)}%`;
   if (typeof wkPut === 'function' && !WKD.C5) wkPut('C5', {hg: `${hg}, ${w} cm`, now: g.pp, ref: r.pp, name, cost: g.cost, A: g.A, rcost: r.cost, rA: r.A});   // Round A4: the first head group with both
-  return {text: txt, level: heatLevel(G.p), tone: Math.abs(G.p) < 0.05 ? 'none' : G.worse ? 'bad' : 'good',
+  return {text: txt, v: G.p, level: heatLevel(G.p), tone: Math.abs(G.p) < 0.05 ? 'none' : G.worse ? 'bad' : 'good',
     tip: `${head}\n${cur}\n${Nm} (each loom at its ${name} effective RPM, the loom cost held): ${pn(r.pp, 2)} paise (${txt})${lo}\nClick to open the head group.`,
     onClick: () => openHg(hg, w, date)};
 }
@@ -1682,7 +1682,7 @@ function fxHeatFoldPer(P, w, hg, mode, head) {
   if (!g.ref || !ok(g.ref.pp)) return {none: `no ${name}`, tip: `${head}\n${cur}\n${Nm}: none (no ${name} effective RPM to compare with)\n${mode === 'tg' ? 'Next: set its target RPM on Targets.' : `Next: the ${name} comes with more loom-days of this head group; meanwhile use another reference above the grid.`}${lo}`};
   const G = gapPct(g.pp, g.ref.pp, false), txt = `${Math.abs(G.p) < 0.05 ? '±' : G.p > 0 ? '+' : '−'}${Math.abs(G.p).toFixed(1)}%`;
   if (typeof wkPut === 'function' && !WKD.C5) wkPut('C5', {hg: `${hg}, ${w} cm`, now: g.pp, ref: g.ref.pp, name, cost: g.cost, A: g.A, rcost: g.ref.cost, rA: g.ref.A});
-  return {text: txt, level: heatLevel(G.p), tone: Math.abs(G.p) < 0.05 ? 'none' : G.worse ? 'bad' : 'good',
+  return {text: txt, v: G.p, level: heatLevel(G.p), tone: Math.abs(G.p) < 0.05 ? 'none' : G.worse ? 'bad' : 'good',
     tip: `${head}\n${cur}\n${Nm} (each loom at its ${name} effective RPM, the loom cost held, day by day): ${pn(g.ref.pp, 2)} paise (${txt})${lo}\nClick to open the head group.`,
     onClick: () => openHg(hg, w, P.to)};
 }
@@ -1997,9 +1997,9 @@ function fxErpmRealCard(recs) {
   const noTg = rows.filter((r) => !ok(r.tg)).length, gaps = L.filter((y) => y.gap).length;
   return card(`${title}, ${hg ? 'by head group' : 'by loom'}`, `${dfmt(D.latest)} · ₹ of realisation in the day at each effective RPM · in the Sorting basis order`,
     el('div', {class: 'toolbar'}, bvSeg('erpm-real')),
-    rows.length ? refBars(rows, {limit: hg || FXER_ALL ? 0 : 25, step: every / 2, labelEvery: every, axis: `₹ realisation ${hg ? 'per loom-day' : 'in the day'} (sale value less yarn)`, axisShort: '₹ realisation', aria: `Realisation ${hg ? 'by head group' : 'per loom'}: now against benchmark, best and target`, dec: 0, exSign: '−', fmt: (v) => Math.round(v).toLocaleString('en-IN'), tick: (v) => v >= 1000 ? (v / 1000).toLocaleString('en-IN') + 'k' : String(v)})
+    rows.length ? refBars(rows, {limit: hg || FXER_ALL ? 0 : 25, step: every / 2, labelEvery: every, axis: `₹ realisation ${hg ? 'per loom-day' : 'in the day'} (sale value less yarn)`, axisShort: '₹ realisation', aria: `Realisation ${hg ? 'by head group' : 'per loom'}: now against benchmark, best and target`, dec: 0, exSign: '−', fmt: (v) => Math.round(v).toLocaleString('en-IN'), tick: (v) => v >= 1000 ? (v / 1000).toLocaleString('en-IN') + 'k' : String(v),
+      gapId: hg ? 'real-hg' : 'real-loom', refName: 'target (the benchmark where none is set)', unit: 'rupees', legend: chartLegend('realisation', '−n after the value = rupees short of the target (the benchmark where no target is set)')})
       : el('div', {class: 'empty', text: 'No loom with a head group is priced on this day: see Coverage on the Realisation tab.'}),
-    rows.length ? chartLegend('realisation', '−n after the value = rupees short of the target (the benchmark where no target is set)') : null,
     !hg && rows.length > 25 ? el('button', {class: 'link', type: 'button', text: FXER_ALL ? 'Show the first 25' : `Show all ${rows.length} looms`, onclick: () => { FXER_ALL = !FXER_ALL; render(); }}) : null,
     el('p', {class: 'note', text: `Each figure is production × realisation per pick: the effective RPM (now, benchmark, best, or target = ${f0(ERPM_TGT * 100)}% of the target RPM) × the loom's run + stop minutes on the day × its panna factor, on the costing basis, × that loom-day's realisation per pick (As sold, the Realisation tab). There is no separate realisation target. ${hg ? 'Head-group-wise is the average per priced loom-day. ' : ''}${noTg ? `${noTg} ${hg ? 'head group' : 'loom'}${noTg === 1 ? ' has' : 's have'} no target RPM, so ${noTg === 1 ? 'it is' : 'they are'} sorted on the benchmark. ` : ''}${gaps ? `${gaps} loom${gaps === 1 ? ' is' : 's are'} not priced and left out.` : ''}`}));
 }
@@ -2012,7 +2012,24 @@ function fxMixNote(date) {
   const mix = {};
   for (const x of latestRecs()) { if (x.hg === 'Unassigned') continue; const k = x.width + ' cm'; mix[k] = mix[k] || {}; mix[k][x.hg] = (mix[k][x.hg] || 0) + 1; }
   const mixTxt = Object.entries(mix).map(([w, m]) => `${w}: ` + Object.entries(m).sort((a, b) => b[1] - a[1]).map(([hg, n]) => `${n} on ${hg}`).join(', ')).join(' · ');
-  return el('p', {class: 'note'}, el('b', {text: 'Best product per loom type: '}), parts.length ? parts.join(' · ') : 'nothing priced on this day (see Coverage on the Realisation tab, or pick another day on the date chip)', '. ', el('b', {text: 'Mix now: '}), mixTxt || '—', `. The best product is the one with the highest profit a loom a day on the loom cost basis${fxBOn()} among the loom-days priced on that width (As sold, By loom / By head group on the Realisation tab); where none has a loom cost profit, the highest realisation a loom a day.`);
+  const note = el('p', {class: 'note'}, el('b', {text: 'Best product per loom type: '}), parts.length ? parts.join(' · ') : 'nothing priced on this day (see Coverage on the Realisation tab, or pick another day on the date chip)', '. ', el('b', {text: 'Mix now: '}), mixTxt || '—', `. The best product is the one with the highest profit a loom a day on the loom cost basis${fxBOn()} among the loom-days priced on that width (As sold, By loom / By head group on the Realisation tab); where none has a loom cost profit, the highest realisation a loom a day.`);
+  return el('div', {}, note, fxBestBars(rows));
+}
+// Round C3 (audit #46): under the note, for each width, every priced product's profit a loom a day (loom cost basis, on the
+// chosen basis) as ranked bars either side of 0, the best product first and named; a width with no loom cost profit draws
+// realisation a loom a day (no basis word); a product with no loom cost profit there is named, not drawn. Owner only (fxOn).
+function fxBestBars(rows) {
+  const R = fcWidthRank(rows.filter((r) => inW(r.width)), (r) => r.fabric), ws = Object.keys(R).sort();
+  if (!ws.length) return null;
+  return el('div', {class: 'stack bestbars'}, ws.map((w) => {
+    const o = R[w], pr = o.by === 'profit';
+    return el('div', {}, el('div', {class: 'note', text: `${w} cm · ${pr ? `profit (loom cost) a loom a day${fxBOn()}` : 'realisation a loom a day (no product on this width has a loom cost profit)'}`}),
+      o.rows.length ? signedBars(o.rows.map((g) => ({label: `${fxName(g.key)}${g.key === o.best ? ' (best)' : ''}`, v: g.v, ld: g.loomdays, text: fxMoney(g.v), color: pr ? (g.v < 0 ? 'var(--bad)' : 'var(--good)') : 'var(--muted-2)',
+        title: `${fxName(g.key)}, ${w} cm: ${fxMoney(g.v)} a loom a day ${pr ? 'profit (loom cost)' : 'realisation'} over ${g.loomdays} loom-day${g.loomdays === 1 ? '' : 's'}`})),
+        {aria: `Products on ${w} cm looms, ${pr ? 'profit' : 'realisation'} a loom a day`, fmt: fxMoney, axis: `₹ a loom a day, ${pr ? 'profit (loom cost)' : 'realisation'}`, labelW: 170, sortId: 'best-prod:' + w, nameLabel: 'Product', sortLabel: pr ? 'Profit a loom a day' : 'Realisation a loom a day', sortDir: 'd',
+          sortBases: [{v: 'ld', label: 'Loom-days', get: (r) => r.ld}]}) : null,
+      o.none.length ? el('p', {class: 'note', text: `No loom cost profit, not drawn: ${o.none.map(fxName).join(', ')}. Next: see Coverage on the Realisation tab.`}) : null);
+  }));
 }
 // Utilisation tab (R2): idle hours valued as realisation forgone at the loom's current quality: the powered-down minutes
 // × the RPM the loom runs on that quality × that quality's realisation per pick on the loom (the day's own priced loom-day,

@@ -137,16 +137,17 @@ function pcDay(d) {
 }
 const pcM = (x) => ok(x) ? f0(x) : '—';
 const pcSg = (x, n = 0) => !ok(x) ? '—' : (x > 0 ? '+' : x < 0 ? '−' : '±') + (n ? Math.abs(x).toFixed(n) : Math.round(Math.abs(x)).toLocaleString('en-IN'));
-function pcRow(r, d) {
+// Round C3 (audit #24): mx = the table's largest |gap %|: the Gap % cell carries a small bar either side of 0 (red when flagged)
+function pcRow(r, d, mx) {
   const gap = r.gapM != null ? pcSg(r.gapM) : el('span', {class: 'note', text: r.why || '—'});
   const looms = !r.looms.length ? '' : 'looms ' + (r.looms.length > 6 ? `${r.looms.slice(0, 6).join(', ')} +${r.looms.length - 6} more` : r.looms.join(', '));
   const head = el('span', {}, r.name, looms ? el('div', {class: 'note', text: looms}) : null, r.qs && r.qs.length ? el('div', {class: 'note', text: 'file: ' + [...new Set(r.qs)].join(', ')}) : null);
   return [d ? dfmt(d) : null, head, r.width === 'both' ? 'both' : r.width ? r.width + ' cm' : '—', pcM(r.loomM), pcM(r.xlM),
-    el('span', {class: r.flag ? 'pill bad' : null}, gap), r.pct != null ? pcSg(r.pct, 1) + '%' : '—'].filter((c, i) => d || i);
+    el('span', {class: r.flag ? 'pill bad' : null}, gap), r.pct != null ? (mx > 0 ? gapCell(pcSg(r.pct, 1) + '%', r.pct, mx, {tone: r.flag ? 'bad' : null}) : pcSg(r.pct, 1) + '%') : '—'].filter((c, i) => d || i);
 }
 const pcLevels = () => `flagged over ${PCHK.pct}% and ${f0(PCHK.m)} m`;
 const PC_HEAD = ['Quality', 'Width', ['Loom', 'm'], ['File', 'm'], ['Gap', 'm'], 'Gap %'];
-const pcFoot = () => el('p', {class: 'note', text: 'Loom = the loom readings: each loom-day\'s picks ÷ the costing file\'s picks per inch for its quality. File = the costing file\'s production table, Day + Night metres. Gap = loom − file: + means the loom readings are higher, − the costing file is higher. The file has no width column, so its lines are matched to a width by loom speed (RPM); "both" = compared across both widths. A row on one side only is named, never 0.'});
+const pcFoot = () => el('p', {class: 'note', text: 'Loom = the loom readings: each loom-day\'s picks ÷ the costing file\'s picks per inch for its quality. File = the costing file\'s production table, Day + Night metres. Gap = loom − file: + means the loom readings are higher, − the costing file is higher; the small bar under Gap % grows right for +, left for −, full at the table\'s largest gap. The file has no width column, so its lines are matched to a width by loom speed (RPM); "both" = compared across both widths. A row on one side only is named, never 0.'});
 // Actions: the day's flagged rows and its missed readings (the date chip's day)
 function prodCheckActions() {
   const d = D.latest, x = pcDay(d), M = (D.missed || []).filter((m) => m.date === d);
@@ -154,7 +155,8 @@ function prodCheckActions() {
   if (!x.chk) body.push(el('p', {class: 'note', text: 'Production check: ' + x.why + '.'}));
   else {
     const F = x.chk.rows.filter((r) => r.flag);
-    body.push(F.length ? table(PC_HEAD, F.map((r) => pcRow(r)), [2, 3, 4, 5])
+    const mx = gapMax(F.map((r) => r.pct));
+    body.push(F.length ? table(PC_HEAD, F.map((r) => pcRow(r, null, mx)), [2, 3, 4, 5])
       : el('p', {class: 'note', text: `No quality × width differs by more than ${PCHK.pct}% and ${f0(PCHK.m)} m on ${dfmt(d)}.`}));
   }
   const sh = M.filter((m) => m.kind === 'shift'), st = M.filter((m) => m.kind === 'short');
@@ -167,7 +169,10 @@ function prodCheckActions() {
 // Data health: the last 14 days, flagged rows (with the looms behind each) and the days with no check; the levels
 function prodCheckCard() {
   const days = (D.complete_days || []).slice(-14).reverse(), rows = [], none = [];
-  for (const d of days) { const x = pcDay(d); if (!x.chk) none.push(`${dfmt(d)}: ${x.why}`); else for (const r of x.chk.rows) if (r.flag) rows.push(pcRow(r, d)); }
+  const fl = [];
+  for (const d of days) { const x = pcDay(d); if (!x.chk) none.push(`${dfmt(d)}: ${x.why}`); else for (const r of x.chk.rows) if (r.flag) fl.push([r, d]); }
+  const mx = gapMax(fl.map(([r]) => r.pct));
+  for (const [r, d] of fl) rows.push(pcRow(r, d, mx));
   const lv = el('div', {class: 'meta'}, `Levels: a row is flagged when it differs by more than ${PCHK.pct}% and more than ${f0(PCHK.m)} m.`,
     PCHK.by ? ` Set by ${PCHK.by}${PCHK.at ? ' on ' + new Date(PCHK.at).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata'}) + ' IST' : ''}.` : '',
     PCHK.err ? ` (${PCHK.err}; press Refresh, the round-arrow icon)` : '');
@@ -196,7 +201,17 @@ function missedCard() {
     m.kind === 'shift' ? `shift ${m.shift} file has no reading (it lists ${m.looms} of ${m.of} looms)` : `${f0(m.min)} minutes run + stopped, under ${lim}`,
     m.kind === 'short' ? (m.hg || m.hg0 || '—') : '—',
     m.kind === 'short' ? (missedLikely(m, ck(m.date)) ? el('span', {class: 'pill bad', text: 'likely missed'}) : el('span', {class: 'note', text: 'missed or powered down'})) : el('span', {class: 'pill bad', text: 'missed'})]);
+  // Round C3 (audit #45): above the table, a loom × day grid of the same readings: dark red a loom missing from a shift file,
+  // pale red a loom-day under the minutes, outlined both; looms with the most such days first; a cell opens the loom on that day
+  const days = (D.complete_days || []).slice(-31), inD = new Set(days), G = missGrid(M.filter((m) => inD.has(m.date)), days);
+  const kw = {shift: 'missing from a shift file', short: `under ${lim} minutes run + stopped`, both: `missing from a shift file and under ${lim} minutes`};
+  const grid = G.looms.length ? el('div', {class: 'tablebox'}, el('table', {class: 'missgrid'},
+    el('thead', {}, el('tr', {}, el('th', {scope: 'col', text: 'Loom'}), G.days.map((d, j) => el('th', {scope: 'col', title: dfmt(d), class: j && +d.slice(8, 10) % 5 ? 'sk' : null, text: d.slice(8, 10).replace(/^0/, '')})))),
+    el('tbody', {}, G.looms.map((l) => el('tr', {}, el('td', {}, loomLink(l, D.latest, 'Loom ' + l), el('span', {class: 'note', text: ` ${G.n[l]}`})),
+      G.days.map((d) => { const k = G.cell[l + '|' + d]; return el('td', {}, k ? el('button', {type: 'button', class: 'mg ' + k, title: `Loom ${l}, ${dfmt(d)}: ${kw[k]}`, 'aria-label': `Loom ${l}, ${dfmt(d)}: ${kw[k]}`, onclick: () => openLoom(l, d)}) : el('span', {class: 'mg', 'aria-hidden': 'true'})); })))))) : null;
   return card('Missed loom readings', `last ${((D.complete_days || []).slice(-31)).length} days · a loom missing from a shift file, or a loom-day under ${lim} minutes`,
+    grid, grid ? el('div', {class: 'legend'}, el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad)'}), 'missing from a shift file'), el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:color-mix(in srgb, var(--bad) 40%, var(--soft))'}), `under ${lim} minutes`),
+      el('span', {class: 'lg'}, el('span', {class: 'sq', style: 'background:var(--bad);outline:2px solid var(--ink);outline-offset:-2px'}), `missing and under ${lim} minutes`), el('span', {text: 'The number after each loom: its days here. Click or tap a cell to open that loom on that day; on a phone the loom\'s name opens it too.'})) : null,
     rows.length ? table(['Day', 'Loom', 'Width', 'What', 'Quality', 'Reading'], rows) : el('p', {class: 'note', text: Array.isArray(D.missed) ? 'None in these days.' : 'Shows after the next daily run (every hour, 10:40 to 16:40 IST).'}),
     el('p', {class: 'note', text: `A loom-day under ${lim} minutes is either missing part of a shift's readings or was powered down; "likely missed" when its quality reads below the costing file on the production check. The loom-day keeps the minutes and picks it has: it is never shown as 0. Next: ask the plant for the missing shift readings.`}));
 }

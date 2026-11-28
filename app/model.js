@@ -398,7 +398,12 @@ function mcellOne(now, bm, tg, fmt, higherBetter, tolBm, tolTg, ref, mode) {
   const txt = lab + ' ' + fmt(rv);
   const r = ref && ok(rv) && mode !== 'tgt' ? bmBtn(txt, ref.w, ref.hg, ref.m, {miss, kind: mode === 'best' ? 'best' : undefined, view: ref.view, rpm: ref.rpm}) : el('span', {class: miss ? 'miss' : null, text: txt});
   const g = ok(now) && ok(rv) ? now - rv : null;
-  return el('div', {class: 'mv'}, el('div', {class: 'v'}, fmt(now), mk), el('div', {class: 'ref'}, r, ok(g) ? ` · ${g >= 0 ? '+' : '−'}${fmt(Math.abs(g))}` : ''));
+  // Round C3 (audit #43): a small bar of the gap as a % of the reference (full at 25%, the heat grid's top band): red when the
+  // cell misses it, green on the better side, grey within the tolerance
+  const gp = ok(g) && rv ? 100 * g / Math.abs(rv) : null, better = ok(g) && (higherBetter ? g > tol(rv) : g < -tol(rv));
+  const gb = typeof gapBar === 'function' && ok(gp) ? gapBar(gp, HEAT_BANDS[HEAT_BANDS.length - 1], {w: 48, tone: miss ? 'bad' : better ? 'good' : null}) : null;
+  if (gb) gb.append(Object.assign(svgEl('title'), {textContent: `${gp >= 0 ? '+' : '−'}${Math.abs(gp).toFixed(1)}% of the ${({bm: 'benchmark', best: 'best', tgt: 'target'})[mode]}`}));
+  return el('div', {class: 'mv'}, el('div', {class: 'v'}, fmt(now), mk), el('div', {class: 'ref'}, r, ok(g) ? ` · ${g >= 0 ? '+' : '−'}${fmt(Math.abs(g))}` : ''), gb);
 }
 function mcell(now, bm, tg, fmt, higherBetter, tolBm, tolTg, ref) {
   if (MREF) return mcellOne(now, bm, tg, fmt, higherBetter, tolBm, tolTg, ref, MREF);

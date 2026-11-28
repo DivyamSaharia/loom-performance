@@ -123,12 +123,12 @@ function plotSeries(svg, o, X, Y, light, wMax) {
   o.series.forEach((s, si) => {
     const col = s.color || ccAt(si), pts = s.vals.map((v, i) => ok(v) ? [X(i), Y(v), v, i] : null).filter(Boolean), fade = faded.has(s.key);
     // Round C2a (audit #3): o.breaks: a day with no figure breaks the line (no join across it); s.bars: bars from 0, green at or
-    // above 0, red below (profit and loss), no dots
+    // above 0, red below (profit and loss), no dots; Round C3 (#12): s.upBad turns it round (above 0 red: kWh over the fit)
     const runs = o.breaks ? pts.reduce((R, p) => { const r = R[R.length - 1]; if (r && r[r.length - 1][3] === p[3] - 1) r.push(p); else R.push([p]); return R; }, []) : [pts];
     if (s.bars) {
       const step = s.vals.length > 1 ? Math.abs(X(1) - X(0)) : 40, bw = Math.max(3, Math.min(22, step * 0.62)), y0 = Y(0);
       for (const p of pts) {
-        const r = svgEl('rect', {x: p[0] - bw / 2, y: Math.min(p[1], y0), width: bw, height: Math.max(1, Math.abs(y0 - p[1])), class: 'pbar', style: `fill:var(${p[2] < 0 ? '--bad' : '--good'});${o.onPick ? 'cursor:pointer;' : ''}`});
+        const r = svgEl('rect', {x: p[0] - bw / 2, y: Math.min(p[1], y0), width: bw, height: Math.max(1, Math.abs(y0 - p[1])), class: 'pbar', style: `fill:var(${(s.upBad ? p[2] > 0 : p[2] < 0) ? '--bad' : '--good'});${o.onPick ? 'cursor:pointer;' : ''}`});
         const tt = svgEl('title'); tt.textContent = `${s.name} · ${ptLabel(o, p[3])}: ${(o.fmt || pn)(p[2])}`; r.append(tt);
         if (o.onPick) r.addEventListener('click', () => o.onPick(ptPick(o, p[3])));
         svg.append(r);

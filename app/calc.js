@@ -1325,3 +1325,51 @@ function pcz(v, d = 1) {
 function prioParts(o) {
   return [['picks', o.pickBy ? o.rsPicks : 0], ['air', o.rsAir], ['press', o.rsPress]].filter(([, v]) => ok(v) && v > 0).map(([k, v]) => ({k, v}));
 }
+
+// ---------------------------------------------------------------- Round C3 (Divyam, 28 Nov 2026; data viz audit, loom tabs and Data health)
+// #10 the Gap view beside the comparison bars: each row's gap to its reference, signed (now − reference), and whether it is on
+// the worse side (above it where less is better, below it where more is better). A row with no reference or no figure is
+// named, never drawn as 0. hi: more is better (effective RPM, realisation); else less is better (CFM).
+function refGapRows(rows, hi, name) {
+  const out = [], none = [];
+  for (const r of rows || []) {
+    const ref = ok(r.ref) ? r.ref : null;
+    if (!ok(ref) || !ok(r.v)) { none.push(name(r)); continue; }
+    const g = r.v - ref;
+    out.push({...r, gap: g, worse: hi ? g < 0 : g > 0});
+  }
+  return {rows: out, none};
+}
+// #12 the compressor kWh against the fit as a scatter: one point a day (floor air in 1,000 ft³, kWh), and the fit's line
+// over the air drawn (x in 1,000 ft³), as the fit stands on its last day: kWh = a + b × air (+ c × set point, + p × floor
+// pressure, at that day's own). A window average (no slope) is kWh = the average × air, through 0. null with no fit or
+// under 2 points.
+function erLine(f, xs, sp, fl) {
+  const v = (xs || []).filter(ok);
+  if (!f || f.used === 'none' || v.length < 2) return null;
+  const lo = Math.min(...v), hi = Math.max(...v);
+  if (f.used !== 'slope') return ok(f.avg) ? [[lo, f.avg * lo], [hi, f.avg * hi]] : null;
+  const c0 = f.a + (f.useC && ok(f.c) && ok(sp) ? f.c * sp : 0) + (f.press && ok(f.p) && ok(fl) ? f.p * fl : 0);
+  return [[lo, c0 + f.b * lo], [hi, c0 + f.b * hi]];
+}
+// #14 the utilisation heat strip: hours lost in a loom's day (stopped + powered down, of 24) in four steps, under 2 h, 2–4 h,
+// 4–8 h, 8 h or more (level 0–3); a day with no record has no level (null).
+const LOST_BANDS = [2, 4, 8], LOST_TXT = ['under 2 h', '2–4 h', '4–8 h', '8 h or more'], LOST_LV = [0.12, 0.32, 0.56, 0.85];
+function lostBand(h) { if (!ok(h)) return null; let i = 0; while (i < LOST_BANDS.length && h >= LOST_BANDS[i]) i++; return i; }
+// #13 warp breaks by quality: each quality's share of the period's breaks (its breaks ÷ the total), a gap with no total.
+function shareOf(rows, get) {
+  const t = (rows || []).reduce((a, r) => a + (ok(get(r)) ? get(r) : 0), 0);
+  return (rows || []).map((r) => ({...r, share: t > 0 && ok(get(r)) ? get(r) / t : null}));
+}
+// #45 missed loom readings as a loom × day grid: the days (oldest first), the looms (most missed days first), and each cell's
+// kind ('shift' a loom missing from a shift file, 'short' a loom-day under the minutes, 'both'); an empty cell has none.
+function missGrid(M, days) {
+  const cell = {}, n = {};
+  for (const m of M || []) {
+    const k = m.loom + '|' + m.date, was = cell[k];
+    cell[k] = !was || was === m.kind ? m.kind : 'both';
+    if (!was) n[m.loom] = (n[m.loom] || 0) + 1;
+  }
+  const looms = Object.keys(n).map(Number).sort((a, b) => n[b] - n[a] || a - b);
+  return {days: (days || []).slice().sort(), looms, cell, n};
+}

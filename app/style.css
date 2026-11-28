@@ -424,6 +424,24 @@ table.heat td.hc.none{background:var(--soft);color:var(--muted);font-weight:400;
 .ucal td:first-child,.ucal th:first-child{text-align:left;padding-left:4px;padding-right:8px;min-width:76px!important;white-space:nowrap}
 .ucell{border:0;padding:0;font:inherit;display:flex;flex-direction:column-reverse;width:18px;height:22px;margin:0 auto;border-radius:3px;overflow:hidden;background:var(--soft);cursor:pointer}
 .ucell i{display:block;width:100%}
+.ucell.uh{display:flex;align-items:center;justify-content:center;width:26px;height:20px;font-size:9.5px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.ucell.uh.l2,.ucell.uh.l3{color:#fff}
+.estrip{display:inline-flex;gap:2px}
+.estrip button{border:0;padding:0;font:inherit;font-size:10px;font-weight:600;width:22px;height:18px;border-radius:3px;background:var(--soft);color:var(--ink);cursor:pointer;font-variant-numeric:tabular-nums}
+@media (max-width:560px){.estrip button{width:18px;font-size:9px}}
+.estrip button.low{background:color-mix(in srgb, var(--bad) 55%, var(--soft));color:#fff}
+.gcell{display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px}
+.gbar{display:block}
+.mv .gbar{margin-top:2px}
+.missgrid td{padding:2px 1px;text-align:center;border-bottom:0}
+.missgrid th{font-size:10.5px;padding:2px 1px;text-transform:none;letter-spacing:0}
+.missgrid td:first-child,.missgrid th:first-child{text-align:left;padding-left:4px;padding-right:8px;white-space:nowrap}
+.mg{display:block;width:16px;height:16px;margin:0 auto;border-radius:3px;background:var(--soft)}
+.mg.shift{background:var(--bad)}
+.mg.short{background:color-mix(in srgb, var(--bad) 40%, var(--soft))}
+.mg.both{background:var(--bad);outline:2px solid var(--ink);outline-offset:-2px}
+button.mg{border:0;padding:0;cursor:pointer}
+@media (max-width:560px){.missgrid td,.missgrid th{padding:2px 0}.mg{width:8px;height:14px;border-radius:2px}.missgrid th{font-size:8.5px}.missgrid th.sk{visibility:hidden;width:8px;max-width:8px;overflow:hidden}.missgrid td:first-child,.missgrid th:first-child{padding-right:4px}}
 .ucell:focus-visible{outline:2px solid var(--accent)}
 .dcal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;max-width:420px}
 .dcal .dh{font-size:10.5px;color:var(--muted);text-align:center}
@@ -436,7 +454,7 @@ table.heat td.hc.none{background:var(--soft);color:var(--muted);font-weight:400;
 .dcal .dc.blank{background:none}
 @media (max-width:640px){table.heat{font-size:11.5px}table.heat th,table.heat td{padding:5px 3px}table.heat th .unit{font-size:10px}
   table.heat th:first-child,table.heat td:first-child{min-width:104px}table.heat td:first-child .note{font-size:11px}table.heat td.hc,table.heat td.hc.none{min-width:50px}}
-@media (max-width:640px){.ucal td:first-child .note{display:none}.ucal td:first-child,.ucal th:first-child{min-width:64px!important;padding-right:4px}.ucal th,.ucal td{padding:3px 1px}.ucell{width:15px}}
+@media (max-width:640px){.ucal td:first-child .note{display:none}.ucal td:first-child,.ucal th:first-child{min-width:64px!important;padding-right:4px}.ucal th,.ucal td{padding:3px 1px}.ucell{width:15px}.ucell.uh{width:19px;font-size:8.5px}}
 .tgin{display:flex;align-items:center;gap:8px}
 .tgin input{flex:0 1 110px;min-width:84px}
 .tgin .rbar{margin-top:0;flex:none}

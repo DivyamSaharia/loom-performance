@@ -106,7 +106,7 @@ function hbars0(rows, o = {}) {
   const fmt = o.fmt || pn;
   return fitted((W) => {
     const rowH = 24, L = Math.round(Math.max(64, Math.min(o.labelW || 170, W * (W < 480 ? 0.38 : 0.32)))), R = (W < 420 ? 52 : 70) + (o.wideText ? 44 : 0), T = o.ref ? 20 : 6, B = 32;   // Round C2a: o.wideText leaves room for a two-part value
-    const H = T + B + rows.length * rowH, hiV = Math.max(...rows.map((r) => Math.max(r.v || 0, r.tol || 0)), o.ref && ok(o.ref.v) ? o.ref.v : 0, 1e-9);
+    const H = T + B + rows.length * rowH, hiV = Math.max(...rows.map((r) => Math.max(r.v || 0, r.tol || 0, r.tick || 0)), o.ref && ok(o.ref.v) ? o.ref.v : 0, 1e-9);
     const [, b, ticks] = niceRange(0, hiV);
     const x = (v) => L + (W - L - R) * Math.max(0, v) / (b || 1);
     const svg = svgRoot(W, H, o.aria);
@@ -123,13 +123,16 @@ function hbars0(rows, o = {}) {
         for (const g of r.segs) { const gv = Math.max(0, g.v || 0); if (!gv) continue;
           svg.append(tip(svgEl('rect', {x: x(run), y: y + 6, width: Math.max(1, x(run + gv) - x(run)), height: 12, rx: 2, class: 'hseg', style: `fill:${g.color || col};${g.op ? `opacity:${g.op}` : ''}`}), `${r.title || r.label} · ${g.name}: ${fmt(gv)}`)); run += gv; }
       } else if (ok(r.tol) && r.tol > 0) {
-        svg.append(svgEl('rect', {x: x(0), y: y + 6, width: Math.max(0, x(Math.min(v, r.tol)) - x(0)), height: 12, rx: 2, style: `fill:${col};opacity:.35`}));
-        if (v > r.tol) svg.append(svgEl('rect', {x: x(r.tol), y: y + 6, width: Math.max(1, x(v) - x(r.tol)), height: 12, rx: 2, style: `fill:${col}`}));
-        svg.append(svgEl('rect', {x: x(r.tol) - 1, y: y + 2, width: 2, height: 20, style: 'fill:var(--barline)'}));
+        // Round C3 (audit #13, #47): r.past = the colour past the line (the bar up to it full strength in its own colour)
+        svg.append(svgEl('rect', {x: x(0), y: y + 6, width: Math.max(0, x(Math.min(v, r.tol)) - x(0)), height: 12, rx: 2, class: r.past ? 'hpre' : null, style: `fill:${col};${r.past ? '' : 'opacity:.35'}`}));
+        if (v > r.tol) svg.append(svgEl('rect', {x: x(r.tol), y: y + 6, width: Math.max(1, x(v) - x(r.tol)), height: 12, rx: 2, class: r.past ? 'hpast' : null, style: `fill:${r.past || col}`}));
+        if (!r.notol) svg.append(svgEl('rect', {x: x(r.tol) - 1, y: y + 2, width: 2, height: 20, style: 'fill:var(--barline)'}));
       } else svg.append(svgEl('rect', {x: x(0), y: y + 6, width: Math.max(1, x(v) - x(0)), height: 12, rx: 2, style: `fill:${col}`}));
+      if (ok(r.tick)) svg.append(svgEl('rect', {x: x(r.tick) - 1, y: y + 2, width: 2, height: 20, class: 'htick', style: 'fill:var(--barline)'}));   // Round C3 (#47): a reference tick
       const hit = svgEl('rect', {x: L, y, width: W - L - R, height: rowH, style: `fill:transparent;${r.onClick ? 'cursor:pointer' : ''}`});
       tip(hit, r.title || `${r.label}: ${fmt(r.v)}`); if (r.onClick) hit.addEventListener('click', r.onClick); svg.append(hit);
-      svg.append(tx({x: Math.min(W - 2, x(Math.max(v, r.tol || 0)) + 6), y: y + 16, 'text-anchor': x(Math.max(v, r.tol || 0)) + 6 > W - R + 30 ? 'end' : 'start'}, r.text != null ? r.text : fmt(r.v), 'fill:var(--ink);font-size:11px;font-weight:600'));
+      const te = Math.max(v, r.notol ? 0 : r.tol || 0, r.tick || 0);
+      svg.append(tx({x: Math.min(W - 2, x(te) + 6), y: y + 16, 'text-anchor': x(te) + 6 > W - R + 30 ? 'end' : 'start'}, r.text != null ? r.text : fmt(r.v), 'fill:var(--ink);font-size:11px;font-weight:600'));
     });
     if (o.ref && ok(o.ref.v)) {
       svg.append(svgEl('line', {x1: x(o.ref.v), x2: x(o.ref.v), y1: T - 6, y2: H - B, style: 'stroke:var(--muted);stroke-width:1.4;stroke-dasharray:5 4'}));
@@ -275,19 +278,62 @@ function hlStack(o, key, extra) {
 
 // ---------------------------------------------------------------- Targets: a small range bar (now, bm, best, target)
 // Same marks as the by-loom charts: current = lime bar, benchmark = tick, best = green dot, target = hollow diamond.
+// Round C3 (audit #22, #23): o.w draws it narrower (a table cell); the marks keep their size.
 function rangeBar(o) {
-  const vs = [o.now, o.bm, o.best, o.tg].filter(ok);
-  const s = svgEl('svg', {class: 'rbar', width: 132, height: 20, viewBox: '0 0 132 20', role: 'img', 'aria-label': o.aria || 'Now, benchmark, best and target'});
+  const vs = [o.now, o.bm, o.best, o.tg].filter(ok), Wb = o.w || 132;
+  const s = svgEl('svg', {class: 'rbar', width: Wb, height: 20, viewBox: `0 0 ${Wb} 20`, role: 'img', 'aria-label': o.aria || 'Now, benchmark, best and target'});
   if (!vs.length) return s;
   let lo = Math.min(...vs), hi = Math.max(...vs); const pad = (hi - lo) * 0.12 || Math.abs(hi) * 0.02 || 1; lo -= pad; hi += pad;
-  const x = (v) => 8 + 116 * (v - lo) / (hi - lo);
-  s.append(svgEl('line', {x1: 4, x2: 128, y1: 10, y2: 10, style: 'stroke:var(--line);stroke-width:2;stroke-linecap:round'}));
+  const x = (v) => 8 + (Wb - 16) * (v - lo) / (hi - lo);
+  s.append(svgEl('line', {x1: 4, x2: Wb - 4, y1: 10, y2: 10, style: 'stroke:var(--line);stroke-width:2;stroke-linecap:round'}));
   if (ok(o.bm)) s.append(svgEl('rect', {x: x(o.bm) - 1.2, y: 2, width: 2.4, height: 16, style: 'fill:var(--barline)'}));
   if (ok(o.best)) s.append(svgEl('circle', {cx: x(o.best), cy: 10, r: 4.5, style: 'fill:var(--good);stroke:var(--panel);stroke-width:1.2'}));
   if (ok(o.tg)) { const c = x(o.tg); s.append(svgEl('path', {d: `M${c} 4L${c + 6} 10L${c} 16L${c - 6} 10Z`, style: 'fill:var(--panel);stroke:var(--barline);stroke-width:1.6'})); }
   if (ok(o.now)) s.append(svgEl('rect', {x: x(o.now) - 3, y: 5, width: 6, height: 10, rx: 1.5, style: 'fill:var(--bar);stroke:var(--barline);stroke-width:1'}));
   tip(s, o.title || [['now', o.now], ['bm', o.bm], ['best', o.best], ['target', o.tg]].filter((p) => ok(p[1])).map((p) => `${p[0]} ${(o.fmt || pn)(p[1])}`).join(' · '));
   return s;
+}
+
+// ---------------------------------------------------------------- Round C3: a small gap bar in a table cell (audit #24, #43)
+// v: the gap; max: the column's largest |gap| (the bar's half width, or full width with one: true for a gap that is never
+// below 0); tone 'bad' | 'good' | null (grey). No text: the cell's figure sits beside it. A gap with no figure: no bar.
+function gapBar(v, max, o = {}) {
+  const Wb = o.w || 56, s = svgEl('svg', {class: 'gbar', width: Wb, height: 10, viewBox: `0 0 ${Wb} 10`, 'aria-hidden': 'true'});
+  if (!ok(v) || !(max > 0)) return s;
+  const one = !!o.one, mid = one ? 1 : Wb / 2, half = one ? Wb - 2 : Wb / 2 - 1, len = Math.min(1, Math.abs(v) / max) * half;
+  s.append(svgEl('line', {x1: mid, x2: mid, y1: 0, y2: 10, style: 'stroke:var(--muted);stroke-width:1'}));
+  const col = o.tone === 'bad' ? 'var(--bad)' : o.tone === 'good' ? 'var(--good)' : 'var(--muted-2)';
+  if (len > 0) s.append(svgEl('rect', {x: v < 0 && !one ? mid - len : mid, y: 2, width: Math.max(1, len), height: 6, rx: 1, style: `fill:${col}`}));
+  return s;
+}
+// A table cell: the figure, then its gap bar under it; sorts on the gap.
+const gapCell = (text, v, max, o) => sortAs(el('span', {class: 'gcell'}, el('span', {text}), gapBar(v, max, o)), ok(v) ? v : null);
+const gapMax = (vals) => Math.max(0, ...vals.filter(ok).map(Math.abs));
+
+// ---------------------------------------------------------------- Round C3: a scatter with its fit line (audit #12)
+// Divyam's call (28 Nov 2026): one exception to "no scatters", the owner's Compressor kWh against the fit. pts: [{x, y, out
+// (an outlier, ringed red), title, onClick}]; o: {aria, xAxis, yAxis, line: [[x0, y0], [x1, y1]] (the fit), lineName, fmtX, fmtY}.
+function scatterChart(pts, o = {}) {
+  const P = (pts || []).filter((p) => ok(p.x) && ok(p.y));
+  if (P.length < 2) return el('p', {class: 'empty', text: o.empty || 'Fewer than two days to draw.'});
+  return fitted((W) => {
+    const H = Math.round(Math.min(300, Math.max(220, W * 0.5))), L = 54, R = 14, T = 14, B = 42, svg = svgRoot(W, H, o.aria);
+    const xs = P.map((p) => p.x).concat(o.line ? o.line.map((q) => q[0]) : []), ys = P.map((p) => p.y).concat(o.line ? o.line.map((q) => q[1]) : []);
+    const [xa, xb, xt] = niceRange(Math.min(...xs), Math.max(...xs)), [ya, yb, yt] = niceRange(Math.min(...ys), Math.max(...ys));
+    const X = (v) => L + (W - L - R) * (v - xa) / ((xb - xa) || 1), Y = (v) => T + (H - T - B) * (1 - (v - ya) / ((yb - ya) || 1));
+    for (const t of yt) { svg.append(svgEl('line', {x1: L, x2: W - R, y1: Y(t), y2: Y(t), style: 'stroke:var(--line);stroke-width:1'})); svg.append(tx({x: L - 6, y: Y(t) + 4, 'text-anchor': 'end'}, axisFmt(t))); }
+    const every = Math.max(1, Math.ceil(xt.length / Math.max(2, Math.floor((W - L - R) / 56))));
+    xt.forEach((t, i) => { svg.append(svgEl('line', {x1: X(t), x2: X(t), y1: T, y2: H - B, style: 'stroke:var(--line);stroke-width:1;opacity:.6'})); if (!(i % every)) svg.append(tx({x: X(t), y: H - B + 14, 'text-anchor': 'middle'}, axisFmt(t))); });
+    if (o.xAxis) svg.append(tx({x: L + (W - L - R) / 2, y: H - 4, 'text-anchor': 'middle'}, o.xAxis));
+    if (o.yAxis) { const t = tx({x: 12, y: T + (H - T - B) / 2, 'text-anchor': 'middle', transform: `rotate(-90 12 ${T + (H - T - B) / 2})`}, o.yAxis); svg.append(t); }
+    if (o.line) { const ln = svgEl('line', {x1: X(o.line[0][0]), y1: Y(o.line[0][1]), x2: X(o.line[1][0]), y2: Y(o.line[1][1]), class: 'fitline', style: 'stroke:var(--ink);stroke-width:1.6;stroke-dasharray:6 4'}); tip(ln, o.lineName || 'The fit'); svg.append(ln); }
+    for (const p of P) {
+      const c = svgEl('circle', {cx: X(p.x), cy: Y(p.y), r: 4.5, class: p.out ? 'scpt out' : 'scpt', style: `fill:${CC[0]};fill-opacity:.8;stroke:${p.out ? 'var(--bad)' : 'var(--panel)'};stroke-width:${p.out ? 2.5 : 1}${p.onClick ? ';cursor:pointer' : ''}`});
+      tip(c, p.title || `${(o.fmtX || pn)(p.x)} · ${(o.fmtY || pn)(p.y)}`); if (p.onClick) c.addEventListener('click', p.onClick); svg.append(c);
+      if (p.out) { const lb = p.label || 'outlier', ax = X(p.x) > W - 70 ? 'end' : 'start'; svg.append(tx({x: X(p.x) + (ax === 'end' ? -8 : 8), y: Y(p.y) - 7, 'text-anchor': ax}, lb, 'fill:var(--bad);font-size:11px;font-weight:600')); }
+    }
+    return svg;
+  }, 280);
 }
 
 // Ranked bars with a sort bar (12 Nov 2026): Name and Value, plus any o.sortBases [{v, label, get}]. o.nosort: none.
